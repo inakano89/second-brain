@@ -12,6 +12,24 @@
 
   var bulk = document.getElementById("bulk");
   var filters = document.getElementById("filters");
+
+  // "Focar no grafo" from the detail panel opens the network view.
+  document.addEventListener("sb:focus", function (ev) {
+    if (!document.getElementById("graph") && ev.detail && ev.detail.id) window.location.href = "/?focus=" + ev.detail.id;
+  });
+
+  // Tags in the detail panel filter the list (or open it) instead of the graph search.
+  document.addEventListener("click", function (e) {
+    var tag = e.target.closest("#detail a.tag");
+    if (!tag) return;
+    e.preventDefault();
+    e.stopPropagation();
+    var name = tag.textContent.replace(/^#/, "").trim();
+    if (!filters) { window.location.href = "/content?tag=" + encodeURIComponent(name); return; }
+    filters.querySelector("input[name=tag]").value = name;
+    document.dispatchEvent(new CustomEvent("sb:refilter"));
+  }, true);
+
   if (!bulk || !filters) return;
   var bar = document.getElementById("bulkbar");
   var sel = new Set(); // selected ids, kept across pages and list refreshes
@@ -176,21 +194,9 @@
       refilter();
       return;
     }
-    // Tags in the detail panel filter this list instead of opening the graph search.
-    var tag = e.target.closest("#detail a.tag");
-    if (tag) {
-      e.preventDefault();
-      e.stopPropagation();
-      filters.querySelector("input[name=tag]").value = tag.textContent.replace(/^#/, "").trim();
-      clear();
-      refilter();
-    }
   }, true);
 
-  // "Focar no grafo" from the detail panel opens the network view.
-  document.addEventListener("sb:focus", function (ev) {
-    if (!document.getElementById("graph") && ev.detail && ev.detail.id) window.location.href = "/?focus=" + ev.detail.id;
-  });
+  document.addEventListener("sb:refilter", function () { clear(); refilter(); });
 
   document.body.addEventListener("htmx:afterSwap", function (e) {
     var t = e.detail && e.detail.target;

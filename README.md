@@ -27,6 +27,7 @@
 - [Gerenciar conteúdo](#gerenciar-conteúdo)
 - [Modelos de IA e Conselho](#modelos-de-ia-e-conselho)
 - [IA, grafo e agentes](#ia-grafo-e-agentes)
+- [Memória, tarefas de reuniões e faxina](#memória-tarefas-de-reuniões-e-faxina)
 - [Integrações](#integrações)
 - [Rotinas agendadas](#rotinas-agendadas)
 - [Backup e restauração](#backup-e-restauração)
@@ -53,7 +54,8 @@
 | **Busca híbrida** | BM25 (FTS5) + similaridade vetorial executadas em paralelo e fundidas por *Reciprocal Rank Fusion*, com filtros de tipo, data e tag. |
 | **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters, Google Agenda/Drive/Contatos/Tasks/YouTube. |
 | **Importação** | Obsidian, Logseq, Notion, Evernote, Google Keep, Joplin/Bear, favoritos do navegador/Pocket, CSV (Excel, Todoist, Readwise), JSON, Kindle, contatos (vCard), agenda (iCalendar), OPML e **Google Takeout** (histórico do YouTube, pesquisas, Chrome, Linha do tempo do Maps, lugares salvos, Play Store) — com detecção automática, `.zip` aninhados e reimportação sem duplicar. |
-| **Gerenciar conteúdo** | Página **Conteúdo** com filtros (texto, tipo, origem, tag, data, envio), seleção em massa (inclusive todos os resultados do filtro), apagar/etiquetar/mudar tipo/concluir/reprocessar/exportar em lote, faxina (duplicados, sem conteúdo, sem conexões), apagar uma importação inteira e **lixeira de 30 dias** com desfazer. Itens apagados não voltam nas sincronizações. |
+| **Gerenciar conteúdo** | Página **Conteúdo** com filtros (texto, tipo, origem, tag, data, envio), seleção em massa (inclusive todos os resultados do filtro), apagar/etiquetar/mudar tipo/concluir/reprocessar/exportar em lote, filtros de faxina (duplicados, sem conteúdo, sem conexões), aba **Faxina** com as sugestões semanais, apagar uma importação inteira e **lixeira de 30 dias** com desfazer. Itens apagados não voltam nas sincronizações. |
+| **Camada de ação e memória** | Tarefas extraídas de atas, transcrições e notas de reunião duas vezes por dia (com lista do que surgiu, inclusive dos e-mails); memória diária de **decisões, aprendizados e prioridades** que o chat e o briefing consultam; **faxina semanal** que sugere duplicados para juntar, itens vazios, tarefas paradas e pessoas soltas para você aprovar. |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
@@ -271,7 +273,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | **Mindmap** (`/`) | Duas visões. **Visão geral** (padrão, SVG): o cérebro no centro e anéis concêntricos com rotinas (situação de cada uma), tipos de conteúdo, temas mais frequentes e fontes (Telegram, Gmail, Drive, Takeout…), com tamanho proporcional à quantidade; as ligações aparecem só ao passar o mouse, e o clique lista os itens no painel lateral (`/api/overview`, `/overview/nodes`). **Rede**: grafo force-directed em canvas (JS puro, embutido), carregado só quando aberto: zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos; o botão “Ver na rede” abre a rede já filtrada. Cores dos tipos em paleta segura para daltonismo, com tons próprios para os temas claro e escuro. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas, reprocessamento por IA e exclusão (vai para a lixeira, com desfazer). Captura rápida. |
 | **Conteúdo** (`/content`) | Gerenciador de tudo o que entrou: lista filtrável e paginada, ações em massa, painel de leitura/edição, abas **Envios** e **Lixeira**. Veja [Gerenciar conteúdo](#gerenciar-conteúdo). |
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
-| **Painel** (`/dashboard`) | Custos e tokens por provedor/modelo (7/30/90 dias), gráfico diário, estatísticas do grafo, status das integrações, fila offline (com reprocessamento), rotinas com execução manual, métricas de saúde e último briefing. |
+| **Painel** (`/dashboard`) | No topo: indicadores (capturas e concluídas na semana com variação, tarefas abertas e atrasadas, novas da IA em 24 h, faxina pendente, custo de IA), **briefing de hoje**, **A fazer** (atrasadas, de hoje e tarefas novas da IA com a origem, concluir ✓ ou descartar ✕), **prioridades atuais**, **decisões e aprendizados** recentes e capturas por dia (14 dias, com tooltip e tabela). Abaixo: custos e tokens por provedor/modelo (7/30/90 dias), estatísticas do grafo, integrações, fila offline, rotinas com execução manual e métricas de saúde. |
 | **Importar** (`/import`) | Envio de um ou vários arquivos, detecção automática do formato, progresso ao vivo e relatório (novos, atualizados, sem mudança, apagados antes, falhas, conexões), com link para revisar o envio no Conteúdo. Tabela com o passo a passo de exportação de cada app. |
 | **Audit log** (`/logs`) | Execuções, erros de sync, ações do agente e logins, filtráveis por nível/componente/texto. |
 | **Configurações** (`/settings`) | Liga/desliga de atualizações automáticas, verificação/instalação manual, editor completo do `.env` (segredos mascarados), conexão Google, bookmarklet e API token, editor de ações do agente, backup manual, download de backups, exportação Obsidian e troca de senha. |
@@ -366,7 +368,7 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | **Catálogo** (`LLM_MODELS`) | Lista `provedor:modelo`. Adicione ou remova pela UI. O botão “Ver modelos disponíveis na sua conta” consulta a API de cada provedor. |
 | **Lista recomendada** ([`internal/llm/models.json`](internal/llm/models.json)) | Modelos, padrões e preços mantidos neste repositório. Vem embutida no binário e, todo dia (`CRON_MODELS`), é baixada do `main` do `UPDATE_REPO`. Modelos novos entram, os descontinuados saem (junto com rotas e membros do Conselho que apontavam para eles) e o ★ padrão acompanha a recomendação, a menos que você tenha escolhido outro modelo. Desative com `LLM_MODELS_AUTO_SYNC=false`; botão **🔄 Sincronizar agora** em `/models`. |
 | **Padrão por empresa** | Um modelo ★ para Claude (`ANTHROPIC_MODEL`), GPT (`OPENAI_MODEL`), Gemini (`GEMINI_MODEL`) e Local (`OLLAMA_MODEL`). |
-| **Modelo por tarefa** (`LLM_ROUTE_*`) | Chat, Telegram, auto-tagging, visão/OCR, transcrição, eventos, e-mails, RSS, briefing e revisões. Cada tarefa aceita `auto`, `council`, `provedor` (usa o padrão dele) ou `provedor:modelo`. |
+| **Modelo por tarefa** (`LLM_ROUTE_*`) | Chat, Telegram, auto-tagging, visão/OCR, transcrição, eventos, e-mails, RSS, briefing, revisões, tarefas de reuniões e memória. Cada tarefa aceita `auto`, `council`, `provedor` (usa o padrão dele) ou `provedor:modelo`. |
 | **🤝 Conselho** (`LLM_COUNCIL_*`) | 1. Os membros (padrão: Claude, GPT e Gemini) respondem em paralelo. 2. Em cada rodada de debate, cada um lê as respostas dos outros (anônimas) e revisa a sua. 3. O moderador escreve a decisão final e, no chat, pode chamar ferramentas. Se houver menos de 2 modelos configurados, cai para um modelo só. |
 
 - Briefing matinal e revisões usam o Conselho por padrão. As outras tarefas usam `auto`.
@@ -400,6 +402,38 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | `search_drive`, `read_drive_file` | Google Drive: busca e leitura de Docs, Planilhas, Apresentações, PDF, DOCX e texto |
 | `search_contacts` | Contatos do Google (inclui “outros contatos” do Gmail) |
 | `run_action` | Ações de automação da whitelist (quando `ACTIONS_ENABLED=true`) |
+
+O prompt do chat (web e Telegram) inclui a **memória**: prioridades atuais e as decisões e aprendizados mais recentes (veja abaixo).
+
+## Memória, tarefas de reuniões e faxina
+
+Três rotinas transformam o que entra em ação e contexto (inspiradas nas camadas contexto → memória → ação):
+
+**Tarefas de reuniões e e-mails** (`actions`, `CRON_ACTIONS`, padrão `0 12,18 * * *`, rota `LLM_ROUTE_ACTIONS`)
+
+- Lê notas criadas ou alteradas desde a última execução que parecem reunião: título com reunião/meeting/call/1:1/ata/transcrição/daily/kickoff/entrevista/“Anotações do Gemini”, tags `reuniao`/`meeting`/`ata`/`transcricao`, eventos da agenda com anotações (≥ 400 caracteres) ou áudios longos. RSS, newsletters, YouTube e rotinas ficam de fora; notas que já têm tarefas `derived_from` (extraídas no enriquecimento ou na triagem do Gmail) são puladas.
+- Até 20 reuniões por execução, em lotes de 4 enviados em paralelo (3 goroutines). O LLM recebe as tarefas abertas para não repetir; as sugestões também são deduplicadas por título normalizado.
+- Cada ação vira uma tarefa (`source=agent`, `source_ref=meeting:<id>:<hash>`, tags `reuniao`, `ia`) ligada à reunião por `derived_from`, com prazo convertido de datas relativas. Ações de outras pessoas viram “Aguardando <nome>: …” com a tag `aguardando`. A nota recebe `meta.actions_at` e só é relida se mudar.
+- Depois, envia no Telegram a lista de **todas** as tarefas criadas pela IA desde a última execução (reuniões, notas e e-mails do Gmail), com a origem de cada uma. Sem IA configurada, só a lista é enviada.
+
+**Memória** (`memory`, `CRON_MEMORY`, padrão `30 22 * * *`, rota `LLM_ROUTE_MEMORY`)
+
+- Lê o dia (ou, se execuções foram perdidas, desde a última, no máximo 7 dias): notas, eventos, insights, tarefas e artigos salvos à mão, mais as conversas do chat e do Telegram — sem RSS, newsletters, YouTube, rotinas, importações em massa e contatos. Orçamento de ~40 mil caracteres.
+- Gera **decisões** e **aprendizados** (nós `insight` com tags `memoria` + `decisao`/`aprendizado`, `source=memory`, ligados às fontes), a lista completa de **prioridades atuais** (um nó fixo, atualizado a cada execução; resposta vazia mantém a anterior) e um **retrato do dia** (“Memória de 28/09/2026”) com diário, links e perguntas em aberto. Rodar de novo no mesmo dia reescreve o retrato em vez de duplicar.
+- O chat recebe as prioridades e as últimas decisões/aprendizados no prompt de sistema; o briefing matinal cruza as prioridades com a agenda; a weekly review lista a memória da semana.
+- Apagar uma decisão com “Não trazer de volta” impede que ela seja recriada.
+
+**Faxina semanal** (`cleanup`, `CRON_CLEANUP`, padrão `30 17 * * 0`, sem custo de IA)
+
+| Sugestão | Critério | Ação sugerida |
+|---|---|---|
+| Duplicados | mesmo tipo e título + mesmo texto, ou mesmo `meta.url` | Juntar (mantém o mais antigo) |
+| Quase iguais | itens dos últimos 14 dias com embedding ≥ 0,95 de similaridade (≥ 0,93 no embedder local) a outro do mesmo tipo; relatórios de rotinas e memória ficam de fora | Juntar |
+| Tarefas paradas | abertas sem mudança há 30 dias, ou vencidas há mais de 30 dias | Concluir (ou apagar) |
+| Vazios | notas, artigos e insights sem texto e sem conexões há 7 dias | Apagar |
+| Pessoas soltas | pessoas criadas pela IA a partir de uma menção, sem dados e com no máximo 1 conexão, há 14 dias | Apagar |
+
+As detecções rodam em paralelo (goroutines, incluindo a comparação de vetores) e ficam em `cleanup_suggestions` até você decidir em **Conteúdo → Faxina** (`/content/cleanup`): **Juntar** acrescenta ao item mantido o texto que só existe nas cópias, une tags e metadados, copia as conexões e manda as cópias para a lixeira; **Apagar** e **Concluir** agem direto; **Manter** descarta a sugestão para sempre. Há “Aplicar todas” por categoria e “Procurar agora”. Tudo o que é apagado usa “Não trazer de volta” e fica 30 dias na lixeira. O Telegram recebe o resumo com o link.
 
 ### Agent actions (webhooks, MQTT, comandos)
 
@@ -479,9 +513,12 @@ Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nome
 
 | Job | Variável | Padrão | Descrição |
 |---|---|---|---|
-| `morning` | `CRON_MORNING` | `0 7 * * *` | Briefing matinal: sono/recuperação + agenda + tarefas atrasadas/do dia → Telegram e painel |
+| `morning` | `CRON_MORNING` | `0 7 * * *` | Briefing matinal: sono/recuperação + agenda + tarefas atrasadas/do dia + prioridades da memória + tarefas novas da IA → Telegram e painel |
 | `evening` | `CRON_EVENING` | `0 21 * * *` | Balanço do dia: concluídas, capturas, erros, custo |
-| `weekly` | `CRON_WEEKLY` | `0 18 * * 0` | Weekly review: nós órfãos, links quebrados, pendências paradas; re-linka órfãos e reindexa embeddings |
+| `weekly` | `CRON_WEEKLY` | `0 18 * * 0` | Weekly review: memória da semana, nós órfãos, links quebrados, pendências paradas, faxina pendente; re-linka órfãos e reindexa embeddings |
+| `actions` | `CRON_ACTIONS` | `0 12,18 * * *` | Cria tarefas a partir de reuniões novas e envia a lista de tarefas novas da IA (reuniões, notas, e-mails) |
+| `memory` | `CRON_MEMORY` | `30 22 * * *` | Decisões, aprendizados, prioridades atuais e retrato do dia |
+| `cleanup` | `CRON_CLEANUP` | `30 17 * * 0` | Faxina semanal: sugestões para aprovar em Conteúdo → Faxina (recuperada até 3 dias depois) |
 | `maintenance` | `CRON_MAINTENANCE` | `30 3 * * *` | Purga de temporários de voz/imagem, tarefas e logs antigos e itens com mais de 30 dias na lixeira; `incremental_vacuum`, `optimize`, FTS optimize, checkpoint WAL (VACUUM completo aos domingos) |
 | `backup` | `CRON_BACKUP` | `0 4 * * *` | Snapshot cifrado para os destinos configurados |
 | `rss` / `gmail` / `calendar` / `zepp` | `CRON_*` | 30 / 15 / 30 min / 4 h | Enfileiram sincronizações (com retry offline) |

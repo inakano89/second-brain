@@ -3,7 +3,6 @@ package web
 import (
 	"context"
 	"fmt"
-	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -25,89 +24,10 @@ import (
 
 // ---- dashboard ----
 
-type dayBar struct {
-	Day  string
-	Cost float64
-	Pct  float64
-}
-
 type integ struct {
 	Name   string
 	Status string
 	OK     bool
-}
-
-type dashView struct {
-	Days       int
-	Usage      []database.UsageRow
-	UsageTotal float64
-	TokensIn   int64
-	TokensOut  int64
-	Daily      []dayBar
-	Counts     []typeInfo
-	Nodes      int
-	Edges      int
-	Vectors    map[string]int
-	DBSize     string
-	Queue      map[string]int
-	Failed     []database.Task
-	Jobs       []scheduler.JobInfo
-	Briefing   *database.Node
-	Metrics    []database.Metric
-	Integs     []integ
-}
-
-func (s *Server) dashboardPage(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
-	days, _ := strconv.Atoi(r.URL.Query().Get("days"))
-	if days <= 0 || days > 365 {
-		days = 30
-	}
-	since := time.Now().AddDate(0, 0, -days)
-	v := dashView{Days: days, Vectors: s.DB.VectorCount(), DBSize: fmt.Sprintf("%.1f MB", float64(s.DB.Size())/1e6)}
-	v.Usage, _ = s.DB.UsageSummary(ctx, since)
-	for _, u := range v.Usage {
-		v.UsageTotal += u.CostUSD
-		v.TokensIn += u.InputTokens
-		v.TokensOut += u.OutputTokens
-	}
-	daily, _ := s.DB.UsageDaily(ctx, time.Now().AddDate(0, 0, -14))
-	perDay := map[string]float64{}
-	var maxCost float64
-	for _, d := range daily {
-		perDay[d.Day] += d.CostUSD
-	}
-	for i := 13; i >= 0; i-- {
-		day := time.Now().UTC().AddDate(0, 0, -i).Format("2006-01-02")
-		v.Daily = append(v.Daily, dayBar{Day: day[5:], Cost: perDay[day]})
-		maxCost = max(maxCost, perDay[day])
-	}
-	for i := range v.Daily {
-		if maxCost > 0 {
-			v.Daily[i].Pct = v.Daily[i].Cost / maxCost * 100
-		}
-	}
-	counts, _ := s.DB.CountByType(ctx)
-	for _, t := range database.NodeTypes {
-		v.Counts = append(v.Counts, typeInfo{Type: t, Label: typeLabels[t], Color: template.CSS(typeColors[t]), Count: counts[t]})
-		v.Nodes += counts[t]
-	}
-	v.Edges, _ = s.DB.EdgeCount(ctx)
-	v.Queue, _ = s.DB.QueueStats(ctx)
-	v.Failed, _ = s.DB.ListTasks(ctx, database.TaskFailed, 10)
-	if s.Hooks.Jobs != nil {
-		v.Jobs = s.Hooks.Jobs()
-	}
-	if id, ok, _ := s.DB.KVGet(ctx, "routine.latest.morning"); ok {
-		if n, err := strconv.ParseInt(id, 10, 64); err == nil {
-			v.Briefing, _ = s.DB.GetNode(ctx, n)
-		}
-	}
-	loc := s.Cfg.Location()
-	today := time.Now().In(loc)
-	v.Metrics, _ = s.DB.MetricsRange(ctx, today.AddDate(0, 0, -7).Format("2006-01-02"), today.Format("2006-01-02"))
-	v.Integs = s.integrations()
-	s.render(w, "dashboard", s.page(r, "Painel", "dashboard", v))
 }
 
 func (s *Server) integrations() []integ {

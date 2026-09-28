@@ -225,3 +225,79 @@ func (db *DB) VectorCount() map[string]int {
 	}
 	return out
 }
+
+// VectorPair is two nodes whose embeddings are very similar.
+type VectorPair struct {
+	A, B  int64
+	Score float64
+}
+
+// NearDuplicates compares each query node with every indexed node of model and returns the
+// pairs scoring at least threshold (each pair once). Queries run on a goroutine pool.
+func (db *DB) NearDuplicates(model string, queries []int64, threshold float64) []VectorPair {
+	db.vec.mu.RLock()
+	set := db.vec.byMd[model]
+	ids := make([]int64, 0, len(set))
+	vecs := make([][]float32, 0, len(set))
+	for id, v := range set {
+		ids = append(ids, id)
+		vecs = append(vecs, v)
+	}
+	qv := make(map[int64][]float32, len(queries))
+	for _, id := range queries {
+		if v, ok := set[id]; ok {
+			qv[id] = v
+		}
+	}
+	db.vec.mu.RUnlock()
+	jobs := make(chan int64)
+	results := make(chan VectorPair, 64)
+	var wg sync.WaitGroup
+	for range runtime.NumCPU() {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for q := range jobs {
+				v := qv[q]
+				for i, other := range vecs {
+					if ids[i] == q || len(other) != len(v) {
+						continue
+					}
+					var dot float32
+					for j := range v {
+						dot += v[j] * other[j]
+					}
+					if float64(dot) >= threshold {
+						results <- VectorPair{A: q, B: ids[i], Score: float64(dot)}
+					}
+				}
+			}
+		}()
+	}
+	go func() {
+		for q := range qv {
+			jobs <- q
+		}
+		close(jobs)
+		wg.Wait()
+		close(results)
+	}()
+	seen := map[[2]int64]bool{}
+	var out []VectorPair
+	for p := range results {
+		key := [2]int64{min(p.A, p.B), max(p.A, p.B)}
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		p.A, p.B = key[0], key[1]
+		out = append(out, p)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].Score != out[j].Score {
+			return out[i].Score > out[j].Score
+		}
+		return out[i].A < out[j].A
+	})
+	return out
+}

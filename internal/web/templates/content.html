@@ -5,6 +5,7 @@
   <nav class="content-tabs" aria-label="Seções">
     <a href="/content" class="{{if eq .Tab "items"}}on{{end}}">🗂 Itens</a>
     <a href="/content/sends" class="{{if eq .Tab "sends"}}on{{end}}">📥 Envios</a>
+    <a href="/content/cleanup" class="{{if eq .Tab "cleanup"}}on{{end}}">🧹 Faxina{{if .Cleanup}}<span class="count">{{.Cleanup}}</span>{{end}}</a>
     <a href="/content/trash" class="{{if eq .Tab "trash"}}on{{end}}">🗑 Lixeira{{if .Trash}}<span class="count">{{.Trash}}</span>{{end}}</a>
     <a href="/help#content" class="muted small">❓ Como usar</a>
   </nav>
@@ -128,6 +129,43 @@
       </tbody>
     </table></div>
   </section>
+{{end}}
+
+{{if eq .Tab "cleanup"}}
+  <div class="content-layout">
+    <div class="cleanup">
+      <section class="card">
+        <div class="card-head">
+          <h2>🧹 Faxina semanal</h2>
+          <form method="post" action="/content/cleanup/run" class="inline"><button class="btn small">↻ Procurar agora</button></form>
+        </div>
+        <p class="muted">Toda semana o Second Brain procura cópias, itens vazios, tarefas esquecidas e pessoas criadas por engano. Nada é apagado sem a sua aprovação — e o que for apagado fica 30 dias na <a href="/content/trash">lixeira</a>.{{if not .Last.IsZero}} Última busca: {{fmtTime .Last}}.{{end}}</p>
+        {{if .Groups}}
+        <div class="quick">
+          {{range .Groups}}<a class="chip" href="#cl-kind-{{.Kind}}">{{.Label}} <small>{{len .Items}}</small></a>{{end}}
+        </div>
+        {{end}}
+      </section>
+      {{range .Groups}}
+      <section class="card" id="cl-kind-{{.Kind}}">
+        <div class="card-head">
+          <h3>{{.Label}} <small class="muted">({{len .Items}})</small></h3>
+          <form method="post" action="/content/cleanup/apply-all" class="inline">
+            <input type="hidden" name="kind" value="{{.Kind}}">
+            <button class="btn small" data-confirm="Aplicar a ação sugerida às {{len .Items}} sugestões de “{{.Label}}”?">Aplicar todas</button>
+          </form>
+        </div>
+        <p class="muted small">{{.Help}}</p>
+        {{range .Items}}{{template "cleanup_card" .}}{{end}}
+      </section>
+      {{else}}
+      <section class="card"><p class="empty">✨ Nada para limpar agora. A próxima busca roda sozinha no domingo (ou clique em <b>Procurar agora</b>).</p></section>
+      {{end}}
+    </div>
+    <aside id="detail" class="card content-detail" aria-live="polite">
+      <p class="empty">Clique em um item para conferir antes de decidir.</p>
+    </aside>
+  </div>
 {{end}}
 
 {{if eq .Tab "trash"}}
