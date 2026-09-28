@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"sort"
 	"strings"
+	"time"
 )
 
 // Price is USD per 1M tokens.
@@ -48,23 +49,58 @@ var DefaultPricing = map[string]Price{
 	"local": {0, 0},
 }
 
+// PriceChange is a price that takes effect on a date (UTC).
+type PriceChange struct {
+	From  time.Time
+	Price Price
+}
+
+// PricePlan is a model's price over time plus an optional long-prompt tier
+// (e.g. Gemini charges more when the prompt exceeds 200k tokens).
+type PricePlan struct {
+	Base      Price
+	Changes   []PriceChange // sorted by From
+	LongAbove int           // input tokens; 0 = no long-prompt tier
+	Long      Price
+}
+
+// At returns the price in effect at t for a prompt of inputTokens (0 = short).
+func (pl PricePlan) At(t time.Time, inputTokens int) Price {
+	if pl.LongAbove > 0 && inputTokens > pl.LongAbove {
+		return pl.Long
+	}
+	p := pl.Base
+	for _, c := range pl.Changes {
+		if !t.Before(c.From) {
+			p = c.Price
+		}
+	}
+	return p
+}
+
 // Pricing resolves costs for model names.
 type Pricing struct {
-	table map[string]Price
+	table map[string]PricePlan
 	keys  []string
 }
 
-// NewPricing merges defaults with a JSON override {"prefix":[in,out]}.
-func NewPricing(override string) Pricing {
-	t := map[string]Price{}
+// NewPricing merges defaults, curated catalogue prices and a JSON override
+// {"prefix":[in,out]} (later sources win).
+func NewPricing(override string, cat *CuratedCatalog) Pricing {
+	t := map[string]PricePlan{}
 	for k, v := range DefaultPricing {
-		t[k] = v
+		t[k] = PricePlan{Base: v}
+	}
+	if cat != nil {
+		for k, v := range cat.pricePlans() {
+			t[k] = v
+		}
 	}
 	if strings.TrimSpace(override) != "" {
 		var o map[string][2]float64
 		if json.Unmarshal([]byte(override), &o) == nil {
 			for k, v := range o {
-				t[k] = Price{v[0], v[1]}
+				t[strings.ToLower(k)] = PricePlan{Base: Price{v[0], v[1]}}
 			}
 		}
 	}
@@ -76,10 +112,10 @@ func NewPricing(override string) Pricing {
 	return Pricing{table: t, keys: keys}
 }
 
-// Cost returns the USD estimate for usage on model.
-func (p Pricing) Cost(provider, model string, u Usage) float64 {
+// Plan returns the price plan for model (longest matching prefix).
+func (p Pricing) Plan(provider, model string) (PricePlan, bool) {
 	if provider == "ollama" || strings.HasPrefix(model, "local") {
-		return 0
+		return PricePlan{}, true
 	}
 	m := strings.TrimPrefix(strings.ToLower(model), "models/")
 	if i := strings.LastIndex(m, ":"); i >= 0 {
@@ -87,9 +123,21 @@ func (p Pricing) Cost(provider, model string, u Usage) float64 {
 	}
 	for _, k := range p.keys {
 		if strings.HasPrefix(m, k) {
-			pr := p.table[k]
-			return (float64(u.InputTokens)*pr.In + float64(u.OutputTokens)*pr.Out) / 1e6
+			return p.table[k], true
 		}
 	}
-	return 0
+	return PricePlan{}, false
+}
+
+// Lookup returns today's short-prompt price for model.
+func (p Pricing) Lookup(provider, model string) (Price, bool) {
+	pl, ok := p.Plan(provider, model)
+	return pl.At(time.Now(), 0), ok
+}
+
+// Cost returns the USD estimate for usage on model (0 when the price is unknown).
+func (p Pricing) Cost(provider, model string, u Usage) float64 {
+	pl, _ := p.Plan(provider, model)
+	pr := pl.At(time.Now(), u.InputTokens)
+	return (float64(u.InputTokens)*pr.In + float64(u.OutputTokens)*pr.Out) / 1e6
 }

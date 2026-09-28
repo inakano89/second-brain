@@ -57,14 +57,20 @@ func (s *Server) funcs() template.FuncMap {
 			b, _ := json.Marshal(v)
 			return string(b)
 		},
-		"usd":        func(v float64) string { return fmt.Sprintf("US$ %.4f", v) },
-		"num":        func(v int64) string { return humanInt(v) },
-		"pct":        func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
-		"safeURL":    func(s string) template.URL { return template.URL(s) },
-		"urlquery":   url.QueryEscape,
-		"hasPrefix":  strings.HasPrefix,
-		"split":      func(s string) []string { return strings.Split(s, ",") },
-		"routeKey":   llm.RouteKey,
+		"usd":       func(v float64) string { return fmt.Sprintf("US$ %.4f", v) },
+		"num":       func(v int64) string { return humanInt(v) },
+		"pct":       func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
+		"safeURL":   func(s string) template.URL { return template.URL(s) },
+		"urlquery":  url.QueryEscape,
+		"hasPrefix": strings.HasPrefix,
+		"split":     func(s string) []string { return strings.Split(s, ",") },
+		"routeKey":  llm.RouteKey,
+		"price": func(p *llm.Price) string {
+			if p == nil {
+				return "preço desconhecido"
+			}
+			return fmt.Sprintf("US$ %g / %g", p.In, p.Out)
+		},
 		"helpAnchor": func(group string) string { return helpAnchors[group] },
 		"metricVal": func(kind string, v float64) string {
 			if strings.HasSuffix(kind, "_minutes") {

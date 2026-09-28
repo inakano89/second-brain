@@ -47,6 +47,8 @@ type modelsView struct {
 	Rounds        int
 	Effective     llm.CouncilConfig
 	Enabled       bool
+	Catalog       *llm.CatalogStatus
+	AutoSync      bool
 }
 
 var keyHelp = map[string]string{"anthropic": "claude", "openai": "openai", "gemini": "gemini", "ollama": "ollama"}
@@ -89,7 +91,7 @@ func (s *Server) modelsPage(w http.ResponseWriter, r *http.Request) {
 				pv.Models = append(pv.Models, e)
 			}
 		}
-		for _, sug := range llm.Suggestions[p] {
+		for _, sug := range s.LLM.Suggestions(p) {
 			if !slices.ContainsFunc(pv.Models, func(e llm.ModelEntry) bool { return e.Model == sug }) {
 				pv.Suggestions = append(pv.Suggestions, sug)
 			}
@@ -121,6 +123,11 @@ func (s *Server) modelsPage(w http.ResponseWriter, r *http.Request) {
 	v.JudgeOpts = v.MemberOpts
 	v.Rounds = s.Cfg.GetInt("LLM_COUNCIL_ROUNDS", 1)
 	v.Effective = s.LLM.CouncilSetup()
+	if s.Catalog != nil {
+		st := s.Catalog.Status()
+		v.Catalog = &st
+	}
+	v.AutoSync = s.Cfg.GetBool("LLM_MODELS_AUTO_SYNC")
 	s.render(w, "models", s.page(r, "Modelos", "models", v))
 }
 
@@ -171,21 +178,7 @@ func (s *Server) modelRemove(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	changes := map[string]string{"LLM_MODELS": strings.Join(kept, ",")}
-	for _, t := range llm.Tasks {
-		if s.LLM.Route(t.Key) == spec {
-			changes[llm.RouteKey(t.Key)] = p // fall back to the provider default
-		}
-	}
-	var members []string
-	for _, mem := range s.Cfg.GetList("LLM_COUNCIL_MEMBERS") {
-		if mem != spec {
-			members = append(members, mem)
-		}
-	}
-	changes["LLM_COUNCIL_MEMBERS"] = strings.Join(members, ",")
-	if s.Cfg.Get("LLM_COUNCIL_JUDGE") == spec {
-		changes["LLM_COUNCIL_JUDGE"] = p
-	}
+	llm.DetachSpecs(s.Cfg.Get, map[string]string{spec: p}, changes) // routes/council fall back to the provider default
 	s.saveModels(w, r, changes, "Modelo "+spec+" removido.")
 }
 
@@ -262,6 +255,25 @@ func (s *Server) modelCouncil(w http.ResponseWriter, r *http.Request) {
 		changes["LLM_COUNCIL_JUDGE"] = j
 	}
 	s.saveModels(w, r, changes, "Conselho atualizado.")
+}
+
+// modelSync fetches the curated catalogue from GitHub and applies it now.
+func (s *Server) modelSync(w http.ResponseWriter, r *http.Request) {
+	if s.Catalog == nil {
+		redirectFlash(w, r, "/models", "sincronização indisponível", true)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	st, err := s.Catalog.Sync(ctx, true)
+	switch {
+	case len(st.Changes) > 0:
+		redirectFlash(w, r, "/models#catalog", fmt.Sprintf("Catálogo atualizado (revisão %d): %s", st.Revision, strings.Join(st.Changes, " · ")), false)
+	case err != nil:
+		redirectFlash(w, r, "/models#catalog", st.Err, true)
+	default:
+		redirectFlash(w, r, "/models#catalog", fmt.Sprintf("O catálogo já está atualizado (revisão %d, %s).", st.Revision, st.Updated), false)
+	}
 }
 
 // modelTest sends a tiny prompt and returns an HTML snippet (htmx).

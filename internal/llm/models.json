@@ -1,0 +1,38 @@
+{
+  "revision": 2,
+  "updated": "2026-09-28",
+  "sources": {
+    "anthropic": "https://platform.claude.com/docs/pt-BR/models/overview",
+    "openai": "https://developers.openai.com/api/docs/models",
+    "gemini": "https://ai.google.dev/gemini-api/docs/models"
+  },
+  "providers": {
+    "anthropic": {
+      "default": "claude-opus-5-5",
+      "models": [
+        {"id": "claude-fable-5-1", "name": "Claude Fable 5.1", "price": [10, 50]},
+        {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "price": [4, 20]},
+        {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "price": [2, 10], "replaces": ["claude-sonnet-5"]},
+        {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "price": [1, 5]}
+      ]
+    },
+    "openai": {
+      "default": "gpt-6-astra",
+      "models": [
+        {"id": "gpt-6-astra", "name": "GPT-6 Astra", "price": [10, 50]},
+        {"id": "gpt-6-sol", "name": "GPT-6 Sol", "price": [2, 10]},
+        {"id": "gpt-6-luna", "name": "GPT-6 Luna", "price": [0.1, 0.5]}
+      ]
+    },
+    "gemini": {
+      "default": "gemini-3.1-pro-preview",
+      "models": [
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "price": [0.75, 3.75],
+         "price_changes": [{"from": "2027-01-01", "price": [1.5, 7.5]}]},
+        {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro (preview)", "price": [2, 12],
+         "long_context": {"above": 200000, "price": [4, 18]}}
+      ]
+    }
+  },
+  "watch_ignore": ["claude-haiku-4-5", "gemini-3.1-pro-preview-customtools"]
+}

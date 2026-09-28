@@ -51,11 +51,11 @@ var Schema = []Field{
 
 	// Models, per-task routing and council — managed on the /models page.
 	{Key: "LLM_MODELS", Label: "Catálogo de modelos", Group: "Modelos", Hidden: true, Help: "provedor:modelo separados por vírgula",
-		Default: "anthropic:claude-opus-5,anthropic:claude-sonnet-5,anthropic:claude-haiku-4-5,openai:gpt-4o-mini,openai:gpt-4.1,gemini:gemini-2.5-flash,gemini:gemini-2.5-pro,ollama:llama3.1"},
+		Default: "anthropic:claude-fable-5-1,anthropic:claude-opus-5-5,anthropic:claude-sonnet-5-5,anthropic:claude-haiku-4-5-20251001,openai:gpt-6-astra,openai:gpt-6-sol,openai:gpt-6-luna,gemini:gemini-3.8-flash,gemini:gemini-3.1-pro-preview,ollama:llama3.1"},
 	{Key: "DEFAULT_LLM_PROVIDER", Label: "Provedor padrão global", Group: "Modelos", Hidden: true, Default: "auto"},
-	{Key: "ANTHROPIC_MODEL", Label: "Modelo padrão Claude", Group: "Modelos", Hidden: true, Default: "claude-opus-5"},
-	{Key: "OPENAI_MODEL", Label: "Modelo padrão GPT", Group: "Modelos", Hidden: true, Default: "gpt-4o-mini"},
-	{Key: "GEMINI_MODEL", Label: "Modelo padrão Gemini", Group: "Modelos", Hidden: true, Default: "gemini-2.5-flash"},
+	{Key: "ANTHROPIC_MODEL", Label: "Modelo padrão Claude", Group: "Modelos", Hidden: true, Default: "claude-opus-5-5"},
+	{Key: "OPENAI_MODEL", Label: "Modelo padrão GPT", Group: "Modelos", Hidden: true, Default: "gpt-6-astra"},
+	{Key: "GEMINI_MODEL", Label: "Modelo padrão Gemini", Group: "Modelos", Hidden: true, Default: "gemini-3.1-pro-preview"},
 	{Key: "OLLAMA_MODEL", Label: "Modelo padrão local", Group: "Modelos", Hidden: true, Default: "llama3.1"},
 	{Key: "LLM_ROUTE_CHAT", Label: "Tarefa: chat web", Group: "Modelos", Hidden: true, Default: "auto"},
 	{Key: "LLM_ROUTE_TELEGRAM", Label: "Tarefa: Telegram", Group: "Modelos", Hidden: true, Default: "auto"},
@@ -119,6 +119,7 @@ var Schema = []Field{
 	{Key: "AUTO_UPDATE_ENABLED", Label: "Instalar atualizações automaticamente", Group: "Atualizações", Default: "true", Kind: "bool", Help: "Baixa, verifica (SHA-256/assinatura), instala e reinicia a partir das releases do GitHub."},
 	{Key: "UPDATE_CHANNEL", Label: "Canal", Group: "Atualizações", Default: "stable", Kind: "select", Options: []string{"stable", "prerelease"}},
 	{Key: "UPDATE_REPO", Label: "Repositório GitHub", Group: "Atualizações", Default: "inakano89/second-brain", Help: "owner/repo de onde as releases são baixadas"},
+	{Key: "LLM_MODELS_AUTO_SYNC", Label: "Atualizar lista de modelos de IA automaticamente", Group: "Atualizações", Default: "true", Kind: "bool", Help: "Todo dia baixa o catálogo de modelos do repositório: adiciona modelos novos, remove os descontinuados e segue o padrão recomendado (a menos que você tenha escolhido outro)."},
 
 	{Key: "CRON_MORNING", Label: "Briefing matinal", Group: "Agendamentos", Default: "0 7 * * *"},
 	{Key: "CRON_EVENING", Label: "Balanço noturno", Group: "Agendamentos", Default: "0 21 * * *"},
@@ -130,6 +131,7 @@ var Schema = []Field{
 	{Key: "CRON_CALENDAR", Label: "Calendar", Group: "Agendamentos", Default: "*/30 * * * *"},
 	{Key: "CRON_ZEPP", Label: "Zepp", Group: "Agendamentos", Default: "0 */4 * * *"},
 	{Key: "CRON_UPDATE", Label: "Verificar atualizações", Group: "Agendamentos", Default: "40 4 * * *"},
+	{Key: "CRON_MODELS", Label: "Atualizar catálogo de modelos", Group: "Agendamentos", Default: "50 4 * * *"},
 }
 
 var schemaIndex = func() map[string]Field {

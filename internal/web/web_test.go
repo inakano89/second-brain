@@ -85,7 +85,10 @@ func setup(t *testing.T) *env {
 	ag := agent.New(cfg, db, m, log)
 	gc := google.New(cfg, db, log)
 	ag.SetCalendar(gc)
-	srv, err := New(Deps{Cfg: cfg, DB: db, LLM: m, Agent: ag, Google: gc, Zepp: zepp.New(cfg, db, ag, log), Telegram: telegram.New(cfg, db, ag, log), Updater: updater.New(cfg, db, log, "dev", "", ""), Log: log, Version: "test"})
+	cat := llm.NewCatalogSync(cfg, m, db, log)
+	cat.URL = func() string { return "" } // offline: remote sync reports an error
+	cat.Init(context.Background())
+	srv, err := New(Deps{Cfg: cfg, DB: db, LLM: m, Catalog: cat, Agent: ag, Google: gc, Zepp: zepp.New(cfg, db, ag, log), Telegram: telegram.New(cfg, db, ag, log), Updater: updater.New(cfg, db, log, "dev", "", ""), Log: log, Version: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -208,7 +211,10 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// Models page: catalogue, defaults, routes, council.
-	e.expect(e.do("GET", "/models", nil, nil), 200, "Catálogo", "Conselho", "LLM_ROUTE_BRIEFING")
+	e.expect(e.do("GET", "/models", nil, nil), 200, "Catálogo", "Conselho", "LLM_ROUTE_BRIEFING", "Lista recomendada", "claude-opus-5-5", "US$ 4 / 20", "gpt-6-astra", "US$ 10 / 50", "gemini-3.1-pro-preview", "prompts acima de 200k tokens: US$ 4 / 18", "US$ 0.75 / 3.75")
+	if r := e.form("/models/sync", url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "error=") {
+		t.Fatalf("offline sync should report an error: %s", r.Header().Get("Location"))
+	}
 	e.expect(e.form("/models/add", url.Values{"provider": {"gemini"}, "model": {"gemini-9-ultra"}}), 303)
 	if !strings.Contains(e.cfg.Get("LLM_MODELS"), "gemini:gemini-9-ultra") {
 		t.Fatal("model not added")
@@ -232,7 +238,7 @@ func TestEndToEnd(t *testing.T) {
 	if e.cfg.Get("LLM_COUNCIL_MEMBERS") != "anthropic,gemini:gemini-9-ultra" || e.cfg.Get("LLM_COUNCIL_ROUNDS") != "2" {
 		t.Fatal("council not saved")
 	}
-	e.expect(e.form("/models/default", url.Values{"spec": {"gemini:gemini-2.5-flash"}}), 303)
+	e.expect(e.form("/models/default", url.Values{"spec": {"gemini:gemini-3.8-flash"}}), 303)
 	e.expect(e.form("/models/remove", url.Values{"spec": {"gemini:gemini-9-ultra"}}), 303)
 	if strings.Contains(e.cfg.Get("LLM_MODELS"), "gemini-9-ultra") || e.cfg.Get("LLM_ROUTE_ENRICH") != "gemini" || strings.Contains(e.cfg.Get("LLM_COUNCIL_MEMBERS"), "ultra") {
 		t.Fatal("remove did not clean routes/council")
