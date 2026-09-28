@@ -10,6 +10,16 @@
 
   <section class="card" id="catalog">
     <h2>1 · Catálogo e modelo padrão de cada empresa</h2>
+    <div class="catalog-sync">
+      <div>
+        {{with .Catalog}}📦 Lista recomendada: revisão <b>{{.Revision}}</b>{{if .Updated}} de {{.Updated}}{{end}}{{if .Source}} <small class="muted">({{.Source}})</small>{{end}}
+        {{if not .CheckedAt.IsZero}}<small class="muted">· verificada {{since .CheckedAt}}</small>{{end}}
+        {{if .Err}}<br><small class="warn">{{.Err}}</small>{{end}}<br>{{end}}
+        <small class="muted">{{if .AutoSync}}Todo dia o Second Brain baixa a lista recomendada: modelos novos entram, descontinuados saem e o ★ padrão acompanha a recomendação (a menos que você tenha escolhido outro).{{else}}Atualização automática da lista <b>desativada</b> (Configurações → Atualizações).{{end}}
+        Preços em US$ por 1 milhão de tokens (entrada / saída).</small>
+      </div>
+      <form method="post" action="/models/sync" class="inline"><button class="btn small">🔄 Sincronizar agora</button></form>
+    </div>
     <div class="providers">
     {{range .Providers}}
       <div class="provider {{if not .Configured}}off{{end}}">
@@ -21,7 +31,8 @@
           <tbody>
           {{range .Models}}
             <tr>
-              <td><code>{{.Model}}</code></td>
+              <td><code>{{.Model}}</code>{{if .Name}}<br><small class="muted">{{.Name}}</small>{{end}}{{if .Note}}<br><small class="warn">{{.Note}}</small>{{end}}</td>
+              <td class="nowrap"><small class="muted">{{if eq .Provider "ollama"}}grátis (local){{else}}{{price .Price}}{{end}}</small></td>
               <td>{{if .Default}}<span class="pill ok">★ padrão</span>{{else}}
                 <form method="post" action="/models/default" class="inline"><input type="hidden" name="spec" value="{{.Spec}}"><button class="btn small">Tornar padrão</button></form>{{end}}</td>
               <td class="r">

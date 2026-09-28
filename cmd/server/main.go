@@ -147,7 +147,11 @@ func main() {
 		}
 	}
 
-	deps := &scheduler.Deps{Cfg: cfg, DB: db, Agent: ag, Notifier: tg, PurgeTemp: tg.PurgeTemp, Update: upd.Run, Log: log.With("component", "routines")}
+	catalog := llm.NewCatalogSync(cfg, llmMgr, db, log)
+	catalog.Notify = tg.Notify
+	catalog.Init(context.Background())
+
+	deps := &scheduler.Deps{Cfg: cfg, DB: db, Agent: ag, Notifier: tg, PurgeTemp: tg.PurgeTemp, Update: upd.Run, Models: catalog.Run, Log: log.With("component", "routines")}
 	tg.Briefing = func(ctx context.Context) (string, error) { return deps.MorningBriefing(ctx, false) }
 
 	root, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -158,7 +162,7 @@ func main() {
 
 	hr := &httpRunner{log: log.With("component", "http")}
 	srv, err := web.New(web.Deps{
-		Cfg: cfg, DB: db, LLM: llmMgr, Agent: ag, Google: gc, Zepp: zc, Telegram: tg, Updater: upd, Log: log, Version: version,
+		Cfg: cfg, DB: db, LLM: llmMgr, Catalog: catalog, Agent: ag, Google: gc, Zepp: zc, Telegram: tg, Updater: upd, Log: log, Version: version,
 		Hooks: web.Hooks{Reload: sup.reload, Rebind: hr.rebind, Jobs: sup.jobs, RunJob: sup.runJob},
 	})
 	if err != nil {

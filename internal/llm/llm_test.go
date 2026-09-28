@@ -149,7 +149,7 @@ func TestHelpers(t *testing.T) {
 	if dot(v[0], v[1]) <= dot(v[0], v[2]) {
 		t.Fatal("local embedder similarity ordering")
 	}
-	p := NewPricing(`{"meu-modelo":[1,2]}`)
+	p := NewPricing(`{"meu-modelo":[1,2]}`, BuiltinCatalog())
 	if c := p.Cost("anthropic", "claude-opus-5-5", Usage{InputTokens: 1e6, OutputTokens: 1e6}); c != 24 {
 		t.Fatalf("pricing opus-5-5 = %v", c)
 	}

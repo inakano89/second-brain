@@ -54,17 +54,23 @@ type Pricing struct {
 	keys  []string
 }
 
-// NewPricing merges defaults with a JSON override {"prefix":[in,out]}.
-func NewPricing(override string) Pricing {
+// NewPricing merges defaults, curated catalogue prices and a JSON override
+// {"prefix":[in,out]} (later sources win).
+func NewPricing(override string, cat *CuratedCatalog) Pricing {
 	t := map[string]Price{}
 	for k, v := range DefaultPricing {
 		t[k] = v
+	}
+	if cat != nil {
+		for k, v := range cat.prices() {
+			t[k] = v
+		}
 	}
 	if strings.TrimSpace(override) != "" {
 		var o map[string][2]float64
 		if json.Unmarshal([]byte(override), &o) == nil {
 			for k, v := range o {
-				t[k] = Price{v[0], v[1]}
+				t[strings.ToLower(k)] = Price{v[0], v[1]}
 			}
 		}
 	}
@@ -76,10 +82,10 @@ func NewPricing(override string) Pricing {
 	return Pricing{table: t, keys: keys}
 }
 
-// Cost returns the USD estimate for usage on model.
-func (p Pricing) Cost(provider, model string, u Usage) float64 {
+// Lookup returns the price for model (longest matching prefix).
+func (p Pricing) Lookup(provider, model string) (Price, bool) {
 	if provider == "ollama" || strings.HasPrefix(model, "local") {
-		return 0
+		return Price{}, true
 	}
 	m := strings.TrimPrefix(strings.ToLower(model), "models/")
 	if i := strings.LastIndex(m, ":"); i >= 0 {
@@ -87,9 +93,14 @@ func (p Pricing) Cost(provider, model string, u Usage) float64 {
 	}
 	for _, k := range p.keys {
 		if strings.HasPrefix(m, k) {
-			pr := p.table[k]
-			return (float64(u.InputTokens)*pr.In + float64(u.OutputTokens)*pr.Out) / 1e6
+			return p.table[k], true
 		}
 	}
-	return 0
+	return Price{}, false
+}
+
+// Cost returns the USD estimate for usage on model (0 when the price is unknown).
+func (p Pricing) Cost(provider, model string, u Usage) float64 {
+	pr, _ := p.Lookup(provider, model)
+	return (float64(u.InputTokens)*pr.In + float64(u.OutputTokens)*pr.Out) / 1e6
 }

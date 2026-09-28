@@ -35,6 +35,7 @@ type Deps struct {
 	Notifier  Notifier
 	PurgeTemp func(age time.Duration) int
 	Update    JobFunc // self-update check/install (optional)
+	Models    JobFunc // curated model catalogue sync (optional)
 	Log       *slog.Logger
 }
 
@@ -65,6 +66,12 @@ func Register(s *Scheduler, d *Deps) error {
 			name, key string
 			fn        JobFunc
 		}{"update", "CRON_UPDATE", d.Update})
+	}
+	if d.Models != nil {
+		jobs = append(jobs, struct {
+			name, key string
+			fn        JobFunc
+		}{"models", "CRON_MODELS", d.Models})
 	}
 	var errs []error
 	for _, j := range jobs {

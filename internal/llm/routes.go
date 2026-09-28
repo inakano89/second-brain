@@ -118,18 +118,28 @@ func DefaultModelKey(provider string) string {
 	return ""
 }
 
-// Suggestions are well-known model ids offered when adding to the catalogue.
-var Suggestions = map[string][]string{
-	"anthropic": {"claude-opus-5", "claude-opus-5-5", "claude-sonnet-5", "claude-haiku-4-5", "claude-fable-5-1"},
-	"openai":    {"gpt-4o-mini", "gpt-4o", "gpt-4.1", "gpt-4.1-mini", "gpt-5", "gpt-5-mini"},
-	"gemini":    {"gemini-2.5-flash", "gemini-2.5-pro", "gemini-2.5-flash-lite"},
-	"ollama":    {"llama3.1", "qwen2.5", "gemma3", "mistral"},
+var localSuggestions = []string{"llama3.1", "qwen2.5", "gemma3", "mistral"}
+
+// Suggestions lists model ids offered when adding to the catalogue: the curated
+// list for cloud providers, common local models for Ollama.
+func (m *Manager) Suggestions(provider string) []string {
+	if provider == "ollama" {
+		return localSuggestions
+	}
+	var out []string
+	for _, e := range m.Curated().Providers[provider].Models {
+		out = append(out, e.ID)
+	}
+	return out
 }
 
 // ModelEntry is one catalogue item.
 type ModelEntry struct {
 	Provider   string
 	Model      string
+	Name       string // friendly name from the curated catalogue
+	Note       string
+	Price      *Price // nil when unknown
 	Default    bool
 	Configured bool
 }
@@ -175,10 +185,18 @@ func (m *Manager) Catalog() []ModelEntry {
 	for i, p := range ProviderNames {
 		order[p] = i
 	}
+	cur := m.Curated()
 	out := make([]ModelEntry, 0, len(specs))
 	for _, s := range specs {
 		p, mdl, _ := strings.Cut(s, ":")
-		out = append(out, ModelEntry{Provider: p, Model: mdl, Default: cfg.Get(DefaultModelKey(p)) == mdl, Configured: m.Configured(p)})
+		e := ModelEntry{Provider: p, Model: mdl, Default: cfg.Get(DefaultModelKey(p)) == mdl, Configured: m.Configured(p)}
+		if cm, ok := cur.Lookup(s); ok {
+			e.Name, e.Note = cm.Name, cm.Note
+		}
+		if pr, ok := m.PriceOf(p, mdl); ok && p != "ollama" {
+			e.Price = &pr
+		}
+		out = append(out, e)
 	}
 	sort.SliceStable(out, func(i, j int) bool { return order[out[i].Provider] < order[out[j].Provider] })
 	return out

@@ -45,6 +45,7 @@ type Deps struct {
 	Cfg      *config.Config
 	DB       *database.DB
 	LLM      *llm.Manager
+	Catalog  *llm.CatalogSync
 	Agent    *agent.Agent
 	Google   *google.Client
 	Zepp     *zepp.Client
@@ -132,6 +133,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /models/council", s.auth(s.modelCouncil))
 	mux.HandleFunc("POST /models/test", s.auth(s.modelTest))
 	mux.HandleFunc("GET /models/list", s.auth(s.modelList))
+	mux.HandleFunc("POST /models/sync", s.auth(s.modelSync))
 	mux.HandleFunc("GET /help", s.helpPage)
 	mux.HandleFunc("POST /telegram/authorize", s.auth(s.telegramAuthorize))
 	mux.HandleFunc("POST /telegram/revoke", s.auth(s.telegramRevoke))

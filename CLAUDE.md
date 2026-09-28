@@ -23,7 +23,7 @@ Identificadores e comentários de código ficam em inglês.
 | `cmd/server` | flags, supervisor de serviços, rebind de porta, restart pós-update |
 | `internal/config` | `.env` (lock + escrita atômica); **schema de todas as variáveis** em `schema.go` |
 | `internal/database` | SQLite WAL, migrações, FTS5, grafo, vetores, fila, logs |
-| `internal/llm` | provedores (OpenAI/Claude/Gemini/Ollama), roteamento por tarefa (`routes.go`), Conselho (`council.go`), preços |
+| `internal/llm` | provedores (OpenAI/Claude/Gemini/Ollama), roteamento por tarefa (`routes.go`), Conselho (`council.go`), catálogo curado + sync (`models.json`, `catalog*.go`), preços |
 | `internal/agent` | ingestão, enriquecimento, busca híbrida, chat RAG + tools, ações |
 | `internal/telegram`, `internal/integrations/*`, `internal/watcher` | canais de captura |
 | `internal/scheduler` | cron, rotinas, backup |
@@ -32,7 +32,7 @@ Identificadores e comentários de código ficam em inglês.
 
 ## Convenções
 
-- **Nova variável de config** → `internal/config/schema.go` (aparece no editor web; use `Hidden: true` se for gerida por outra página, como `/models`). Depois regenere o `.env.example`.
+- **Nova variável de config** → `internal/config/schema.go` (aparece no editor web; use `Hidden: true` se for gerida por outra página, como `/models`). Depois regenere o `.env.example` com `go test ./internal/config -run EnvExample -update-env-example` (o teste falha se ele ficar desatualizado).
 - **Migrações SQLite**: só acrescentar no fim de `internal/database/migrations.go`. Nunca editar uma migração já publicada.
 - **Chamadas externas lentas ou falíveis** → fila offline (`internal/queue`). Marque erros definitivos com `queue.Permanent`.
 - **LLM**: sempre via `llm.Manager`. O `Purpose` da requisição define a rota. Para criar uma tarefa roteável, adicione-a em `llm.Tasks` e crie a chave `LLM_ROUTE_*` no schema.
@@ -40,6 +40,23 @@ Identificadores e comentários de código ficam em inglês.
 - **Concorrência**: use goroutines (`errgroup`/`WaitGroup`) para I/O paralelo. Estado compartilhado sempre com mutex e testado com `-race`.
 - **Mudou um fluxo de configuração?** Atualize o `README.md` (usuários técnicos) e `internal/web/templates/help.html` (usuários leigos).
 - **Assets de release** se chamam `second-brain-<os>-<arch>[.exe]`, junto com `SHA256SUMS` (e `.sig`). O auto-update depende desses nomes.
+
+## Catálogo de modelos de IA (manter sempre atualizado)
+
+A lista recomendada de modelos fica em `internal/llm/models.json`. Cada instalação baixa esse arquivo do `main` uma vez por dia e o aplica sozinha, sem precisar de release: modelos novos entram, os que saíram da lista são removidos e o ★ padrão acompanha a recomendação.
+
+Fontes oficiais, que devem ser consultadas a cada atualização:
+- Claude: https://platform.claude.com/docs/pt-BR/models/overview
+- GPT: https://developers.openai.com/api/docs/models
+- Gemini: https://ai.google.dev/gemini-api/docs/models
+
+Para atualizar:
+1. Edite `models.json`: modelos, o `default` de cada provedor (escolhido pelo mantenedor) e o `price` `[entrada, saída]` em US$ por 1M tokens. Se o preço não for conhecido, deixe o campo de fora; nunca invente um.
+2. **Aumente `revision`** e atualize `updated`. Sem aumentar a revisão, nenhuma instalação aplica a mudança.
+3. Espelhe a lista nos defaults de `LLM_MODELS` e `*_MODEL` em `internal/config/schema.go`; um teste confere que batem.
+4. Regenere o `.env.example`, rode `make check` e abra o PR.
+
+O workflow **Models watch** (`.github/workflows/models-watch.yml`, toda segunda-feira) lê as três páginas com `cmd/modelswatch` e abre ou atualiza a issue `models-watch` quando aparece um modelo que ainda não está no catálogo. Para silenciar um ID, coloque-o em `watch_ignore`.
 
 ## Repositório público — segurança
 

@@ -33,12 +33,13 @@ type Manager struct {
 	embedder    Embedder
 	transcriber Transcriber
 	pricing     Pricing
+	curated     *CuratedCatalog
 	record      UsageFunc
 }
 
 // NewManager builds a Manager from configuration.
 func NewManager(cfg *config.Config, rec UsageFunc) *Manager {
-	m := &Manager{record: rec, cfg: cfg}
+	m := &Manager{record: rec, cfg: cfg, curated: BuiltinCatalog()}
 	m.Reload(cfg)
 	return m
 }
@@ -103,8 +104,35 @@ func (m *Manager) Reload(cfg *config.Config) {
 	m.cfg = cfg
 	m.providers, m.order, m.def = providers, order, def
 	m.embedder, m.transcriber = emb, tr
-	m.pricing = NewPricing(cfg.Get("LLM_PRICING"))
+	m.pricing = NewPricing(cfg.Get("LLM_PRICING"), m.curated)
 	m.mu.Unlock()
+}
+
+// SetCurated installs the curated catalogue used for prices, names and suggestions.
+func (m *Manager) SetCurated(c *CuratedCatalog) {
+	if c == nil {
+		return
+	}
+	m.mu.Lock()
+	m.curated = c
+	if m.cfg != nil {
+		m.pricing = NewPricing(m.cfg.Get("LLM_PRICING"), c)
+	}
+	m.mu.Unlock()
+}
+
+// Curated returns the active curated catalogue.
+func (m *Manager) Curated() *CuratedCatalog {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.curated
+}
+
+// PriceOf returns the known price of a model (USD per 1M tokens).
+func (m *Manager) PriceOf(provider, model string) (Price, bool) {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.pricing.Lookup(provider, model)
 }
 
 // Enabled reports whether at least one chat provider exists.

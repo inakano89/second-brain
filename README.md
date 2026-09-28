@@ -303,6 +303,7 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | Recurso | Como funciona |
 |---|---|
 | **Catálogo** (`LLM_MODELS`) | Lista `provedor:modelo`. Adicione ou remova pela UI. O botão “Ver modelos disponíveis na sua conta” consulta a API de cada provedor. |
+| **Lista recomendada** ([`internal/llm/models.json`](internal/llm/models.json)) | Modelos, padrões e preços mantidos neste repositório. Vem embutida no binário e, todo dia (`CRON_MODELS`), é baixada do `main` do `UPDATE_REPO`. Modelos novos entram, os descontinuados saem (junto com rotas e membros do Conselho que apontavam para eles) e o ★ padrão acompanha a recomendação, a menos que você tenha escolhido outro modelo. Desative com `LLM_MODELS_AUTO_SYNC=false`; botão **🔄 Sincronizar agora** em `/models`. |
 | **Padrão por empresa** | Um modelo ★ para Claude (`ANTHROPIC_MODEL`), GPT (`OPENAI_MODEL`), Gemini (`GEMINI_MODEL`) e Local (`OLLAMA_MODEL`). |
 | **Modelo por tarefa** (`LLM_ROUTE_*`) | Chat, Telegram, auto-tagging, visão/OCR, transcrição, eventos, e-mails, RSS, briefing e revisões. Cada tarefa aceita `auto`, `council`, `provedor` (usa o padrão dele) ou `provedor:modelo`. |
 | **🤝 Conselho** (`LLM_COUNCIL_*`) | 1. Os membros (padrão: Claude, GPT e Gemini) respondem em paralelo. 2. Em cada rodada de debate, cada um lê as respostas dos outros (anônimas) e revisa a sua. 3. O moderador escreve a decisão final e, no chat, pode chamar ferramentas. Se houver menos de 2 modelos configurados, cai para um modelo só. |
@@ -393,6 +394,7 @@ Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nome
 | `backup` | `CRON_BACKUP` | `0 4 * * *` | Snapshot cifrado para os destinos configurados |
 | `rss` / `gmail` / `calendar` / `zepp` | `CRON_*` | 30 / 15 / 30 min / 4 h | Enfileiram sincronizações (com retry offline) |
 | `update` | `CRON_UPDATE` | `40 4 * * *` | Verifica releases no GitHub e instala se `AUTO_UPDATE_ENABLED=true` (senão só notifica) |
+| `models` | `CRON_MODELS` | `50 4 * * *` | Aplica a lista recomendada de modelos de IA do repositório se `LLM_MODELS_AUTO_SYNC=true` |
 
 ---
 
@@ -472,12 +474,12 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 | RSS | `RSS_FEEDS`, `RSS_INTERESTS`, `RSS_MIN_SCORE`, `RSS_MAX_ITEMS` |
 | Backup | `BACKUP_ENCRYPTION_KEY`, `BACKUP_TARGETS`, `BACKUP_KEEP`, `S3_*`, `WEBDAV_*`, `BACKUP_TELEGRAM_CHAT_ID` |
 | Automação | `ACTIONS_ENABLED`, `ACTIONS_FILE`, `MQTT_BROKER`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` |
-| Atualizações | `AUTO_UPDATE_ENABLED`, `UPDATE_CHANNEL`, `UPDATE_REPO` |
-| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_ZEPP`, `CRON_UPDATE` |
+| Atualizações | `AUTO_UPDATE_ENABLED`, `UPDATE_CHANNEL`, `UPDATE_REPO`, `LLM_MODELS_AUTO_SYNC` |
+| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_ZEPP`, `CRON_UPDATE`, `CRON_MODELS` |
 
-**Modelos**: os padrões iniciais são `claude-opus-5`, `gpt-4o-mini`, `gemini-2.5-flash` e `llama3.1`. Gerencie-os em [Modelos de IA e Conselho](#modelos-de-ia-e-conselho). As chaves `LLM_MODELS`, `*_MODEL`, `LLM_ROUTE_*` e `LLM_COUNCIL_*` são editadas pela página `/models`.
+**Modelos**: os padrões vêm da [lista recomendada](internal/llm/models.json) (hoje `claude-opus-5-5`, `gpt-6-astra`, `gemini-3.1-pro-preview`, e `llama3.1` no local) e se atualizam sozinhos. Gerencie-os em [Modelos de IA e Conselho](#modelos-de-ia-e-conselho). As chaves `LLM_MODELS`, `*_MODEL`, `LLM_ROUTE_*` e `LLM_COUNCIL_*` são editadas pela página `/models`.
 
-**Custos**: estimados por tabela de preços (USD por 1M tokens, correspondência pelo maior prefixo do nome do modelo). Sobrescreva com `LLM_PRICING='{"meu-modelo":[0.5,1.5]}'`.
+**Custos**: estimados por tabela de preços (USD por 1M tokens, correspondência pelo maior prefixo do nome do modelo), com os preços da lista recomendada por cima. Modelo sem preço conhecido aparece como “preço desconhecido” em `/models` e conta US$ 0 no painel. Sobrescreva com `LLM_PRICING='{"meu-modelo":[0.5,1.5]}'`.
 
 Alterações feitas pelo editor web são aplicadas na hora: clientes LLM, ações e serviços de fundo são reiniciados, e mudanças de `HTTP_PORT`/`HTTP_HOST` migram o listener sem derrubar o processo. `DATA_DIR` exige reinício.
 

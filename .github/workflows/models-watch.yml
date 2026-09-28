@@ -1,0 +1,37 @@
+name: Models watch
+# Toda segunda-feira lê as páginas de modelos da Anthropic, OpenAI e Google e
+# abre (ou atualiza) uma issue quando aparecem modelos que ainda não estão em
+# internal/llm/models.json.
+on:
+  schedule:
+    - cron: "17 9 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  watch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      - name: Procurar modelos novos nas documentações
+        run: |
+          go build -o "$RUNNER_TEMP/modelswatch" ./cmd/modelswatch
+          "$RUNNER_TEMP/modelswatch" -out report.md 2>> "$GITHUB_STEP_SUMMARY"
+      - name: Abrir ou atualizar a issue
+        if: hashFiles('report.md') != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh label create models-watch --color 5319e7 --description "Modelos de IA novos nas documentações" --force
+          n="$(gh issue list --label models-watch --state open --json number --jq '.[0].number // empty')"
+          if [ -n "$n" ]; then
+            gh issue edit "$n" --body-file report.md
+          else
+            gh issue create --title "🧩 Modelos de IA novos nas documentações" --label models-watch --body-file report.md
+          fi

@@ -13,7 +13,8 @@ Obrigado pelo interesse! Issues e pull requests são bem-vindos.
 
 - Mantenha o binário **sem CGO** e sem dependências de runtime externas (assets via `embed.FS`, JS sem build step).
 - Toda chamada externa lenta/falível deve passar pela fila offline (`internal/queue`) ou tolerar ausência de rede.
-- Novas variáveis de configuração: registre em `internal/config/schema.go` (aparecem automaticamente no editor web) e regenere o `.env.example`.
+- Novas variáveis de configuração: registre em `internal/config/schema.go` (aparecem automaticamente no editor web) e regenere o `.env.example` (`go test ./internal/config -run EnvExample -update-env-example`).
+- Modelos de IA novos ou descontinuados: atualize `internal/llm/models.json` e aumente o `revision` (veja o `CLAUDE.md`).
 - Migrações do banco: **apenas adicione** entradas em `internal/database/migrations.go`; nunca edite uma já publicada.
 - Escreva testes para regras novas; rode `gofmt -w ./cmd ./internal` antes do commit.
 - Commits no estilo [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, `docs:`…) facilitam as notas de release.
