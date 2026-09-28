@@ -14,6 +14,7 @@ import (
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/desktop"
 	"github.com/inakano89/second-brain/internal/export"
 	"github.com/inakano89/second-brain/internal/integrations/google"
 	"github.com/inakano89/second-brain/internal/scheduler"
@@ -263,6 +264,9 @@ type settingsView struct {
 	GoogleCfg   bool
 	GoogleSvcs  []google.ServiceStatus
 	GoogleNew   bool // enabled services still missing permissions
+	Desktop     bool // Windows: login start and shutdown button
+	Autostart   bool
+	LogPath     string
 	InboxDir    string
 	RedirectURL string
 	PublicURL   string
@@ -300,6 +304,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	}
 	v := settingsView{EnvPath: s.Cfg.Path(), GoogleOK: s.Google.Connected(), GoogleCfg: s.Google.Configured(), RedirectURL: s.Google.RedirectURL(),
 		GoogleSvcs: s.Google.Status(), GoogleNew: s.Google.NeedsReconnect(), InboxDir: s.Cfg.GetPath("INBOX_DIR"),
+		Desktop: desktop.Supported(), LogPath: filepath.Join(s.Cfg.GetPath("DATA_DIR"), "second-brain.log"),
 		PublicURL: s.Cfg.PublicURL(), APIToken: s.Cfg.Get("API_TOKEN"), ActionsRaw: s.Agent.Actions().Raw(), ActionsPath: s.Agent.Actions().Path(), TelegramOK: s.Telegram.Enabled()}
 	for _, g := range config.Groups {
 		v.Groups = append(v.Groups, envGroup{Name: g, Fields: byGroup[g]})
@@ -320,6 +325,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		st := s.Updater.Status()
 		v.Update = &st
 	}
+	_, v.Autostart, _ = desktop.Autostart()
 	s.render(w, "settings", s.page(r, "Configurações", "settings", v))
 }
 
@@ -576,6 +582,43 @@ func (s *Server) googleSync(w http.ResponseWriter, r *http.Request) {
 func (s *Server) googleDisconnect(w http.ResponseWriter, r *http.Request) {
 	_ = s.Google.Disconnect(r.Context())
 	redirectFlash(w, r, "/settings#google", "Google desconectado.", false)
+}
+
+// ---- desktop (Windows) ----
+
+func (s *Server) autostartToggle(w http.ResponseWriter, r *http.Request) {
+	_, on, err := desktop.Autostart()
+	cmd := ""
+	if err == nil && !on {
+		cmd = desktop.Command(updater.Executable(), s.Cfg.Path())
+	}
+	if err == nil {
+		err = desktop.SetAutostart(cmd)
+	}
+	if err != nil {
+		redirectFlash(w, r, "/settings#desktop", "Início automático: "+err.Error(), true)
+		return
+	}
+	s.log.Info("início automático alterado", "enabled", cmd != "")
+	msg := "O Second Brain não vai mais iniciar com o Windows."
+	if cmd != "" {
+		msg = "Pronto: o Second Brain vai iniciar com o Windows, sem janela."
+	}
+	redirectFlash(w, r, "/settings#desktop", msg, false)
+}
+
+func (s *Server) shutdown(w http.ResponseWriter, r *http.Request) {
+	if s.Hooks.Shutdown == nil || !desktop.Supported() {
+		redirectFlash(w, r, "/settings", "encerrar pelo painel está disponível só no Windows", true)
+		return
+	}
+	s.log.Info("encerramento solicitado pelo painel")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	fmt.Fprint(w, "<!doctype html><meta charset=utf-8><title>Second Brain</title><p style=\"font-family:sans-serif\">Second Brain encerrado. Para abrir de novo, use o atalho ou reinicie o computador.</p>")
+	go func() {
+		time.Sleep(500 * time.Millisecond)
+		s.Hooks.Shutdown()
+	}()
 }
 
 // ---- self-update ----

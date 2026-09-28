@@ -25,6 +25,7 @@ import (
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/desktop"
 	"github.com/inakano89/second-brain/internal/importer"
 	"github.com/inakano89/second-brain/internal/integrations/google"
 	"github.com/inakano89/second-brain/internal/integrations/rss"
@@ -58,6 +59,8 @@ func main() {
 	importLLM := flag.Bool("import-llm", false, "com -import: analisa cada item com IA (custo de 1 chamada por item)")
 	importFetch := flag.Bool("import-fetch", false, "com -import: baixa o texto das páginas dos favoritos")
 	importTags := flag.String("import-tags", "", "com -import: tags extras separadas por vírgula")
+	background := flag.Bool("background", false, "Windows: roda sem janela, com log em DATA_DIR/second-brain.log (usado ao iniciar com o Windows)")
+	autostart := flag.String("autostart", "", "Windows: on inicia o Second Brain junto com o login do usuário; off desliga")
 	flag.Parse()
 
 	if *showVersion {
@@ -86,6 +89,28 @@ func main() {
 	if *resetPassword {
 		runResetPassword(cfg)
 		return
+	}
+	if *autostart != "" {
+		runAutostartCLI(cfg, *autostart)
+		return
+	}
+	interactive := !*background && !desktop.Detached() && os.Getenv(relaunchedEnv) == ""
+	if desktop.Supported() && !*updateNow && *importPath == "" {
+		// PCs: one instance only; a second double-click just opens the browser.
+		if instanceRunning(cfg) {
+			if !*background && !desktop.Detached() {
+				fmt.Println("O Second Brain já está rodando em", localURL(cfg))
+				_ = desktop.OpenBrowser(localURL(cfg))
+			}
+			return
+		}
+		if *background && !desktop.Detached() {
+			logPath := filepath.Join(cfg.GetPath("DATA_DIR"), "second-brain.log")
+			_ = os.MkdirAll(filepath.Dir(logPath), 0o755)
+			if err := desktop.Detach(logPath); err != nil {
+				fatal("modo em segundo plano", err)
+			}
+		}
 	}
 
 	exe := updater.Executable()
@@ -188,7 +213,7 @@ func main() {
 	hr := &httpRunner{log: log.With("component", "http")}
 	srv, err := web.New(web.Deps{
 		Cfg: cfg, DB: db, LLM: llmMgr, Catalog: catalog, Agent: ag, Google: gc, Importer: imp, Zepp: zc, Telegram: tg, Updater: upd, Log: log, Version: version,
-		Hooks: web.Hooks{Reload: sup.reload, Rebind: hr.rebind, Jobs: sup.jobs, RunJob: sup.runJob},
+		Hooks: web.Hooks{Reload: sup.reload, Rebind: hr.rebind, Jobs: sup.jobs, RunJob: sup.runJob, Shutdown: stop},
 	})
 	if err != nil {
 		fatal("falha ao iniciar web", err)
@@ -196,6 +221,9 @@ func main() {
 	hr.handler = srv.Handler()
 	if err := hr.start(cfg.Addr()); err != nil {
 		fatal("falha ao abrir porta HTTP", err)
+	}
+	if desktop.Supported() && interactive {
+		go func() { _ = desktop.OpenBrowser(localURL(cfg)) }()
 	}
 	if !cfg.SetupCompleted() {
 		log.Info("primeiro acesso: abra o navegador para concluir o setup", "url", fmt.Sprintf("http://localhost:%d/setup", cfg.GetInt("HTTP_PORT", 8080)))
@@ -218,13 +246,49 @@ func main() {
 	db.Close()
 	if relaunch {
 		stop()
-		next, env := upd.RelaunchPath(), []string(nil)
+		next, env := upd.RelaunchPath(), []string{relaunchedEnv + "=1"}
 		if next != exe && os.Getenv(updater.FallbackEnv) == "" {
 			env = append(env, updater.FallbackEnv+"="+exe)
 		}
 		if err := updater.Relaunch(next, env...); err != nil {
 			fatal("falha ao reiniciar após atualização", err)
 		}
+	}
+}
+
+// relaunchedEnv marks the process restarted after an update (no new browser tab).
+const relaunchedEnv = "SB_RELAUNCHED"
+
+func localURL(cfg *config.Config) string {
+	return fmt.Sprintf("http://localhost:%d", cfg.GetInt("HTTP_PORT", 8080))
+}
+
+// instanceRunning reports whether another Second Brain already answers on the configured port.
+func instanceRunning(cfg *config.Config) bool {
+	c := &http.Client{Timeout: 2 * time.Second}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", cfg.GetInt("HTTP_PORT", 8080)))
+	if err != nil {
+		return false
+	}
+	resp.Body.Close()
+	return resp.StatusCode == http.StatusOK
+}
+
+func runAutostartCLI(cfg *config.Config, v string) {
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "on", "true", "1", "sim":
+		cmd := desktop.Command(updater.Executable(), cfg.Path())
+		if err := desktop.SetAutostart(cmd); err != nil {
+			fatal("autostart", err)
+		}
+		fmt.Println("O Second Brain vai iniciar junto com o Windows, sem janela:", cmd)
+	case "off", "false", "0", "nao", "não":
+		if err := desktop.SetAutostart(""); err != nil {
+			fatal("autostart", err)
+		}
+		fmt.Println("Início automático desativado.")
+	default:
+		fatal("autostart", errors.New("use -autostart on ou -autostart off"))
 	}
 }
 
@@ -387,6 +451,7 @@ func (s *supervisor) start() {
 	ctx, cancel := context.WithCancel(s.root)
 	s.cancel = cancel
 	sched := scheduler.New(s.cfg.Location(), s.log)
+	sched.Store = s.db // catch up on routines missed while stopped
 	if err := scheduler.Register(sched, s.deps); err != nil {
 		s.log.Error("agendamentos inválidos", "err", err)
 	}

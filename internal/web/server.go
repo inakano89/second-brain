@@ -39,6 +39,8 @@ type Hooks struct {
 	Rebind func(addr string)
 	Jobs   func() []scheduler.JobInfo
 	RunJob func(name string) error
+	// Shutdown stops the server gracefully (desktop installs without a console window).
+	Shutdown func()
 }
 
 // Deps are the components the web layer needs.
@@ -163,6 +165,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /backup/now", s.auth(s.backupNow))
 	mux.HandleFunc("GET /backups/{file}", s.auth(s.backupDownload))
 
+	mux.HandleFunc("POST /settings/autostart", s.auth(s.autostartToggle))
+	mux.HandleFunc("POST /settings/shutdown", s.auth(s.shutdown))
 	mux.HandleFunc("POST /settings/updates/toggle", s.auth(s.updateToggle))
 	mux.HandleFunc("POST /settings/updates/check", s.auth(s.updateCheck))
 	mux.HandleFunc("POST /settings/updates/install", s.auth(s.updateInstall))

@@ -9,6 +9,7 @@
     <a href="#google">Google</a>
     <a href="#takeout">Google Takeout</a>
     <a href="#clipper">Web Clipper &amp; API</a>
+    {{if .Desktop}}<a href="#desktop">Este computador</a>{{end}}
     <a href="#updates">Atualizações</a>
     <a href="#actions">Agent actions</a>
     <a href="#backup">Backup &amp; export</a>
@@ -117,6 +118,20 @@
       </dl>
       {{if .TelegramOK}}<form method="post" action="/settings/telegram-test"><button class="btn small">Enviar teste no Telegram</button></form>{{end}}
     </section>
+
+    {{if .Desktop}}
+    <section class="card" id="desktop">
+      <h2>🖥️ Este computador (Windows)</h2>
+      <form method="post" action="/settings/autostart">
+        <button class="btn switch {{if .Autostart}}on{{end}}" title="Alternar">
+          <span class="knob"></span>
+          {{if .Autostart}}Iniciar com o Windows <b>ativado</b>{{else}}Iniciar com o Windows <b>desativado</b>{{end}}
+        </button>
+      </form>
+      <p class="muted">Ativado, o Second Brain abre sozinho quando você entra no Windows, sem janela, e continua rodando em segundo plano. Rotinas perdidas enquanto o computador estava desligado (backup, atualização, briefing da manhã…) rodam alguns minutos depois de ligar. Log: <code>{{.LogPath}}</code></p>
+      <form method="post" action="/settings/shutdown"><button class="btn danger small" data-confirm="Encerrar o Second Brain agora?">Encerrar o Second Brain</button></form>
+    </section>
+    {{end}}
 
     <section class="card" id="updates">
       <h2>⬆️ Atualizações</h2>

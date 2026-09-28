@@ -139,6 +139,8 @@ mkdir -p ~/brain && cd ~/brain
 
 > Todos os caminhos relativos (`DATA_DIR`, `INBOX_DIR`, `ACTIONS_FILE`) são resolvidos a partir da pasta do `.env`.
 
+**Windows (PC que não fica ligado 24/7):** dois cliques no `.exe` abrem o servidor numa janela de console e o navegador; um segundo clique só reabre o navegador (instância única). Em **Configurações → Este computador** (ou `second-brain.exe -autostart on`) o Second Brain passa a iniciar no login do usuário, sem janela (chave `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` com `-background`; log em `DATA_DIR/second-brain.log`). O botão **Encerrar o Second Brain** fica na mesma seção. Rotinas perdidas com o PC desligado são recuperadas ao ligar (veja [Rotinas agendadas](#rotinas-agendadas)).
+
 ### Docker
 
 A imagem é multi-arch (`linux/amd64`, `linux/arm64`, `linux/arm/v7`), baseada em `scratch`, e tem `HEALTHCHECK`.
@@ -221,6 +223,8 @@ Para expor na internet, use um proxy reverso com TLS (Caddy, nginx, Traefik) e d
 | `-decrypt arquivo.enc -out brain.db [-key …]` | restaura um backup cifrado |
 | `-healthcheck` | retorna 0 se o servidor local responde (usado pelo Docker) |
 | `-import arquivo [mais arquivos…]` | importa e sai (até 2 GB por arquivo). Opções: `-import-llm`, `-import-fetch`, `-import-tags a,b` |
+| `-autostart on\|off` | Windows: liga/desliga o início automático no login (sem janela) |
+| `-background` | Windows: roda sem janela de console, com log em `DATA_DIR/second-brain.log` (usado pelo início automático) |
 
 ---
 
@@ -451,6 +455,8 @@ curl -X POST https://brain.exemplo.com/api/health/webhook \
 
 Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nomes e `@daily`/`@hourly`…). Use `off` para desativar. Todas podem ser disparadas manualmente no Painel.
 
+**Rotinas perdidas** (PC desligado, programa fechado, suspensão): a última execução bem-sucedida de cada rotina fica gravada no banco (`scheduler.last.<job>`). Ao iniciar, o que deveria ter rodado nesse intervalo roda **uma vez**, em ordem cronológica e uma de cada vez, 2 minutos após subir; falhas continuam pendentes e são tentadas de novo no próximo início. Relatórios com hora certa têm janela: `morning` até 5 h depois do horário, `evening` até 3 h, `weekly` até 3 dias; fora dela são pulados. A mesma regra vale ao acordar de suspensão/hibernação. Como `update` e `models` também são recuperados, um PC ligado só de dia continua recebendo atualizações.
+
 | Job | Variável | Padrão | Descrição |
 |---|---|---|---|
 | `morning` | `CRON_MORNING` | `0 7 * * *` | Briefing matinal: sono/recuperação + agenda + tarefas atrasadas/do dia → Telegram e painel |
@@ -588,7 +594,7 @@ Estrutura de testes: parsing SSE de cada provedor com servidores mock (incluindo
 - O Bot API do Telegram limita downloads a 20 MB e uploads a 50 MB (backups maiores devem usar S3/WebDAV).
 - O embedder local é léxico-semântico (hashing); para similaridade semântica real configure embeddings OpenAI, Gemini ou Ollama.
 - A transcrição de voz requer OpenAI (Whisper) ou Gemini.
-- No Windows, o auto-update reinicia o processo em primeiro plano; se rodar como serviço (NSSM/sc), prefira desativar o auto-update ou configure o serviço para reiniciar automaticamente.
+- No Windows, o auto-update reinicia o processo (sem janela quando iniciado com `-background`); se rodar como serviço (NSSM/sc), prefira desativar o auto-update ou configure o serviço para reiniciar automaticamente. Ao iniciar com `-background`, uma janela de console pode piscar por um instante antes de o processo passar para segundo plano.
 
 ---
 

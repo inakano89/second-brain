@@ -201,6 +201,16 @@ func TestEndToEnd(t *testing.T) {
 		t.Fatal("settings not saved")
 	}
 
+	// Windows-only controls are hidden and refused elsewhere.
+	if rec := e.do("GET", "/settings", nil, nil); strings.Contains(rec.Body.String(), `id="desktop"`) {
+		t.Fatal("desktop card shown outside Windows")
+	}
+	for _, p := range []string{"/settings/autostart", "/settings/shutdown"} {
+		if r := e.form(p, url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "error=") {
+			t.Fatalf("%s: %d %s", p, r.Code, r.Header().Get("Location"))
+		}
+	}
+
 	if !e.cfg.GetBool("AUTO_UPDATE_ENABLED") {
 		t.Fatal("setup should enable auto-update")
 	}

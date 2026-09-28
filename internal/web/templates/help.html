@@ -233,8 +233,10 @@
       <h3>Windows</h3>
       <ol class="steps">
         <li>Baixe <code>second-brain-windows-amd64.exe</code> em <a href="https://github.com/inakano89/second-brain/releases/latest" target="_blank" rel="noopener">Releases</a> e coloque numa pasta própria (ex.: <code>C:\SecondBrain</code>).</li>
-        <li>Dê dois cliques e abra <a href="http://localhost:{{.Port}}">http://localhost:{{.Port}}</a>. Se o Windows avisar, clique <b>Mais informações → Executar assim mesmo</b> e permita no firewall.</li>
+        <li>Dê dois cliques. O navegador abre em <a href="http://localhost:{{.Port}}">http://localhost:{{.Port}}</a>. Se o Windows avisar, clique <b>Mais informações → Executar assim mesmo</b> e permita no firewall.</li>
+        <li>Para não depender da janela aberta: <b>Configurações → Este computador → Iniciar com o Windows</b>. A partir do próximo login ele abre sozinho, sem janela. Para parar, use o botão <b>Encerrar o Second Brain</b> na mesma seção.</li>
       </ol>
+      <p class="muted">Computador desligado à noite? Sem problema: o que ficou para trás (backup, atualização, sincronizações, briefing da manhã) roda alguns minutos depois de ligar. Veja <a href="#schedules">Agendamentos</a>.</p>
     </section>
 
     <section class="card" id="docker">
@@ -278,6 +280,7 @@ docker compose up -d</pre></li>
     <section class="card" id="schedules">
       <h2>⏰ Agendamentos</h2>
       <p>Formato cron com 5 campos: <code>minuto hora dia mês dia-da-semana</code>. Exemplos: <code>0 7 * * *</code> = todo dia às 7h; <code>30 21 * * 1-5</code> = dias úteis às 21h30; <code>*/15 * * * *</code> = a cada 15 min; <code>off</code> desativa.</p>
+      <p><b>E se o computador estiver desligado no horário?</b> A rotina roda uma vez quando o Second Brain voltar a abrir (cerca de 2 minutos depois), inclusive a verificação de atualizações e o backup. O briefing da manhã só é enviado até 5 horas depois do horário marcado, o balanço da noite até 3 horas e a revisão semanal até 3 dias; depois disso ficam para o próximo ciclo.</p>
     </section>
 
     <section class="card" id="faq">

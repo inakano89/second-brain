@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/inakano89/second-brain/internal/config"
+	"github.com/inakano89/second-brain/internal/desktop"
 	"github.com/inakano89/second-brain/internal/extract"
 )
 
@@ -161,6 +162,7 @@ func (a *Actions) Run(ctx context.Context, name, input string) (string, error) {
 		var buf bytes.Buffer
 		cmd := exec.CommandContext(ctx, act.Command, args...)
 		cmd.Stdout, cmd.Stderr = &buf, &buf
+		cmd.SysProcAttr = desktop.NoWindow()
 		err = cmd.Run()
 		out = buf.String()
 	}

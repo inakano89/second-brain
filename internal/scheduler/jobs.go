@@ -47,40 +47,38 @@ func Register(s *Scheduler, d *Deps) error {
 			return err
 		}
 	}
-	jobs := []struct {
+	type entry struct {
 		name, key string
 		fn        JobFunc
-	}{
-		{"morning", "CRON_MORNING", func(ctx context.Context) error { _, err := d.MorningBriefing(ctx, true); return err }},
-		{"evening", "CRON_EVENING", func(ctx context.Context) error { _, err := d.EveningReview(ctx, true); return err }},
-		{"weekly", "CRON_WEEKLY", func(ctx context.Context) error { _, err := d.WeeklyReview(ctx, true); return err }},
-		{"maintenance", "CRON_MAINTENANCE", d.Maintenance},
-		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }},
-		{"rss", "CRON_RSS", enqueue(rss.TaskPoll)},
-		{"gmail", "CRON_GMAIL", enqueue(google.TaskGmailSync)},
-		{"calendar", "CRON_CALENDAR", enqueue(google.TaskCalendarSync)},
-		{"drive", "CRON_DRIVE", enqueue(google.TaskDriveSync)},
-		{"contacts", "CRON_CONTACTS", enqueue(google.TaskContactsSync)},
-		{"google-tasks", "CRON_GOOGLE_TASKS", enqueue(google.TaskTasksSync)},
-		{"youtube", "CRON_YOUTUBE", enqueue(google.TaskYouTubeSync)},
-		{"takeout", "CRON_TAKEOUT", enqueue(google.TaskTakeoutSync)},
-		{"zepp", "CRON_ZEPP", enqueue(zepp.TaskSync)},
+		opts      []JobOption
+	}
+	// Missed runs (PC off, program closed, sleep) are caught up at start; reports that
+	// only make sense near their time have a window.
+	jobs := []entry{
+		{"morning", "CRON_MORNING", func(ctx context.Context) error { _, err := d.MorningBriefing(ctx, true); return err }, []JobOption{CatchUpWithin(5 * time.Hour)}},
+		{"evening", "CRON_EVENING", func(ctx context.Context) error { _, err := d.EveningReview(ctx, true); return err }, []JobOption{CatchUpWithin(3 * time.Hour)}},
+		{"weekly", "CRON_WEEKLY", func(ctx context.Context) error { _, err := d.WeeklyReview(ctx, true); return err }, []JobOption{CatchUpWithin(72 * time.Hour)}},
+		{"maintenance", "CRON_MAINTENANCE", d.Maintenance, nil},
+		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }, nil},
+		{"rss", "CRON_RSS", enqueue(rss.TaskPoll), nil},
+		{"gmail", "CRON_GMAIL", enqueue(google.TaskGmailSync), nil},
+		{"calendar", "CRON_CALENDAR", enqueue(google.TaskCalendarSync), nil},
+		{"drive", "CRON_DRIVE", enqueue(google.TaskDriveSync), nil},
+		{"contacts", "CRON_CONTACTS", enqueue(google.TaskContactsSync), nil},
+		{"google-tasks", "CRON_GOOGLE_TASKS", enqueue(google.TaskTasksSync), nil},
+		{"youtube", "CRON_YOUTUBE", enqueue(google.TaskYouTubeSync), nil},
+		{"takeout", "CRON_TAKEOUT", enqueue(google.TaskTakeoutSync), nil},
+		{"zepp", "CRON_ZEPP", enqueue(zepp.TaskSync), nil},
 	}
 	if d.Update != nil {
-		jobs = append(jobs, struct {
-			name, key string
-			fn        JobFunc
-		}{"update", "CRON_UPDATE", d.Update})
+		jobs = append(jobs, entry{"update", "CRON_UPDATE", d.Update, nil})
 	}
 	if d.Models != nil {
-		jobs = append(jobs, struct {
-			name, key string
-			fn        JobFunc
-		}{"models", "CRON_MODELS", d.Models})
+		jobs = append(jobs, entry{"models", "CRON_MODELS", d.Models, nil})
 	}
 	var errs []error
 	for _, j := range jobs {
-		if err := s.Add(j.name, d.Cfg.Get(j.key), j.fn); err != nil {
+		if err := s.Add(j.name, d.Cfg.Get(j.key), j.fn, j.opts...); err != nil {
 			errs = append(errs, err)
 		}
 	}
