@@ -1,0 +1,37 @@
+# Second Brain + Caddy (HTTPS automático com Let's Encrypt).
+#   1. Aponte o domínio (registro DNS A) para o IP desta máquina e libere as portas 80/443.
+#   2. echo "DOMAIN=brain.seudominio.com" > .env
+#   3. docker compose -f docker-compose.https.yml up -d
+services:
+  second-brain:
+    image: ghcr.io/inakano89/second-brain:latest
+    container_name: second-brain
+    restart: unless-stopped
+    environment:
+      - PUBLIC_URL=https://${DOMAIN:?defina DOMAIN no arquivo .env}
+    volumes:
+      - brain-data:/data
+    expose:
+      - "8080"
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: second-brain-caddy
+    restart: unless-stopped
+    depends_on:
+      - second-brain
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    environment:
+      - DOMAIN=${DOMAIN}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data
+      - caddy-config:/config
+
+volumes:
+  brain-data:
+  caddy-data:
+  caddy-config:

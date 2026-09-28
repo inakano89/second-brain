@@ -127,17 +127,18 @@ func TestInstallFromMockGitHubWithSignature(t *testing.T) {
 	writeMarker(exe, marker{From: "v1.0.0", To: "v1.1.0"})
 	logf := func(string, ...any) {}
 	for i := 0; i < maxBootAttempts; i++ {
-		if recoverStep(exe, logf) {
+		if recoverStep(exe, "", logf) != "" {
 			t.Fatal("rolled back too early")
 		}
 	}
-	if !recoverStep(exe, logf) {
+	if recoverStep(exe, "", logf) != exe {
 		t.Fatal("expected rollback")
 	}
 	if b, _ := os.ReadFile(exe); string(b) != "old" || !isSkipped(exe, "v1.1.0") {
 		t.Fatal("rollback did not restore previous binary / skip bad version")
 	}
 	u3 := New(cfg, db, log, "v1.0.0", "", exe)
+	u3.inCtr = func() bool { return false }
 	if u3.newer("v1.1.0") {
 		t.Fatal("skipped version offered again")
 	}

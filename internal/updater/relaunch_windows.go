@@ -9,10 +9,10 @@ import (
 
 // Relaunch starts exe as a new process with the same arguments and exits.
 // (Windows cannot replace the running process image.)
-func Relaunch(exe string) error {
+func Relaunch(exe string, env ...string) error {
 	cmd := exec.Command(exe, os.Args[1:]...)
 	cmd.Stdin, cmd.Stdout, cmd.Stderr = os.Stdin, os.Stdout, os.Stderr
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), env...)
 	if wd, err := os.Getwd(); err == nil {
 		cmd.Dir = wd
 	}

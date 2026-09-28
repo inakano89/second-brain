@@ -4,14 +4,12 @@
   <div class="chat-head">
     <label>Modelo
       <select id="provider" name="provider">
-        <option value="">Padrão (auto)</option>
-        {{range .Data.Providers}}
-        <option value="{{.Name}}" {{if .Default}}selected{{end}}>{{.Name}} · {{.Model}}</option>
-        {{end}}
-        <option value="__custom">Outro modelo…</option>
+        <option value="">Padrão da tarefa Chat ({{.Data.Route}})</option>
+        <option value="council">🤝 Conselho ({{len .Data.Council.Members}} modelos debatem)</option>
+        {{range .Data.Catalog}}{{if .Configured}}<option value="{{.Spec}}">{{.Spec}}{{if .Default}} ★{{end}}</option>{{end}}{{end}}
       </select>
     </label>
-    <input id="custom-model" placeholder="provedor:modelo (ex: anthropic:claude-sonnet-5)" hidden>
+    <a class="btn small" href="/models">⚙ Modelos</a>
     <form method="post" action="/chat/reset"><button class="btn small">🧹 Nova conversa</button></form>
   </div>
   {{if not .Data.Enabled}}<div class="flash err">Nenhum provedor LLM configurado. Adicione uma chave em Configurações.</div>{{end}}

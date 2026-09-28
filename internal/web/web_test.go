@@ -100,7 +100,8 @@ func TestEndToEnd(t *testing.T) {
 	if rec.Code != http.StatusSeeOther || rec.Header().Get("Location") != "/setup" {
 		t.Fatalf("expected setup redirect, got %d %s", rec.Code, rec.Header().Get("Location"))
 	}
-	e.expect(e.do("GET", "/setup", nil, nil), 200, "Primeiro acesso")
+	e.expect(e.do("GET", "/setup", nil, nil), 200, "Primeiro acesso", "/help#telegram")
+	e.expect(e.do("GET", "/help", nil, nil), 200, "@BotFather", "Voltar ao setup")
 	e.expect(e.form("/setup", url.Values{"username": {"admin"}, "password": {"curta"}, "password2": {"curta"}, "http_port": {"8080"}}), 400, "ao menos 8")
 	rec = e.form("/setup", url.Values{
 		"brain_name": {"Cérebro Teste"}, "username": {"admin"}, "password": {"senha-forte-1"}, "password2": {"senha-forte-1"},
@@ -204,6 +205,51 @@ func TestEndToEnd(t *testing.T) {
 	}
 	if r := e.form("/settings/updates/install", url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "error=") {
 		t.Fatalf("dev build install should be refused: %s", r.Header().Get("Location"))
+	}
+
+	// Models page: catalogue, defaults, routes, council.
+	e.expect(e.do("GET", "/models", nil, nil), 200, "Catálogo", "Conselho", "LLM_ROUTE_BRIEFING")
+	e.expect(e.form("/models/add", url.Values{"provider": {"gemini"}, "model": {"gemini-9-ultra"}}), 303)
+	if !strings.Contains(e.cfg.Get("LLM_MODELS"), "gemini:gemini-9-ultra") {
+		t.Fatal("model not added")
+	}
+	e.expect(e.form("/models/default", url.Values{"spec": {"gemini:gemini-9-ultra"}}), 303)
+	if e.cfg.Get("GEMINI_MODEL") != "gemini-9-ultra" {
+		t.Fatal("default not set")
+	}
+	if r := e.form("/models/remove", url.Values{"spec": {"gemini:gemini-9-ultra"}}); !strings.Contains(r.Header().Get("Location"), "error=") {
+		t.Fatal("removing a default model must be refused")
+	}
+	e.expect(e.form("/models/routes", url.Values{"LLM_ROUTE_ENRICH": {"gemini:gemini-9-ultra"}, "LLM_ROUTE_TRANSCRIPTION": {"anthropic"}}), 303)
+	if e.cfg.Get("LLM_ROUTE_ENRICH") == "gemini:gemini-9-ultra" {
+		t.Fatal("invalid transcription route should abort the save")
+	}
+	e.expect(e.form("/models/routes", url.Values{"LLM_ROUTE_ENRICH": {"gemini:gemini-9-ultra"}, "LLM_ROUTE_CHAT": {"council"}}), 303)
+	if e.cfg.Get("LLM_ROUTE_ENRICH") != "gemini:gemini-9-ultra" || e.cfg.Get("LLM_ROUTE_CHAT") != "council" {
+		t.Fatal("routes not saved")
+	}
+	e.expect(e.form("/models/council", url.Values{"member": {"anthropic", "gemini:gemini-9-ultra"}, "judge": {"anthropic"}, "rounds": {"2"}}), 303)
+	if e.cfg.Get("LLM_COUNCIL_MEMBERS") != "anthropic,gemini:gemini-9-ultra" || e.cfg.Get("LLM_COUNCIL_ROUNDS") != "2" {
+		t.Fatal("council not saved")
+	}
+	e.expect(e.form("/models/default", url.Values{"spec": {"gemini:gemini-2.5-flash"}}), 303)
+	e.expect(e.form("/models/remove", url.Values{"spec": {"gemini:gemini-9-ultra"}}), 303)
+	if strings.Contains(e.cfg.Get("LLM_MODELS"), "gemini-9-ultra") || e.cfg.Get("LLM_ROUTE_ENRICH") != "gemini" || strings.Contains(e.cfg.Get("LLM_COUNCIL_MEMBERS"), "ultra") {
+		t.Fatal("remove did not clean routes/council")
+	}
+	e.expect(e.do("GET", "/chat", nil, nil), 200, `value="council"`)
+
+	// Telegram pairing: pending user → authorize.
+	e.cfg.Update(map[string]string{"TELEGRAM_BOT_TOKEN": "123:fake"})
+	e.db.KVSetJSON(ctx, "telegram.pending", []map[string]any{{"id": 777, "username": "fulano", "first_name": "Fulano"}})
+	e.expect(e.do("GET", "/settings", nil, nil), 200, "Aguardando autorização", "Fulano")
+	e.expect(e.form("/telegram/authorize", url.Values{"id": {"777"}}), 303)
+	if !strings.Contains(e.cfg.Get("ALLOWED_TELEGRAM_USER_IDS"), "777") {
+		t.Fatal("telegram user not authorized")
+	}
+	e.expect(e.form("/telegram/revoke", url.Values{"id": {"777"}}), 303)
+	if strings.Contains(e.cfg.Get("ALLOWED_TELEGRAM_USER_IDS"), "777") {
+		t.Fatal("telegram user not revoked")
 	}
 
 	rec = e.do("GET", "/export/obsidian", nil, nil)

@@ -109,3 +109,12 @@
 </tr>
 {{end}}
 {{end}}
+
+{{define "model_list"}}
+{{if not .IDs}}<p class="muted">Nenhum modelo retornado pela API.</p>{{end}}
+<div class="remote-ids">
+{{range .IDs}}
+  <form method="post" action="/models/add" class="inline"><input type="hidden" name="provider" value="{{$.Provider}}"><input type="hidden" name="model" value="{{.}}"><button class="btn small" title="Adicionar ao catálogo">+ {{.}}</button></form>
+{{end}}
+</div>
+{{end}}

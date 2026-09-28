@@ -14,5 +14,5 @@ jobs:
           go-version-file: go.mod
       - name: gofmt
         run: test -z "$(gofmt -l ./cmd ./internal)"
-      - name: vet + test + cross-compile (linux/amd64, linux/arm/v7, windows/amd64)
+      - name: vet + test + cross-compile (linux amd64/arm64/armv7, windows amd64)
         run: make check

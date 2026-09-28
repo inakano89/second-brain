@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log/slog"
 	"strings"
 	"sync"
 
@@ -17,6 +18,7 @@ type UsageFunc func(provider, model, purpose string, u Usage, costUSD float64)
 // ProviderInfo describes a configured provider for the UI selector.
 type ProviderInfo struct {
 	Name    string `json:"name"`
+	Label   string `json:"label"`
 	Model   string `json:"model"`
 	Default bool   `json:"default"`
 }
@@ -24,10 +26,10 @@ type ProviderInfo struct {
 // Manager routes requests to configured providers and records usage.
 type Manager struct {
 	mu          sync.RWMutex
+	cfg         *config.Config
 	providers   map[string]Provider
 	order       []string
 	def         string
-	multimodal  string
 	embedder    Embedder
 	transcriber Transcriber
 	pricing     Pricing
@@ -36,7 +38,7 @@ type Manager struct {
 
 // NewManager builds a Manager from configuration.
 func NewManager(cfg *config.Config, rec UsageFunc) *Manager {
-	m := &Manager{record: rec}
+	m := &Manager{record: rec, cfg: cfg}
 	m.Reload(cfg)
 	return m
 }
@@ -71,16 +73,6 @@ func (m *Manager) Reload(cfg *config.Config) {
 	if _, ok := providers[def]; !ok && len(order) > 0 {
 		def = order[0]
 	}
-	mm := cfg.Get("MULTIMODAL_PROVIDER")
-	if _, ok := providers[mm]; !ok {
-		mm = ""
-		for _, n := range []string{"gemini", "anthropic", "openai", "ollama"} {
-			if _, ok := providers[n]; ok {
-				mm = n
-				break
-			}
-		}
-	}
 	var emb Embedder = LocalEmbedder{Dim: 512}
 	switch cfg.Get("EMBEDDING_PROVIDER") {
 	case "openai":
@@ -108,7 +100,8 @@ func (m *Manager) Reload(cfg *config.Config) {
 		tr = openai
 	}
 	m.mu.Lock()
-	m.providers, m.order, m.def, m.multimodal = providers, order, def, mm
+	m.cfg = cfg
+	m.providers, m.order, m.def = providers, order, def
 	m.embedder, m.transcriber = emb, tr
 	m.pricing = NewPricing(cfg.Get("LLM_PRICING"))
 	m.mu.Unlock()
@@ -121,23 +114,38 @@ func (m *Manager) Enabled() bool {
 	return len(m.providers) > 0
 }
 
+// Configured reports whether a provider has credentials.
+func (m *Manager) Configured(provider string) bool {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	_, ok := m.providers[provider]
+	return ok
+}
+
 // Providers lists configured providers.
 func (m *Manager) Providers() []ProviderInfo {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	var out []ProviderInfo
 	for _, n := range m.order {
-		out = append(out, ProviderInfo{Name: n, Model: m.providers[n].Model(), Default: n == m.def})
+		out = append(out, ProviderInfo{Name: n, Label: ProviderLabel(n), Model: m.providers[n].Model(), Default: n == m.def})
 	}
 	return out
 }
 
-// Resolve parses "provider[:model]" (empty = default).
+// DefaultProvider returns the global fallback provider name.
+func (m *Manager) DefaultProvider() string {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	return m.def
+}
+
+// Resolve parses "provider[:model]" (empty/"auto" = default provider).
 func (m *Manager) Resolve(spec string) (Provider, string, error) {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
 	name, model, _ := strings.Cut(strings.TrimSpace(spec), ":")
-	if name == "" || name == "auto" {
+	if name == "" || name == SpecAuto {
 		name = m.def
 	}
 	p, ok := m.providers[name]
@@ -145,15 +153,35 @@ func (m *Manager) Resolve(spec string) (Provider, string, error) {
 		if len(m.providers) == 0 {
 			return nil, "", ErrNoProvider
 		}
-		return nil, "", fmt.Errorf("llm: provedor %q não configurado", name)
+		return nil, "", fmt.Errorf("%w: %q", ErrNotConfigured, name)
 	}
 	return p, model, nil
+}
+
+// routeSpec turns an empty spec into the configured route for the request purpose,
+// degrading to "auto" when the routed provider has no credentials.
+func (m *Manager) routeSpec(spec, purpose string) string {
+	spec = strings.TrimSpace(spec)
+	if spec == "" {
+		if task := TaskForPurpose(purpose); task != "" {
+			spec = m.Route(task)
+		}
+	}
+	if spec == "" || spec == SpecAuto || spec == SpecCouncil {
+		return spec
+	}
+	name, _, _ := strings.Cut(spec, ":")
+	if !m.Configured(name) {
+		slog.Warn("modelo roteado sem credenciais; usando automático", "component", "llm", "spec", spec, "purpose", purpose)
+		return SpecAuto
+	}
+	return spec
 }
 
 func (m *Manager) candidates(spec string) []string {
 	m.mu.RLock()
 	defer m.mu.RUnlock()
-	if spec != "" && spec != "auto" {
+	if spec != "" && spec != SpecAuto {
 		return []string{spec}
 	}
 	out := []string{m.def}
@@ -175,8 +203,8 @@ func (m *Manager) account(resp *Response, purpose string) {
 	m.record(resp.Provider, resp.Model, purpose, resp.Usage, cost)
 }
 
-// Stream runs a streaming completion on one provider (no fallback: text may already be emitted).
-func (m *Manager) Stream(ctx context.Context, spec string, req Request, onText StreamFunc) (*Response, error) {
+// streamOne runs a streaming completion on exactly one provider.
+func (m *Manager) streamOne(ctx context.Context, spec string, req Request, onText StreamFunc) (*Response, error) {
 	p, model, err := m.Resolve(spec)
 	if err != nil {
 		return nil, err
@@ -192,14 +220,28 @@ func (m *Manager) Stream(ctx context.Context, spec string, req Request, onText S
 	return resp, nil
 }
 
-// Complete runs a non-streamed completion; with empty spec it fails over across providers.
+// Stream runs a streaming completion. An empty spec follows the task route for
+// req.Purpose; "council" runs a multi-model deliberation and streams the synthesis.
+func (m *Manager) Stream(ctx context.Context, spec string, req Request, onText StreamFunc) (*Response, error) {
+	spec = m.routeSpec(spec, req.Purpose)
+	if spec == SpecCouncil {
+		return m.Council(ctx, req, onText, nil)
+	}
+	return m.streamOne(ctx, spec, req, onText)
+}
+
+// Complete runs a non-streamed completion; "auto" fails over across providers.
 func (m *Manager) Complete(ctx context.Context, spec string, req Request) (*Response, error) {
+	spec = m.routeSpec(spec, req.Purpose)
+	if spec == SpecCouncil {
+		return m.Council(ctx, req, nil, nil)
+	}
 	var lastErr error = ErrNoProvider
 	for _, c := range m.candidates(spec) {
 		if c == "" {
 			continue
 		}
-		resp, err := m.Stream(ctx, c, req, nil)
+		resp, err := m.streamOne(ctx, c, req, nil)
 		if err == nil {
 			return resp, nil
 		}
@@ -225,15 +267,24 @@ func (m *Manager) CompleteJSON(ctx context.Context, spec string, req Request, ou
 	return nil
 }
 
-// Multimodal runs a request with images/audio/documents on the multimodal provider.
+var visionOrder = []string{"gemini", "anthropic", "openai", "ollama"}
+
+// Multimodal runs a request with images/audio/documents using the "vision" route.
 func (m *Manager) Multimodal(ctx context.Context, req Request) (*Response, error) {
-	m.mu.RLock()
-	spec := m.multimodal
-	m.mu.RUnlock()
+	spec := m.routeSpec(m.Route(TaskVision), "")
+	if spec == "" || spec == SpecAuto || spec == SpecCouncil {
+		spec = ""
+		for _, n := range visionOrder {
+			if m.Configured(n) {
+				spec = n
+				break
+			}
+		}
+	}
 	if spec == "" {
 		return nil, ErrNoProvider
 	}
-	return m.Complete(ctx, spec, req)
+	return m.streamOne(ctx, spec, req, nil)
 }
 
 // EmbedModel returns the active embedding model id.
@@ -265,13 +316,16 @@ func (m *Manager) Embed(ctx context.Context, texts []string) ([][]float32, strin
 	return vecs, e.EmbedModel(), nil
 }
 
-// Transcribe converts audio to text (OpenAI Whisper, else Gemini audio understanding).
+// Transcribe converts audio to text following the "transcription" route
+// (OpenAI Whisper or Gemini audio understanding).
 func (m *Manager) Transcribe(ctx context.Context, audio []byte, filename, mime string) (string, error) {
 	m.mu.RLock()
 	tr := m.transcriber
-	_, hasGemini := m.providers["gemini"]
 	m.mu.RUnlock()
-	if tr != nil {
+	hasGemini := m.Configured("gemini")
+	route, _, _ := strings.Cut(m.Route(TaskTranscription), ":")
+	useGemini := route == "gemini" && hasGemini
+	if tr != nil && !useGemini {
 		text, cost, err := tr.Transcribe(ctx, audio, filename, mime)
 		if err == nil {
 			if m.record != nil {
@@ -286,11 +340,11 @@ func (m *Manager) Transcribe(ctx context.Context, audio []byte, filename, mime s
 	if !hasGemini {
 		return "", errors.New("llm: transcrição requer OpenAI (Whisper) ou Gemini")
 	}
-	resp, err := m.Complete(ctx, "gemini", Request{
+	resp, err := m.streamOne(ctx, "gemini", Request{
 		Purpose:  "transcription",
 		System:   "Você é um transcritor. Transcreva fielmente o áudio no idioma original. Responda apenas com a transcrição, sem comentários.",
 		Messages: []Message{{Role: RoleUser, Content: "Transcreva este áudio.", Parts: []Part{{Type: PartAudio, MIME: mime, Data: audio, Name: filename}}}},
-	})
+	}, nil)
 	if err != nil {
 		return "", err
 	}

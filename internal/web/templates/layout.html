@@ -17,9 +17,11 @@
   <nav>
     <a href="/" class="{{if eq .Active "graph"}}active{{end}}">Mindmap</a>
     <a href="/chat" class="{{if eq .Active "chat"}}active{{end}}">Chat</a>
+    <a href="/models" class="{{if eq .Active "models"}}active{{end}}">Modelos</a>
     <a href="/dashboard" class="{{if eq .Active "dashboard"}}active{{end}}">Painel</a>
     <a href="/logs" class="{{if eq .Active "logs"}}active{{end}}">Audit log</a>
     <a href="/settings" class="{{if eq .Active "settings"}}active{{end}}">Configurações</a>
+    <a href="/help" class="{{if eq .Active "help"}}active{{end}}">❓ Ajuda</a>
   </nav>
   <form method="post" action="/logout" class="logout"><button class="link">Sair ({{.User}})</button></form>
 </header>

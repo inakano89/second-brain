@@ -8,23 +8,16 @@
   var fileInput = document.getElementById("chat-file");
   var fileName = document.getElementById("chat-file-name");
   var provider = document.getElementById("provider");
-  var custom = document.getElementById("custom-model");
   var sendBtn = document.getElementById("chat-send");
   var busy = false;
 
   try {
     var saved = localStorage.getItem("sb.provider");
     if (saved !== null && provider.querySelector('option[value="' + CSS.escape(saved) + '"]')) provider.value = saved;
-    var savedCustom = localStorage.getItem("sb.custom");
-    if (savedCustom) custom.value = savedCustom;
   } catch (e) {}
-  function syncCustom() { custom.hidden = provider.value !== "__custom"; }
   provider.addEventListener("change", function () {
-    syncCustom();
     try { localStorage.setItem("sb.provider", provider.value); } catch (e) {}
   });
-  custom.addEventListener("change", function () { try { localStorage.setItem("sb.custom", custom.value); } catch (e) {} });
-  syncCustom();
 
   function esc(s) {
     return s.replace(/[&<>"']/g, function (c) { return { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]; });
@@ -90,8 +83,7 @@
     if (!msg && !fileInput.files.length) return;
     var fd = new FormData();
     fd.append("message", msg);
-    var prov = provider.value === "__custom" ? custom.value.trim() : provider.value;
-    fd.append("provider", prov);
+    fd.append("provider", provider.value);
     if (fileInput.files.length) fd.append("file", fileInput.files[0]);
 
     var ub = bubble("user");
@@ -100,10 +92,13 @@
 
     var ab = bubble("assistant");
     var ctxEl = document.createElement("div"); ctxEl.className = "ctx"; ctxEl.hidden = true;
+    var councilEl = document.createElement("details"); councilEl.className = "council"; councilEl.hidden = true;
+    var councilSum = document.createElement("summary"); councilEl.appendChild(councilSum);
+    var councilCount = 0;
     var toolsEl = document.createElement("div");
     var body = document.createElement("div"); body.className = "cursor";
     var usage = document.createElement("div"); usage.className = "usage";
-    ab.append(ctxEl, toolsEl, body, usage);
+    ab.append(ctxEl, councilEl, toolsEl, body, usage);
     scroll();
 
     busy = true; sendBtn.disabled = true;
@@ -123,6 +118,20 @@
           ctxEl.hidden = false;
           ctxEl.innerHTML = "🔎 contexto: " + d.map(function (n) { return '<a href="/?focus=' + n.id + '">' + esc(n.title) + "</a>"; }).join(" ");
           break;
+        case "council_start":
+          councilEl.hidden = false;
+          councilSum.textContent = "🤝 Conselho deliberando: " + (d.members || []).join(" · ") + " → moderador " + (d.judge || "");
+          break;
+        case "council":
+          councilCount++;
+          var op = document.createElement("div"); op.className = "opinion" + (d.error ? " failed" : "");
+          var h = document.createElement("div"); h.className = "op-head";
+          h.textContent = (d.round === 0 ? "Resposta inicial" : "Revisão " + d.round) + " · " + d.label + " — " + d.spec;
+          var b = document.createElement("div"); b.className = "op-body";
+          if (d.error) b.textContent = "❌ " + d.error; else b.innerHTML = md(d.text || "");
+          op.append(h, b); councilEl.appendChild(op);
+          councilSum.textContent = councilSum.textContent.replace(/ \(\d+ respostas\)$/, "") + " (" + councilCount + " respostas)";
+          scroll(); break;
         case "tool_call":
           var t = document.createElement("div"); t.className = "toolev";
           t.textContent = "🔧 " + d.name + "(" + (d.arguments || "").slice(0, 160) + ")";

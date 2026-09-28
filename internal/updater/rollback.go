@@ -73,61 +73,73 @@ func Executable() string {
 	return exe
 }
 
+// FallbackEnv names the environment variable carrying the image binary path
+// while a container overlay binary is running.
+const FallbackEnv = "SB_FALLBACK_EXE"
+
 // Recover must run first thing at startup. It counts boots of a freshly
-// installed version; after maxBootAttempts unconfirmed starts it restores
-// exe.old, blacklists the bad version and relaunches the previous binary.
+// installed version; after maxBootAttempts unconfirmed starts it restores the
+// previous binary (exe.old, or the container image binary), blacklists the bad
+// version and relaunches.
 func Recover(exe string, logf func(format string, a ...any)) {
-	if !recoverStep(exe, logf) {
+	next := recoverStep(exe, os.Getenv(FallbackEnv), logf)
+	if next == "" {
 		return
 	}
-	if err := Relaunch(exe); err != nil {
+	if err := Relaunch(next); err != nil {
 		logf("rollback concluído; reinicie manualmente: %v", err)
 		os.Exit(1)
 	}
 }
 
-// recoverStep updates the boot counter and performs the file rollback when due.
-func recoverStep(exe string, logf func(format string, a ...any)) (rolledBack bool) {
+// recoverStep updates the boot counter and performs the file rollback when due,
+// returning the binary to relaunch ("" = keep running).
+func recoverStep(exe, fallback string, logf func(format string, a ...any)) string {
 	if exe == "" {
-		return false
+		return ""
 	}
 	m, err := readMarker(exe)
 	if err != nil {
-		return false
+		return ""
 	}
 	m.Attempts++
 	if m.Attempts <= maxBootAttempts {
 		_ = writeMarker(exe, *m)
-		return false
+		return ""
 	}
 	old := exe + ".old"
-	if _, err := os.Stat(old); err != nil {
-		logf("atualização para %s não confirmada, mas %s não existe; mantendo versão atual", m.To, old)
+	_, oldErr := os.Stat(old)
+	if oldErr != nil && (fallback == "" || fallback == exe) {
+		logf("atualização para %s não confirmada, mas não há versão anterior; mantendo a atual", m.To)
 		os.Remove(markerPath(exe))
-		return false
+		return ""
 	}
 	logf("versão %s falhou %d inicializações; revertendo para %s", m.To, m.Attempts-1, m.From)
 	failed := exe + ".failed"
 	os.Remove(failed)
 	if err := os.Rename(exe, failed); err != nil {
 		logf("rollback: %v", err)
-		return false
+		return ""
+	}
+	addSkip(exe, m.To)
+	os.Remove(markerPath(exe))
+	os.Remove(exe + ".version")
+	if oldErr != nil {
+		return fallback // container: go back to the image binary
 	}
 	if err := os.Rename(old, exe); err != nil {
 		_ = os.Rename(failed, exe)
 		logf("rollback: %v", err)
-		return false
+		return ""
 	}
-	addSkip(exe, m.To)
-	os.Remove(markerPath(exe))
-	return true
+	return exe
 }
 
 // ConfirmAfter marks the running version healthy after d without shutdown,
 // removing the rollback marker and notifying the user.
 func (u *Updater) ConfirmAfter(ctx context.Context, d time.Duration) {
-	m, err := readMarker(u.exe)
-	if err != nil {
+	m, err := readMarker(u.target())
+	if err != nil || m.To != u.current {
 		return
 	}
 	select {
@@ -135,7 +147,7 @@ func (u *Updater) ConfirmAfter(ctx context.Context, d time.Duration) {
 		return
 	case <-time.After(d):
 	}
-	if err := os.Remove(markerPath(u.exe)); err != nil && !errors.Is(err, os.ErrNotExist) {
+	if err := os.Remove(markerPath(u.target())); err != nil && !errors.Is(err, os.ErrNotExist) {
 		u.log.Warn("falha ao confirmar atualização", "err", err)
 		return
 	}

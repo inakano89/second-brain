@@ -137,3 +137,24 @@ func readSSE(r io.Reader, fn func(event, data string) error) error {
 		}
 	}
 }
+
+// getJSON performs an authenticated GET and decodes the JSON body.
+func getJSON(ctx context.Context, provider, url string, headers map[string]string, out any) error {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return err
+	}
+	for k, v := range headers {
+		req.Header.Set(k, v)
+	}
+	resp, err := HTTPClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 8192))
+		return &APIError{Provider: provider, Status: resp.StatusCode, Body: string(b)}
+	}
+	return json.NewDecoder(resp.Body).Decode(out)
+}

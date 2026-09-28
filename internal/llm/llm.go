@@ -102,6 +102,7 @@ type Response struct {
 	Usage      Usage
 	StopReason string
 	Raw        json.RawMessage
+	Council    []Opinion // set when the answer came from a council deliberation
 }
 
 // AssistantMessage converts a response into a replayable assistant turn.
@@ -148,12 +149,15 @@ func (e *APIError) Error() string {
 // ErrNoProvider is returned when no LLM is configured.
 var ErrNoProvider = errors.New("llm: nenhum provedor configurado")
 
+// ErrNotConfigured is returned when a specific provider has no credentials.
+var ErrNotConfigured = errors.New("llm: provedor não configurado")
+
 // IsRetryable reports whether err is transient (network, 429, 5xx).
 func IsRetryable(err error) bool {
 	if err == nil {
 		return false
 	}
-	if errors.Is(err, ErrNoProvider) || errors.Is(err, context.Canceled) {
+	if errors.Is(err, ErrNoProvider) || errors.Is(err, ErrNotConfigured) || errors.Is(err, context.Canceled) {
 		return false
 	}
 	var ae *APIError

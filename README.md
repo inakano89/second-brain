@@ -6,7 +6,7 @@
 [![CI](https://github.com/inakano89/second-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/inakano89/second-brain/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)
 ![CGO](https://img.shields.io/badge/CGO-disabled-success)
-![Plataformas](https://img.shields.io/badge/linux%2Famd64%20·%20linux%2Farm%2Fv7%20·%20windows%2Famd64-informational)
+![Plataformas](https://img.shields.io/badge/linux%2Famd64%20·%20arm64%20·%20arm%2Fv7%20·%20windows%2Famd64-informational)
 [![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/inakano89/second-brain?sort=semver)](https://github.com/inakano89/second-brain/releases)
 
@@ -19,9 +19,11 @@
 - [Destaques](#destaques)
 - [Arquitetura](#arquitetura)
 - [Instalação](#instalação)
+- [Guia para leigos](#guia-para-leigos)
 - [Primeiro acesso](#primeiro-acesso-setup-wizard)
 - [Interface web](#interface-web)
 - [Canais de captura](#canais-de-captura)
+- [Modelos de IA e Conselho](#modelos-de-ia-e-conselho)
 - [IA, grafo e agentes](#ia-grafo-e-agentes)
 - [Integrações](#integrações)
 - [Rotinas agendadas](#rotinas-agendadas)
@@ -44,6 +46,7 @@
 | **Binário único** | Go puro (`CGO_ENABLED=0`), templates/HTMX/CSS/JS embutidos via `embed.FS`, timezone database embutida. Roda em VPS, SBC ARM 32-bit (Armbian) e Windows. |
 | **Banco** | SQLite via `modernc.org/sqlite` em modo **WAL**, índice **FTS5** (`unicode61 remove_diacritics`), grafo (`nodes`/`edges`), vetores, métricas, audit log e fila offline. |
 | **LLM universal** | OpenAI, Anthropic Claude, Google Gemini e LLM local (Ollama / llama.cpp / LM Studio via API compatível com OpenAI) com **streaming**, **function calling** e **multimodal** (imagem, PDF, áudio). |
+| **Modelos por tarefa + Conselho** | Catálogo de modelos gerenciável pela UI, um padrão por empresa e um modelo (ou o **🤝 Conselho**, em que Claude, GPT e Gemini debatem e um moderador decide) para cada tarefa. |
 | **Grafo de conhecimento** | Nós tipados (Notas, Tarefas, Pessoas, Eventos, Insights, Artigos, Saúde), auto-tagging, extração de entidades/tarefas, auto-linking semântico, `[[wiki-links]]`. |
 | **Busca híbrida** | BM25 (FTS5) + similaridade vetorial executadas em paralelo e fundidas por *Reciprocal Rank Fusion*, com filtros de tipo, data e tag. |
 | **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters. |
@@ -103,6 +106,14 @@ cmd/signer/                   gera chaves e assina SHA256SUMS das releases (ed25
 
 ## Instalação
 
+### Linux em 1 comando (VPS, Raspberry/Orange Pi)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/inakano89/second-brain/main/deploy/install.sh | sudo bash
+```
+
+O script detecta a arquitetura (x86-64, ARM64, ARMv7), baixa a última release e confere o SHA-256. Depois instala em `/opt/second-brain`, cria o usuário `brain` e um serviço systemd com hardening. Rodar de novo atualiza o binário.
+
 ### Binário pré-compilado
 
 Baixe o binário da sua plataforma em **[Releases](https://github.com/inakano89/second-brain/releases)**:
@@ -110,6 +121,7 @@ Baixe o binário da sua plataforma em **[Releases](https://github.com/inakano89/
 | Plataforma | Arquivo |
 |---|---|
 | Linux x86-64 (VPS Ubuntu/Debian) | `second-brain-linux-amd64` |
+| Linux ARM64 (Oracle Ampere, Hetzner CAX, Raspberry Pi OS 64-bit) | `second-brain-linux-arm64` |
 | Linux ARMv7 32-bit (Armbian, Raspberry Pi OS 32-bit, Orange Pi…) | `second-brain-linux-armv7` |
 | Windows x64 | `second-brain-windows-amd64.exe` |
 
@@ -124,25 +136,40 @@ mkdir -p ~/brain && cd ~/brain
 
 ### Docker
 
-Imagem multi-arch (`linux/amd64`, `linux/arm/v7`) baseada em `scratch`:
+A imagem é multi-arch (`linux/amd64`, `linux/arm64`, `linux/arm/v7`), baseada em `scratch`, e tem `HEALTHCHECK`.
+
+**Com domínio e HTTPS automático (Caddy + Let's Encrypt)** — recomendado para VPS:
+
+```bash
+mkdir -p ~/second-brain && cd ~/second-brain
+curl -fsSLO https://raw.githubusercontent.com/inakano89/second-brain/main/deploy/docker-compose.https.yml
+curl -fsSLO https://raw.githubusercontent.com/inakano89/second-brain/main/deploy/Caddyfile
+echo "DOMAIN=brain.seudominio.com" > .env      # DNS A → IP da VPS; portas 80/443 liberadas
+docker compose -f docker-compose.https.yml up -d
+```
+
+**Só IP e porta:**
 
 ```bash
 docker run -d --name second-brain -p 8080:8080 -v brain-data:/data --restart unless-stopped \
   ghcr.io/inakano89/second-brain:latest
 ```
 
-Ou com `docker compose up -d` usando o [`docker-compose.yml`](docker-compose.yml) do repositório.
+Ou use `docker compose up -d` com o [`docker-compose.yml`](docker-compose.yml) do repositório.
 
-> A imagem `scratch` não contém shell nem utilitários: ações do tipo `command` só funcionam com o binário nativo.
+- Os dados (`.env`, banco, backups, mídia) ficam no volume `/data`.
+- **As atualizações automáticas também funcionam no Docker.** O binário novo é salvo em `/data/data/bin/`, e a imagem passa a executá-lo nos próximos inícios, com rollback se ele falhar. Um `docker compose pull` que traga uma imagem mais nova tem prioridade.
+- Para redefinir a senha: `docker compose exec second-brain /second-brain -env /data/.env -reset-password`.
+- A imagem `scratch` não tem shell. Por isso as ações do tipo `command` só funcionam com o binário nativo.
 
 ### Compilando do código-fonte
 
-Requer Go 1.26+.
+Requer Go 1.26+ (desenvolvido e testado com Go 1.27.1).
 
 ```bash
 git clone https://github.com/inakano89/second-brain && cd second-brain
-make check      # vet + testes + verifica compilação dos 3 alvos (sem gerar artefatos)
-make release    # dist/second-brain-{linux-amd64,linux-armv7,windows-amd64.exe} + SHA256SUMS
+make check      # vet + testes + verifica compilação de todos os alvos (sem gerar artefatos)
+make release    # dist/second-brain-{linux-amd64,linux-arm64,linux-armv7,windows-amd64.exe} + SHA256SUMS
 make sign       # assina dist/SHA256SUMS com UPDATE_SIGNING_KEY (opcional)
 make docker-buildx IMAGE=ghcr.io/voce/second-brain
 ```
@@ -160,7 +187,7 @@ Wants=network-online.target
 User=brain
 WorkingDirectory=/opt/brain
 ExecStart=/opt/brain/second-brain -env /opt/brain/.env
-Restart=on-failure
+Restart=always
 RestartSec=5
 NoNewPrivileges=true
 ProtectSystem=strict
@@ -176,6 +203,34 @@ journalctl -u second-brain -f
 ```
 
 Para expor na internet, use um proxy reverso com TLS (Caddy, nginx, Traefik) e defina `PUBLIC_URL=https://…`. Para SSE funcionar no nginx, desabilite buffering (`proxy_buffering off;`).
+
+### Parâmetros de linha de comando
+
+| Flag | Uso |
+|---|---|
+| `-env caminho` | arquivo `.env` (padrão `./.env`) |
+| `-version` | mostra a versão |
+| `-update` | verifica e instala a última release e sai |
+| `-reset-password` | define nova senha de administrador (lê do terminal) |
+| `-reset-setup` | reabre o assistente `/setup` |
+| `-decrypt arquivo.enc -out brain.db [-key …]` | restaura um backup cifrado |
+| `-healthcheck` | retorna 0 se o servidor local responde (usado pelo Docker) |
+
+---
+
+## Guia para leigos
+
+A interface tem uma página **❓ Ajuda** (`/help`), acessível até antes do setup. Ela traz passo a passo com links diretos para:
+
+- obter as chaves de API do Claude, GPT e Gemini;
+- instalar um modelo local;
+- criar o bot do Telegram;
+- configurar Google Agenda/Gmail;
+- configurar Zepp, RSS, Web Clipper e backup em S3/WebDAV/Telegram;
+- instalar em VPS com ou sem Docker e configurar HTTPS com domínio;
+- resolver os problemas mais comuns.
+
+Os formulários de setup e de configurações têm links “❓ como configurar” para a seção certa.
 
 ---
 
@@ -213,8 +268,9 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 
 ### Telegram
 
-1. Crie um bot com [@BotFather](https://t.me/BotFather) e informe o token.
-2. Envie `/start` ao bot para descobrir seu user ID e adicione-o em `ALLOWED_TELEGRAM_USER_IDS` (mensagens de outros IDs são ignoradas e registradas no audit log).
+1. Crie um bot com [@BotFather](https://t.me/BotFather) e informe o token em Configurações.
+2. Envie `/start` ao bot. Ele responde com seu ID e você aparece em **Configurações → Telegram → Aguardando autorização**. Clique em **Autorizar**. (Também dá para preencher `ALLOWED_TELEGRAM_USER_IDS` manualmente.)
+3. Mensagens de quem não foi autorizado são ignoradas e registradas no audit log.
 
 | Entrada | Comportamento |
 |---|---|
@@ -222,7 +278,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | 🎙️ Voz / áudio | Download do `.ogg` → transcrição (Whisper ou Gemini Audio) → nota categorizada (pode virar tarefa/insight) → grafo. |
 | 🖼️ Foto | Visão multimodal (Gemini / Claude / GPT-4o): OCR, descrição e tabelas em Markdown. |
 | 📄 Documento | PDF (texto local ou OCR multimodal para digitalizados), Markdown, TXT, HTML. |
-| Comandos | `/note`, `/task`, `/event` (linguagem natural → Google Calendar), `/search`, `/tasks`, `/done <id>`, `/brief`, `/model <provedor[:modelo]>`, `/reset`. |
+| Comandos | `/note`, `/task`, `/event` (linguagem natural → Google Calendar), `/search`, `/tasks`, `/done <id>`, `/brief`, `/model` (lista; `/model council` ativa o Conselho), `/reset`. |
 
 Mídia é processada pela fila offline: sem conexão com o LLM, o bot avisa e reprocessa automaticamente.
 
@@ -237,6 +293,24 @@ Arquivos colocados em `INBOX_DIR` (padrão `./inbox`) são detectados via **fsno
 ### RSS e newsletters
 
 `RSS_FEEDS` (um por linha) é consultado em paralelo; itens novos (≤ 7 dias) são pontuados em lote pelo LLM segundo `RSS_INTERESTS`, e os com nota ≥ `RSS_MIN_SCORE` viram artigos resumidos. Newsletters do Gmail (`GMAIL_NEWSLETTER_QUERY`) são resumidas em tópicos.
+
+---
+
+## Modelos de IA e Conselho
+
+Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
+
+| Recurso | Como funciona |
+|---|---|
+| **Catálogo** (`LLM_MODELS`) | Lista `provedor:modelo`. Adicione ou remova pela UI. O botão “Ver modelos disponíveis na sua conta” consulta a API de cada provedor. |
+| **Padrão por empresa** | Um modelo ★ para Claude (`ANTHROPIC_MODEL`), GPT (`OPENAI_MODEL`), Gemini (`GEMINI_MODEL`) e Local (`OLLAMA_MODEL`). |
+| **Modelo por tarefa** (`LLM_ROUTE_*`) | Chat, Telegram, auto-tagging, visão/OCR, transcrição, eventos, e-mails, RSS, briefing e revisões. Cada tarefa aceita `auto`, `council`, `provedor` (usa o padrão dele) ou `provedor:modelo`. |
+| **🤝 Conselho** (`LLM_COUNCIL_*`) | 1. Os membros (padrão: Claude, GPT e Gemini) respondem em paralelo. 2. Em cada rodada de debate, cada um lê as respostas dos outros (anônimas) e revisa a sua. 3. O moderador escreve a decisão final e, no chat, pode chamar ferramentas. Se houver menos de 2 modelos configurados, cai para um modelo só. |
+
+- Briefing matinal e revisões usam o Conselho por padrão. As outras tarefas usam `auto`.
+- Se a rota de uma tarefa aponta para um provedor sem chave, ela volta sozinha para `auto`.
+- No chat web, o seletor de modelo tem a opção **Conselho**, e o debate aparece recolhido acima da resposta. No Telegram, use `/model council`.
+- Custo do Conselho: cerca de membros × (rodadas + 1) + 1 chamadas (com 3 membros e 1 rodada = 7 chamadas). O painel de consumo mostra o gasto por modelo.
 
 ---
 
@@ -346,7 +420,7 @@ O servidor acompanha as [releases do GitHub](https://github.com/inakano89/second
 Fluxo de cada atualização (`CRON_UPDATE`, padrão diário às 04:40, após o backup):
 
 1. Consulta `GET /repos/{UPDATE_REPO}/releases/latest` (ou a pré-release mais nova com `UPDATE_CHANNEL=prerelease`).
-2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`.
+2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-arm64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`.
 3. Confere o **SHA-256**; se o binário foi compilado com `UPDATE_PUBLIC_KEY`, exige também `SHA256SUMS.sig` com **assinatura ed25519** válida.
 4. Executa `binário-novo -version` como teste de sanidade.
 5. Salva um snapshot do banco em `data/backups/pre-update-<versão>.db`.
@@ -357,7 +431,7 @@ Você é avisado pelo Telegram (instalação iniciada, concluída ou versão nov
 
 | Situação | Comportamento |
 |---|---|
-| Docker | Não substitui o binário da imagem; mostra/notifica a versão nova. Use `docker pull` ou Watchtower. |
+| Docker | Salva o binário novo no volume (`/data/data/bin`); a imagem passa a executá-lo, com rollback para o binário da imagem se ele falhar. Uma imagem mais nova (`docker compose pull`) tem prioridade. |
 | Build de desenvolvimento (`go run`, `version=dev`) | Apenas verificação, sem instalação. |
 | Pasta do executável sem permissão de escrita | Apenas verificação. No systemd, inclua o diretório em `ReadWritePaths`. |
 
@@ -390,7 +464,8 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 | Grupo | Principais variáveis |
 |---|---|
 | Geral | `BRAIN_NAME`, `HTTP_HOST`, `HTTP_PORT`, `PUBLIC_URL`, `TIMEZONE`, `DATA_DIR`, `INBOX_DIR`, `WATCHER_ENABLED`, `WATCHER_ACTION`, `QUEUE_WORKERS`, `LOG_RETENTION_DAYS` |
-| LLM | `DEFAULT_LLM_PROVIDER`, `OPENAI_API_KEY`/`OPENAI_MODEL`/`OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`/`ANTHROPIC_MODEL`, `GEMINI_API_KEY`/`GEMINI_MODEL`, `OLLAMA_BASE_URL`/`OLLAMA_MODEL`, `EMBEDDING_PROVIDER`, `MULTIMODAL_PROVIDER`, `LLM_PRICING`, `AUTOLINK_THRESHOLD` |
+| LLM | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL`, `EMBEDDING_PROVIDER`, `LLM_PRICING`, `AUTOLINK_THRESHOLD` |
+| Modelos (página `/models`) | `LLM_MODELS`, `DEFAULT_LLM_PROVIDER`, `ANTHROPIC_MODEL`, `OPENAI_MODEL`, `GEMINI_MODEL`, `OLLAMA_MODEL`, `LLM_ROUTE_*`, `LLM_COUNCIL_MEMBERS`, `LLM_COUNCIL_JUDGE`, `LLM_COUNCIL_ROUNDS` |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_USER_IDS` |
 | Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALENDAR_ID`, `GMAIL_QUERY`, `GMAIL_NEWSLETTER_QUERY` |
 | Zepp | `ZEPP_EMAIL`, `ZEPP_PASSWORD` ou `ZEPP_APP_TOKEN` + `ZEPP_USER_ID`, `ZEPP_API_BASE` |
@@ -400,7 +475,7 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 | Atualizações | `AUTO_UPDATE_ENABLED`, `UPDATE_CHANNEL`, `UPDATE_REPO` |
 | Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_ZEPP`, `CRON_UPDATE` |
 
-**Modelos padrão** (editáveis): `gpt-4o-mini`, `claude-opus-5`, `gemini-2.5-flash`, `llama3.1`. No chat é possível usar qualquer modelo com `provedor:modelo` (ex.: `anthropic:claude-sonnet-5`, `openai:gpt-4.1`, `ollama:qwen2.5`).
+**Modelos**: os padrões iniciais são `claude-opus-5`, `gpt-4o-mini`, `gemini-2.5-flash` e `llama3.1`. Gerencie-os em [Modelos de IA e Conselho](#modelos-de-ia-e-conselho). As chaves `LLM_MODELS`, `*_MODEL`, `LLM_ROUTE_*` e `LLM_COUNCIL_*` são editadas pela página `/models`.
 
 **Custos**: estimados por tabela de preços (USD por 1M tokens, correspondência pelo maior prefixo do nome do modelo). Sobrescreva com `LLM_PRICING='{"meu-modelo":[0.5,1.5]}'`.
 
@@ -430,7 +505,7 @@ Recomendado: servir atrás de proxy reverso com TLS e manter o `.env` com permis
 ```bash
 make run        # go run ./cmd/server -env .env
 make test       # testes unitários + end-to-end HTTP (setup → login → grafo → export)
-make check      # vet + testes + compilação dos 3 alvos
+make check      # vet + testes + compilação de todos os alvos
 SB_DEBUG=1 make run   # logs em nível debug
 ```
 

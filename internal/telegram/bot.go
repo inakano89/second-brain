@@ -19,6 +19,7 @@ import (
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
+	"github.com/inakano89/second-brain/internal/llm"
 	"github.com/inakano89/second-brain/internal/queue"
 )
 
@@ -176,11 +177,7 @@ func (s *Service) chatWorker(ctx context.Context, c *Client, chatID int64, ch ch
 
 func (s *Service) handle(ctx context.Context, c *Client, m *Message) {
 	if !s.isAllowed(m) {
-		uid := int64(0)
-		if m.From != nil {
-			uid = m.From.ID
-		}
-		s.log.Warn("mensagem de usuário não autorizado ignorada", "user_id", uid, "chat_id", m.Chat.ID)
+		s.recordPending(ctx, c, m)
 		return
 	}
 	defer func() {
@@ -390,6 +387,13 @@ func (s *Service) converse(ctx context.Context, c *Client, m *Message, text stri
 			return nil
 		},
 		func(ev agent.ChatEvent) {
+			if ev.Type == "council_start" {
+				mu.Lock()
+				tools = append(tools, "🤝 conselho deliberando")
+				mu.Unlock()
+				flush(false)
+				return
+			}
 			if ev.Type == "tool_call" {
 				if d, ok := ev.Data.(map[string]any); ok {
 					mu.Lock()
@@ -419,7 +423,7 @@ const helpText = `*Second Brain* — comandos:
 /tasks — tarefas abertas
 /done <id> — conclui tarefa
 /brief — gera briefing agora
-/model <provedor[:modelo]> — escolhe o LLM (vazio = padrão)
+/model — escolhe o modelo (ou council para o Conselho)
 /reset — limpa o histórico da conversa
 Texto livre conversa com o assistente; áudio é transcrito; fotos/PDFs passam por OCR.`
 
@@ -520,17 +524,35 @@ func (s *Service) command(ctx context.Context, c *Client, m *Message) {
 		reply(b)
 	case "/model":
 		key := fmt.Sprintf("tg:model:%d", m.Chat.ID)
-		if arg == "" {
+		lm := s.agent.LLM()
+		switch arg {
+		case "":
+			cur := s.provider(ctx, m.Chat.ID)
+			if cur == "" {
+				cur = "auto (tarefa Telegram: " + lm.Route(llm.TaskTelegram) + ")"
+			}
+			var b strings.Builder
+			fmt.Fprintf(&b, "Modelo atual: `%s`\n\nOpções:\n• `/model auto` — segue a configuração do painel\n• `/model council` — 🤝 Conselho (modelos debatem)\n", cur)
+			for _, e := range lm.Catalog() {
+				if e.Configured {
+					fmt.Fprintf(&b, "• `/model %s`\n", e.Spec())
+				}
+			}
+			reply(b.String())
+		case "auto":
 			s.db.KVDelete(ctx, key)
-			reply("Usando provedor padrão.")
-			return
+			reply("Usando o modelo configurado no painel para o Telegram.")
+		case llm.SpecCouncil:
+			s.db.KVSet(ctx, key, arg)
+			reply("🤝 Conselho ativado: " + strings.Join(lm.CouncilSetup().Members, ", "))
+		default:
+			if _, _, err := lm.Resolve(arg); err != nil {
+				reply("Erro: " + err.Error())
+				return
+			}
+			s.db.KVSet(ctx, key, arg)
+			reply("Modelo definido: " + arg)
 		}
-		if _, _, err := s.agent.LLM().Resolve(arg); err != nil {
-			reply("Erro: " + err.Error())
-			return
-		}
-		s.db.KVSet(ctx, key, arg)
-		reply("Modelo definido: " + arg)
 	case "/reset":
 		s.db.ClearChat(ctx, s.channel(m.Chat.ID))
 		reply("🧹 Histórico limpo.")
@@ -580,4 +602,104 @@ func (s *Service) PurgeTemp(age time.Duration) int {
 		}
 	}
 	return n
+}
+
+// ---- pairing ----
+
+const pendingKey = "telegram.pending"
+
+// PendingUser is someone who messaged the bot but is not authorized yet.
+type PendingUser struct {
+	ID        int64     `json:"id"`
+	Username  string    `json:"username"`
+	FirstName string    `json:"first_name"`
+	At        time.Time `json:"at"`
+}
+
+// recordPending remembers unauthorized senders (for one-click authorization in the
+// web panel) and answers /start with the user's id. Nothing else is revealed.
+func (s *Service) recordPending(ctx context.Context, c *Client, m *Message) {
+	if m.From == nil {
+		return
+	}
+	s.log.Warn("mensagem de usuário não autorizado ignorada", "user_id", m.From.ID, "username", m.From.Username)
+	var list []PendingUser
+	_, _ = s.db.KVGetJSON(ctx, pendingKey, &list)
+	kept := list[:0]
+	for _, p := range list {
+		if p.ID != m.From.ID && time.Since(p.At) < 7*24*time.Hour {
+			kept = append(kept, p)
+		}
+	}
+	kept = append(kept, PendingUser{ID: m.From.ID, Username: m.From.Username, FirstName: m.From.FirstName, At: time.Now()})
+	if len(kept) > 20 {
+		kept = kept[len(kept)-20:]
+	}
+	_ = s.db.KVSetJSON(ctx, pendingKey, kept)
+	if strings.HasPrefix(strings.TrimSpace(m.Text), "/start") {
+		c.SendMessage(ctx, m.Chat.ID, fmt.Sprintf("👋 Olá! Seu ID do Telegram é `%d`.\n\nPara liberar o acesso, abra o painel web do Second Brain → *Configurações → Telegram* e clique em *Autorizar* ao lado do seu nome.", m.From.ID), m.MessageID)
+	}
+}
+
+// Pending lists users awaiting authorization.
+func (s *Service) Pending(ctx context.Context) []PendingUser {
+	var list []PendingUser
+	_, _ = s.db.KVGetJSON(ctx, pendingKey, &list)
+	allowed := map[int64]bool{}
+	for _, id := range s.AllowedIDs() {
+		allowed[id] = true
+	}
+	out := list[:0]
+	for _, p := range list {
+		if !allowed[p.ID] {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// Authorize adds id to ALLOWED_TELEGRAM_USER_IDS and greets the user.
+func (s *Service) Authorize(ctx context.Context, id int64) error {
+	ids := s.AllowedIDs()
+	for _, x := range ids {
+		if x == id {
+			return nil
+		}
+	}
+	var parts []string
+	for _, x := range append(ids, id) {
+		parts = append(parts, strconv.FormatInt(x, 10))
+	}
+	if err := s.cfg.Update(map[string]string{"ALLOWED_TELEGRAM_USER_IDS": strings.Join(parts, ",")}); err != nil {
+		return err
+	}
+	s.log.Info("usuário do Telegram autorizado", "user_id", id)
+	if c := s.client(); c != nil {
+		go func() { // greet without blocking the web request
+			gctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+			defer cancel()
+			c.SendMessage(gctx, id, "✅ Acesso liberado! Envie uma mensagem, um áudio ou uma foto. Use /help para ver os comandos.", 0)
+		}()
+	}
+	return nil
+}
+
+// Revoke removes id from the allow-list.
+func (s *Service) Revoke(id int64) error {
+	var parts []string
+	for _, x := range s.AllowedIDs() {
+		if x != id {
+			parts = append(parts, strconv.FormatInt(x, 10))
+		}
+	}
+	return s.cfg.Update(map[string]string{"ALLOWED_TELEGRAM_USER_IDS": strings.Join(parts, ",")})
+}
+
+// Check validates the bot token and returns the bot account.
+func (s *Service) Check(ctx context.Context) (*User, error) {
+	c := s.client()
+	if c == nil {
+		return nil, errors.New("token do bot não configurado")
+	}
+	return c.GetMe(ctx)
 }

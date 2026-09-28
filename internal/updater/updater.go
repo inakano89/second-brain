@@ -231,7 +231,7 @@ func IsRelease(v string) bool {
 }
 
 func (u *Updater) newer(tag string) bool {
-	return IsRelease(u.current) && parseVersion(tag).ok && Compare(tag, u.current) > 0 && !isSkipped(u.exe, tag)
+	return IsRelease(u.current) && parseVersion(tag).ok && Compare(tag, u.current) > 0 && !isSkipped(u.target(), tag)
 }
 
 // ---- platform ----
@@ -272,19 +272,40 @@ func inContainer() bool {
 	return strings.Contains(s, "docker") || strings.Contains(s, "kubepods") || strings.Contains(s, "containerd")
 }
 
-// Supported reports whether this process can replace its own binary.
+// OverlayPath is where container installs keep updated binaries (inside the data volume).
+func OverlayPath(cfg *config.Config) string {
+	return filepath.Join(cfg.GetPath("DATA_DIR"), "bin", "second-brain")
+}
+
+// target is the path an update is written to: the running executable, or the
+// data-volume overlay when running inside a container image.
+func (u *Updater) target() string {
+	if u.inCtr() {
+		return OverlayPath(u.cfg)
+	}
+	return u.exe
+}
+
+// RelaunchPath is the binary to exec after an install.
+func (u *Updater) RelaunchPath() string { return u.target() }
+
+// Supported reports whether this process can install updates.
 func (u *Updater) Supported() (bool, string) {
 	switch {
 	case !IsRelease(u.current):
 		return false, "build de desenvolvimento (" + u.current + "): use um binário de release"
-	case u.inCtr():
-		return false, "rodando em container: atualize a imagem (docker pull / Watchtower)"
 	case u.exe == "":
 		return false, "caminho do executável desconhecido"
 	}
-	f, err := os.CreateTemp(filepath.Dir(u.exe), ".sb-write-test-*")
+	dir := filepath.Dir(u.target())
+	if u.inCtr() {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			return false, "container: sem permissão de escrita em " + dir
+		}
+	}
+	f, err := os.CreateTemp(dir, ".sb-write-test-*")
 	if err != nil {
-		return false, "sem permissão de escrita em " + filepath.Dir(u.exe)
+		return false, "sem permissão de escrita em " + dir
 	}
 	f.Close()
 	os.Remove(f.Name())
@@ -482,8 +503,9 @@ func (u *Updater) install(ctx context.Context) error {
 		return fmt.Errorf("SHA256SUMS não lista %s", name)
 	}
 
-	u.log.Info("baixando atualização", "from", u.current, "to", rel.TagName, "asset", name)
-	dir := filepath.Dir(u.exe)
+	target := u.target()
+	u.log.Info("baixando atualização", "from", u.current, "to", rel.TagName, "asset", name, "target", target)
+	dir := filepath.Dir(target)
 	tmp, err := os.CreateTemp(dir, ".second-brain-update-*")
 	if err != nil {
 		return err
@@ -539,11 +561,12 @@ func (u *Updater) install(ctx context.Context) error {
 		}
 	}
 
-	if err := swap(u.exe, tmpName); err != nil {
+	if err := swap(target, tmpName); err != nil {
 		os.Remove(tmpName)
 		return err
 	}
-	if err := writeMarker(u.exe, marker{From: u.current, To: rel.TagName, At: time.Now()}); err != nil {
+	_ = os.WriteFile(target+".version", []byte(rel.TagName+"\n"), 0o644)
+	if err := writeMarker(target, marker{From: u.current, To: rel.TagName, At: time.Now()}); err != nil {
 		u.log.Warn("falha ao gravar marcador de atualização", "err", err)
 	}
 	u.log.Info("atualização instalada, reiniciando", "from", u.current, "to", rel.TagName)
@@ -556,8 +579,12 @@ func (u *Updater) install(ctx context.Context) error {
 	return nil
 }
 
-// swap replaces exe with next, keeping the previous binary as exe.old.
+// swap replaces exe with next, keeping the previous binary as exe.old
+// (when exe does not exist yet — first container overlay install — it just moves next).
 func swap(exe, next string) error {
+	if _, err := os.Stat(exe); errors.Is(err, os.ErrNotExist) {
+		return os.Rename(next, exe)
+	}
 	old := exe + ".old"
 	os.Remove(old)
 	if err := os.Rename(exe, old); err != nil {
@@ -568,4 +595,28 @@ func swap(exe, next string) error {
 		return fmt.Errorf("instalar binário novo: %w", err)
 	}
 	return nil
+}
+
+// PreferOverlay returns the data-volume binary when running in a container and
+// that binary is a newer, non-blacklisted release than the image's own version.
+func PreferOverlay(cfg *config.Config, current, exe string) string {
+	if !inContainer() {
+		return ""
+	}
+	p := OverlayPath(cfg)
+	if p == exe {
+		return ""
+	}
+	if _, err := os.Stat(p); err != nil {
+		return ""
+	}
+	b, err := os.ReadFile(p + ".version")
+	v := strings.TrimSpace(string(b))
+	if err != nil || !IsRelease(v) || isSkipped(p, v) {
+		return ""
+	}
+	if IsRelease(current) && Compare(v, current) <= 0 {
+		return "" // the image itself is newer (e.g. after docker pull)
+	}
+	return p
 }

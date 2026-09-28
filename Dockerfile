@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
-# Multi-stage, multi-arch (linux/amd64, linux/arm/v7) static build.
-FROM --platform=$BUILDPLATFORM golang:1.26-alpine AS build
+# Multi-stage, multi-arch (linux/amd64, linux/arm64, linux/arm/v7) static build.
+FROM --platform=$BUILDPLATFORM golang:1.27-alpine AS build
 ARG TARGETOS TARGETARCH TARGETVARIANT
 ARG VERSION=dev
 WORKDIR /src
@@ -21,4 +21,6 @@ WORKDIR /data
 ENV HTTP_HOST=0.0.0.0
 EXPOSE 8080
 VOLUME ["/data"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
+  CMD ["/second-brain", "-env", "/data/.env", "-healthcheck"]
 ENTRYPOINT ["/second-brain", "-env", "/data/.env"]

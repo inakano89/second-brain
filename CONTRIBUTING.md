@@ -5,7 +5,7 @@ Obrigado pelo interesse! Issues e pull requests são bem-vindos.
 ## Ambiente
 
 - Go 1.26+ (sem CGO).
-- `make check` — `go vet`, testes e compilação dos 3 alvos (linux/amd64, linux/arm/v7, windows/amd64).
+- `make check` — `go vet`, testes e compilação de todos os alvos (linux amd64/arm64/armv7, windows amd64).
 - `make run` — sobe o servidor com `./.env` (o setup wizard cria o arquivo no primeiro acesso).
 - `SB_DEBUG=1` habilita logs de debug.
 

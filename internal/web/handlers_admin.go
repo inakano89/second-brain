@@ -16,6 +16,7 @@ import (
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/export"
 	"github.com/inakano89/second-brain/internal/scheduler"
+	"github.com/inakano89/second-brain/internal/telegram"
 	"github.com/inakano89/second-brain/internal/updater"
 )
 
@@ -257,6 +258,8 @@ type settingsView struct {
 	ActionsPath string
 	Backups     []backupFile
 	TelegramOK  bool
+	Pending     []telegram.PendingUser
+	Allowed     []int64
 	Update      *updater.Status
 }
 
@@ -296,6 +299,8 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	v.Extra = strings.Join(extra, "\n")
 	v.Bookmarklet = bookmarklet(v.PublicURL, v.APIToken)
 	v.Backups = listBackups(scheduler.BackupDir(s.Cfg))
+	v.Pending = s.Telegram.Pending(r.Context())
+	v.Allowed = s.Telegram.AllowedIDs()
 	if s.Updater != nil {
 		st := s.Updater.Status()
 		v.Update = &st

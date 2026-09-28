@@ -2,6 +2,7 @@
 package main
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"flag"
@@ -17,6 +18,8 @@ import (
 	"syscall"
 	"time"
 	_ "time/tzdata" // embedded IANA timezone database (Windows / scratch images)
+
+	"golang.org/x/term"
 
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/config"
@@ -48,6 +51,8 @@ func main() {
 	resetSetup := flag.Bool("reset-setup", false, "marca SETUP_COMPLETED=false para refazer o onboarding")
 	showVersion := flag.Bool("version", false, "mostra a versão")
 	updateNow := flag.Bool("update", false, "verifica e instala a última release do GitHub e sai")
+	healthcheck := flag.Bool("healthcheck", false, "verifica se o servidor local responde (exit 0/1) — usado pelo Docker")
+	resetPassword := flag.Bool("reset-password", false, "define uma nova senha de administrador e sai")
 	flag.Parse()
 
 	if *showVersion {
@@ -70,8 +75,22 @@ func main() {
 		return
 	}
 
+	if *healthcheck {
+		os.Exit(runHealthcheck(cfg))
+	}
+	if *resetPassword {
+		runResetPassword(cfg)
+		return
+	}
+
 	exe := updater.Executable()
 	if !*updateNow {
+		// Container: prefer a newer binary installed by the auto-updater in the data volume.
+		if p := updater.PreferOverlay(cfg, version, exe); p != "" {
+			if err := updater.Relaunch(p, updater.FallbackEnv+"="+exe); err != nil {
+				fmt.Fprintf(os.Stderr, "updater: não foi possível executar %s: %v\n", p, err)
+			}
+		}
 		updater.Recover(exe, func(format string, a ...any) { fmt.Fprintf(os.Stderr, "updater: "+format+"\n", a...) })
 	}
 
@@ -170,10 +189,62 @@ func main() {
 	db.Close()
 	if relaunch {
 		stop()
-		if err := updater.Relaunch(exe); err != nil {
+		next, env := upd.RelaunchPath(), []string(nil)
+		if next != exe && os.Getenv(updater.FallbackEnv) == "" {
+			env = append(env, updater.FallbackEnv+"="+exe)
+		}
+		if err := updater.Relaunch(next, env...); err != nil {
 			fatal("falha ao reiniciar após atualização", err)
 		}
 	}
+}
+
+func runHealthcheck(cfg *config.Config) int {
+	c := &http.Client{Timeout: 4 * time.Second}
+	resp, err := c.Get(fmt.Sprintf("http://127.0.0.1:%d/healthz", cfg.GetInt("HTTP_PORT", 8080)))
+	if err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
+	resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 1
+	}
+	return 0
+}
+
+func runResetPassword(cfg *config.Config) {
+	if !cfg.SetupCompleted() {
+		fatal("reset-password", errors.New("setup ainda não concluído: abra /setup no navegador"))
+	}
+	read := func(prompt string) string {
+		fmt.Print(prompt)
+		if term.IsTerminal(int(os.Stdin.Fd())) {
+			b, err := term.ReadPassword(int(os.Stdin.Fd()))
+			fmt.Println()
+			if err != nil {
+				fatal("reset-password", err)
+			}
+			return string(b)
+		}
+		line, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+		return strings.TrimRight(line, "\r\n")
+	}
+	pass := read("Nova senha (mín. 8 caracteres): ")
+	if len([]rune(pass)) < 8 {
+		fatal("reset-password", errors.New("senha muito curta"))
+	}
+	if term.IsTerminal(int(os.Stdin.Fd())) && read("Confirme: ") != pass {
+		fatal("reset-password", errors.New("as senhas não conferem"))
+	}
+	hash, err := crypto.HashPassword(pass)
+	if err != nil {
+		fatal("reset-password", err)
+	}
+	if err := cfg.Update(map[string]string{"ADMIN_PASSWORD_HASH": hash}); err != nil {
+		fatal("reset-password", err)
+	}
+	fmt.Printf("Senha do usuário %q alterada.\n", cfg.Get("ADMIN_USER"))
 }
 
 func runUpdateCLI(upd *updater.Updater) {

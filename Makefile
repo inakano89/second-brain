@@ -11,7 +11,7 @@ IMAGE   ?= ghcr.io/inakano89/second-brain
 export CGO_ENABLED=0
 
 .PHONY: all build run test vet fmt check tidy clean release sign \
-        build-linux-amd64 build-linux-armv7 build-windows-amd64 \
+        build-linux-amd64 build-linux-arm64 build-linux-armv7 build-windows-amd64 \
         docker docker-buildx
 
 all: check release
@@ -24,8 +24,8 @@ build:
 run:
 	go run $(PKG) -env .env
 
-## release: cross-compile para os 3 alvos (assets embutidos via embed.FS)
-release: build-linux-amd64 build-linux-armv7 build-windows-amd64
+## release: cross-compile (linux amd64/arm64/armv7, windows amd64) com assets embutidos
+release: build-linux-amd64 build-linux-arm64 build-linux-armv7 build-windows-amd64
 	cd $(DIST) && sha256sum $(BINARY)-* > SHA256SUMS
 
 ## sign: assina dist/SHA256SUMS com UPDATE_SIGNING_KEY (gera dist/SHA256SUMS.sig)
@@ -35,15 +35,19 @@ sign:
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-amd64 $(PKG)
 
+build-linux-arm64:
+	GOOS=linux GOARCH=arm64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-arm64 $(PKG)
+
 build-linux-armv7:
 	GOOS=linux GOARCH=arm GOARM=7 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-armv7 $(PKG)
 
 build-windows-amd64:
 	GOOS=windows GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-windows-amd64.exe $(PKG)
 
-## check: verifica que os 3 alvos compilam sem gerar artefatos
+## check: verifica que todos os alvos compilam sem gerar artefatos
 check: vet test
 	GOOS=linux   GOARCH=amd64         go build $(GOFLAGS) -o /dev/null $(PKG)
+	GOOS=linux   GOARCH=arm64         go build $(GOFLAGS) -o /dev/null $(PKG)
 	GOOS=linux   GOARCH=arm GOARM=7   go build $(GOFLAGS) -o /dev/null $(PKG)
 	GOOS=windows GOARCH=amd64         go build $(GOFLAGS) -o /dev/null $(PKG)
 
@@ -63,9 +67,9 @@ tidy:
 docker:
 	docker build --build-arg VERSION=$(VERSION) -t $(IMAGE):$(VERSION) -t $(IMAGE):latest .
 
-## docker-buildx: imagem multi-arch (amd64 + arm/v7) e push
+## docker-buildx: imagem multi-arch (amd64, arm64, arm/v7) e push
 docker-buildx:
-	docker buildx build --platform linux/amd64,linux/arm/v7 --build-arg VERSION=$(VERSION) \
+	docker buildx build --platform linux/amd64,linux/arm64,linux/arm/v7 --build-arg VERSION=$(VERSION) \
 		-t $(IMAGE):$(VERSION) -t $(IMAGE):latest --push .
 
 clean:

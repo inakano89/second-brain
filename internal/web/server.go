@@ -65,7 +65,7 @@ type Server struct {
 	static  http.Handler
 }
 
-var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip"}
+var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help"}
 
 // New parses templates and builds the server.
 func New(d Deps) (*Server, error) {
@@ -123,6 +123,19 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /chat", s.auth(s.chatPage))
 	mux.HandleFunc("POST /api/chat", s.auth(s.apiChat))
 	mux.HandleFunc("POST /chat/reset", s.auth(s.chatReset))
+
+	mux.HandleFunc("GET /models", s.auth(s.modelsPage))
+	mux.HandleFunc("POST /models/add", s.auth(s.modelAdd))
+	mux.HandleFunc("POST /models/remove", s.auth(s.modelRemove))
+	mux.HandleFunc("POST /models/default", s.auth(s.modelDefault))
+	mux.HandleFunc("POST /models/routes", s.auth(s.modelRoutes))
+	mux.HandleFunc("POST /models/council", s.auth(s.modelCouncil))
+	mux.HandleFunc("POST /models/test", s.auth(s.modelTest))
+	mux.HandleFunc("GET /models/list", s.auth(s.modelList))
+	mux.HandleFunc("GET /help", s.helpPage)
+	mux.HandleFunc("POST /telegram/authorize", s.auth(s.telegramAuthorize))
+	mux.HandleFunc("POST /telegram/revoke", s.auth(s.telegramRevoke))
+	mux.HandleFunc("POST /telegram/check", s.auth(s.telegramCheck))
 
 	mux.HandleFunc("GET /dashboard", s.auth(s.dashboardPage))
 	mux.HandleFunc("POST /jobs/{name}/run", s.auth(s.runJob))
@@ -184,7 +197,7 @@ func (s *Server) securityHeaders(next http.Handler) http.Handler {
 func (s *Server) setupGate(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		p := r.URL.Path
-		if !s.Cfg.SetupCompleted() && p != "/setup" && !strings.HasPrefix(p, "/static/") && p != "/healthz" {
+		if !s.Cfg.SetupCompleted() && p != "/setup" && p != "/help" && !strings.HasPrefix(p, "/static/") && p != "/healthz" {
 			if strings.HasPrefix(p, "/api/") {
 				writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "setup pendente"})
 				return

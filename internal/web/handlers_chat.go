@@ -16,14 +16,16 @@ import (
 const webChannel = "web"
 
 type chatView struct {
-	Providers []llm.ProviderInfo
-	History   []database.ChatMessage
-	Enabled   bool
+	Catalog []llm.ModelEntry
+	Route   string
+	Council llm.CouncilConfig
+	History []database.ChatMessage
+	Enabled bool
 }
 
 func (s *Server) chatPage(w http.ResponseWriter, r *http.Request) {
 	hist, _ := s.DB.ChatHistory(r.Context(), webChannel, 60)
-	s.render(w, "chat", s.page(r, "Chat", "chat", chatView{Providers: s.LLM.Providers(), History: hist, Enabled: s.LLM.Enabled()}))
+	s.render(w, "chat", s.page(r, "Chat", "chat", chatView{Catalog: s.LLM.Catalog(), Route: s.LLM.Route(llm.TaskChat), Council: s.LLM.CouncilSetup(), History: hist, Enabled: s.LLM.Enabled()}))
 }
 
 func (s *Server) chatReset(w http.ResponseWriter, r *http.Request) {

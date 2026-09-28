@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -15,7 +16,7 @@ import (
 // ChatRequest is one user turn.
 type ChatRequest struct {
 	Channel  string // "web", "tg:<chat>"
-	Provider string // "provider[:model]" or empty
+	Provider string // "provider[:model]", "council", "auto" or empty (task route)
 	Text     string
 	Parts    []llm.Part
 	NoTools  bool
@@ -24,7 +25,7 @@ type ChatRequest struct {
 
 // ChatEvent notifies the UI about retrieval and tool activity.
 type ChatEvent struct {
-	Type string `json:"type"` // context | tool_call | tool_result
+	Type string `json:"type"` // context | council_start | council | tool_call | tool_result
 	Data any    `json:"data"`
 }
 
@@ -35,6 +36,7 @@ type ChatResult struct {
 	Model    string
 	Usage    llm.Usage
 	Context  []database.Node
+	Council  []llm.Opinion
 }
 
 const maxToolRounds = 6
@@ -122,6 +124,30 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 		tools = a.Tools()
 	}
 	system := a.systemPrompt(hits)
+
+	purpose := "chat"
+	provider := strings.TrimSpace(req.Provider)
+	if strings.HasPrefix(req.Channel, "tg:") {
+		purpose = "telegram"
+	}
+	if provider == "" {
+		provider = a.llm.Route(llm.TaskForPurpose(purpose))
+	}
+	if provider == llm.SpecCouncil {
+		// Members debate without tools; the moderator synthesizes and may call tools.
+		cc := a.llm.CouncilSetup()
+		onEvent(ChatEvent{Type: "council_start", Data: map[string]any{"members": cc.Members, "judge": cc.Judge, "rounds": cc.Rounds}})
+		ops, _, err := a.llm.Deliberate(ctx, llm.Request{Purpose: purpose, System: system, Messages: msgs},
+			func(op llm.Opinion) { onEvent(ChatEvent{Type: "council", Data: op}) })
+		switch {
+		case err == nil:
+			system += "\n\n" + llm.SynthesisPrompt(ops)
+			res.Council = ops
+		case !errors.Is(err, llm.ErrCouncilTooSmall):
+			return nil, err
+		}
+		provider = cc.Judge
+	}
 	var full strings.Builder
 	emit := func(s string) error {
 		full.WriteString(s)
@@ -135,7 +161,7 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 		if round >= maxToolRounds {
 			useTools = nil
 		}
-		resp, err := a.llm.Stream(ctx, req.Provider, llm.Request{Purpose: "chat", System: system, Messages: msgs, Tools: useTools}, emit)
+		resp, err := a.llm.Stream(ctx, provider, llm.Request{Purpose: purpose, System: system, Messages: msgs, Tools: useTools}, emit)
 		if err != nil {
 			return nil, err
 		}

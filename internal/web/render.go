@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/inakano89/second-brain/internal/extract"
+	"github.com/inakano89/second-brain/internal/llm"
 )
 
 func (s *Server) funcs() template.FuncMap {
@@ -56,13 +57,15 @@ func (s *Server) funcs() template.FuncMap {
 			b, _ := json.Marshal(v)
 			return string(b)
 		},
-		"usd":       func(v float64) string { return fmt.Sprintf("US$ %.4f", v) },
-		"num":       func(v int64) string { return humanInt(v) },
-		"pct":       func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
-		"safeURL":   func(s string) template.URL { return template.URL(s) },
-		"urlquery":  url.QueryEscape,
-		"hasPrefix": strings.HasPrefix,
-		"split":     func(s string) []string { return strings.Split(s, ",") },
+		"usd":        func(v float64) string { return fmt.Sprintf("US$ %.4f", v) },
+		"num":        func(v int64) string { return humanInt(v) },
+		"pct":        func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
+		"safeURL":    func(s string) template.URL { return template.URL(s) },
+		"urlquery":   url.QueryEscape,
+		"hasPrefix":  strings.HasPrefix,
+		"split":      func(s string) []string { return strings.Split(s, ",") },
+		"routeKey":   llm.RouteKey,
+		"helpAnchor": func(group string) string { return helpAnchors[group] },
 		"metricVal": func(kind string, v float64) string {
 			if strings.HasSuffix(kind, "_minutes") {
 				return fmt.Sprintf("%dh%02d", int(v)/60, int(v)%60)

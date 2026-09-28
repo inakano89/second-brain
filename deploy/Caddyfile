@@ -1,0 +1,7 @@
+{$DOMAIN} {
+	encode zstd gzip
+	reverse_proxy second-brain:8080 {
+		# streaming do chat (SSE) sem buffer
+		flush_interval -1
+	}
+}

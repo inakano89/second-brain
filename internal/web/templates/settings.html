@@ -3,6 +3,8 @@
 <div class="settings">
   <nav class="toc card">
     <b>Seções</b>
+    <a href="#telegram">Telegram</a>
+    <a href="/models">Modelos de IA →</a>
     <a href="#env">Variáveis (.env)</a>
     <a href="#google">Google</a>
     <a href="#clipper">Web Clipper &amp; API</a>
@@ -13,13 +15,33 @@
   </nav>
 
   <div class="settings-main">
+    <section class="card" id="telegram">
+      <h2>💬 Telegram</h2>
+      {{if not .TelegramOK}}
+        <p>Nenhum bot configurado. <a href="/help#telegram">Passo a passo para criar o bot</a> (2 minutos) e cole o token em <a href="#env">Variáveis → Telegram</a>.</p>
+      {{else}}
+        <p><button class="btn small" hx-post="/telegram/check" hx-target="#tg-check">Verificar bot</button> <span id="tg-check"></span></p>
+        <h3>Aguardando autorização</h3>
+        {{if .Pending}}
+        <table class="tbl compact">
+          <tbody>{{range .Pending}}<tr><td><b>{{.FirstName}}</b>{{if .Username}} @{{.Username}}{{end}}<br><small class="muted">ID {{.ID}} · {{fmtTime .At}}</small></td>
+            <td class="r"><form method="post" action="/telegram/authorize" class="inline"><input type="hidden" name="id" value="{{.ID}}"><button class="btn small primary">Autorizar</button></form></td></tr>{{end}}</tbody>
+        </table>
+        {{else}}<p class="muted">Ninguém aguardando. Envie <code>/start</code> ao seu bot e recarregue esta página.</p>{{end}}
+        <h3>Autorizados</h3>
+        {{if .Allowed}}
+        <ul class="plain">{{range .Allowed}}<li><code>{{.}}</code> <form method="post" action="/telegram/revoke" class="inline"><input type="hidden" name="id" value="{{.}}"><button class="btn small danger" data-confirm="Remover o acesso de {{.}}?">remover</button></form></li>{{end}}</ul>
+        {{else}}<p class="muted">Nenhum usuário autorizado — o bot ignora todos.</p>{{end}}
+      {{end}}
+    </section>
+
     <section class="card" id="env">
       <h2>⚙️ Editor do .env</h2>
       <p class="muted">Arquivo: <code>{{.EnvPath}}</code>. Campos secretos em branco mantêm o valor atual; digite <code>!clear</code> para apagar. Alterações são aplicadas imediatamente (serviços reiniciados).</p>
       <form method="post" action="/settings/env" class="env-form">
         {{range .Groups}}
         <fieldset>
-          <legend>{{.Name}}</legend>
+          <legend>{{.Name}}{{with helpAnchor .Name}} · <a href="/help#{{.}}" target="_blank">❓ como configurar</a>{{end}}</legend>
           {{range .Fields}}
           <label class="env-field">
             <span>{{or .Label .Key}} <code class="key">{{.Key}}</code>{{if eq .Source "env"}} <em class="muted">(via ambiente)</em>{{end}}</span>
