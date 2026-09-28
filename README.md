@@ -494,7 +494,7 @@ O servidor acompanha as [releases do GitHub](https://github.com/inakano89/second
 Fluxo de cada atualização (`CRON_UPDATE`, padrão diário às 04:40, após o backup):
 
 1. Consulta `GET /repos/{UPDATE_REPO}/releases/latest` (ou a pré-release mais nova com `UPDATE_CHANNEL=prerelease`).
-2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-arm64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`.
+2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-arm64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`. Se a release acabou de ser publicada (por exemplo, pelo site do GitHub) e o workflow ainda está anexando os arquivos, a instalação aguarda e tenta de novo a cada 10 minutos, por até 3 horas; a tela de Atualizações mostra “Aguardando”.
 3. Confere o **SHA-256**; se o binário foi compilado com `UPDATE_PUBLIC_KEY`, exige também `SHA256SUMS.sig` com **assinatura ed25519** válida.
 4. Executa `binário-novo -version` como teste de sanidade.
 5. Salva um snapshot do banco em `data/backups/pre-update-<versão>.db`.
