@@ -2,8 +2,11 @@ package google
 
 import (
 	"context"
+	"crypto/sha1"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -21,12 +24,23 @@ import (
 const (
 	TaskCalendarSync = "google.calendar.sync"
 	TaskGmailSync    = "google.gmail.sync"
+	TaskDriveSync    = "google.drive.sync"
+	TaskContactsSync = "google.contacts.sync"
+	TaskTasksSync    = "google.tasks.sync"
+	TaskYouTubeSync  = "google.youtube.sync"
+	TaskTakeoutSync  = "google.takeout.sync"
 )
 
-// Syncer imports calendar events and actionable e-mails into the graph.
+// SyncTasks lists every sync task (enqueued right after connecting).
+var SyncTasks = []string{TaskContactsSync, TaskCalendarSync, TaskGmailSync, TaskDriveSync, TaskTasksSync, TaskYouTubeSync, TaskTakeoutSync}
+
+// Syncer imports Google data into the graph.
 type Syncer struct {
 	g  *Client
 	ag *agent.Agent
+
+	// ImportFile queues the import of a downloaded Takeout archive (importer.Enqueue).
+	ImportFile func(ctx context.Context, path, name string) error
 }
 
 // NewSyncer creates a syncer.
@@ -34,39 +48,51 @@ func NewSyncer(g *Client, ag *agent.Agent) *Syncer { return &Syncer{g: g, ag: ag
 
 // RegisterTasks wires queue handlers.
 func (s *Syncer) RegisterTasks(w *queue.Worker) {
-	w.Handle(TaskCalendarSync, func(ctx context.Context, _ json.RawMessage) error {
-		n, err := s.SyncCalendar(ctx)
-		if err == nil && n > 0 {
-			s.g.log.Info("calendar sincronizado", "events", n)
-		}
-		return err
-	})
-	w.Handle(TaskGmailSync, func(ctx context.Context, _ json.RawMessage) error {
-		n, err := s.SyncGmail(ctx)
-		if err == nil && n > 0 {
-			s.g.log.Info("gmail sincronizado", "items", n)
-		}
-		return err
-	})
+	handle := func(kind, what string, fn func(context.Context) (int, error), timeout time.Duration) {
+		w.HandleTimeout(kind, timeout, func(ctx context.Context, _ json.RawMessage) error {
+			n, err := fn(ctx)
+			if err == nil && n > 0 {
+				s.g.log.Info(what+" sincronizado", "items", n)
+			}
+			return err
+		})
+	}
+	handle(TaskCalendarSync, "calendar", s.SyncCalendar, 20*time.Minute)
+	handle(TaskGmailSync, "gmail", s.SyncGmail, 10*time.Minute)
+	handle(TaskDriveSync, "drive", s.SyncDrive, 30*time.Minute)
+	handle(TaskContactsSync, "contatos", s.SyncContacts, 20*time.Minute)
+	handle(TaskTasksSync, "google tasks", s.SyncTasks, 10*time.Minute)
+	handle(TaskYouTubeSync, "youtube", s.SyncYouTube, 20*time.Minute)
+	handle(TaskTakeoutSync, "takeout do drive", s.SyncTakeout, 3*time.Hour)
 }
 
-// SyncCalendar mirrors events from yesterday to +14 days as event nodes.
-func (s *Syncer) SyncCalendar(ctx context.Context) (int, error) {
-	if !s.g.Connected() {
-		return 0, nil
+func hashOf(parts ...string) string {
+	h := sha1.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
 	}
-	now := time.Now()
-	evs, err := s.g.ListEvents(ctx, now.AddDate(0, 0, -1), now.AddDate(0, 0, 14))
-	if err != nil {
-		return 0, err
-	}
-	for _, ev := range evs {
-		if _, err := s.ag.UpsertEventNode(ctx, ev); err != nil {
-			return 0, err
-		}
-	}
-	return len(evs), nil
+	return hex.EncodeToString(h.Sum(nil))[:16]
 }
+
+// unchanged reports whether the node (source, ref) already holds content with this hash.
+func (s *Syncer) unchanged(ctx context.Context, source, ref, hash string) bool {
+	n, err := s.ag.DB().GetNodeBySource(ctx, source, ref)
+	if err != nil {
+		return false
+	}
+	h, _ := n.Meta["hash"].(string)
+	return h == hash
+}
+
+func atoiDefault(s string, def int) int {
+	if n, err := strconv.Atoi(strings.TrimSpace(s)); err == nil {
+		return n
+	}
+	return def
+}
+
+func itoa(n int) string { return strconv.Itoa(n) }
 
 type emailAnalysis struct {
 	Summary  string `json:"summary"`
@@ -79,7 +105,7 @@ type emailAnalysis struct {
 
 // SyncGmail processes unread priority mail (pending actions → tasks) and newsletters (→ articles).
 func (s *Syncer) SyncGmail(ctx context.Context) (int, error) {
-	if !s.g.Connected() {
+	if !s.g.Can(agent.GoogleGmail) {
 		return 0, nil
 	}
 	cfg := s.g.cfg
@@ -161,6 +187,9 @@ Inclua ações apenas se o e-mail exigir algo do destinatário. Ignore marketing
 		Source: "gmail", SourceRef: e.ID, CreatedAt: e.Date, Meta: map[string]any{"from": e.From, "link": e.Link, "priority": an.Priority, "enriched": true},
 	})
 	if err != nil {
+		return err
+	}
+	if err := s.ag.LinkPeople(ctx, note.ID, agent.Addresses(e.From), "from"); err != nil {
 		return err
 	}
 	for i, a := range an.Actions {

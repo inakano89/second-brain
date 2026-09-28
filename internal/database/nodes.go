@@ -549,3 +549,38 @@ func (db *DB) IterateNodes(ctx context.Context, fn func(*Node) error) error {
 	}
 	return rows.Err()
 }
+
+// NodesWithMetaValue lists ids of nodes of type typ whose meta array key contains value (case-insensitive).
+func (db *DB) NodesWithMetaValue(ctx context.Context, typ, key, value string) ([]int64, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM nodes WHERE type = ?
+		AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(nodes.meta) THEN nodes.meta ELSE '{}' END, '$.'||?) WHERE lower(json_each.value) = lower(?))`,
+		typ, key, strings.TrimSpace(value))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// FindPersonByEmail finds the person node whose meta.emails lists email (case-insensitive).
+func (db *DB) FindPersonByEmail(ctx context.Context, email string) (*Node, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	n, err := scanNode(db.QueryRowContext(ctx, `SELECT `+nodeCols+` FROM nodes WHERE type = ?
+		AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(nodes.meta) THEN nodes.meta ELSE '{}' END, '$.emails') WHERE lower(json_each.value) = ?)
+		ORDER BY id LIMIT 1`, TypePerson, email))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return n, err
+}

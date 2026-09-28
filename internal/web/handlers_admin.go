@@ -15,6 +15,7 @@ import (
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/export"
+	"github.com/inakano89/second-brain/internal/integrations/google"
 	"github.com/inakano89/second-brain/internal/scheduler"
 	"github.com/inakano89/second-brain/internal/telegram"
 	"github.com/inakano89/second-brain/internal/updater"
@@ -127,11 +128,21 @@ func (s *Server) integrations() []integ {
 	out = append(out, integ{"Telegram", tg, s.Telegram.Enabled()})
 	gs := "não configurado"
 	if s.Google.Connected() {
-		gs = "conectado"
+		var on []string
+		for _, st := range s.Google.Status() {
+			if st.Enabled && st.Granted {
+				on = append(on, st.Key)
+			}
+		}
+		gs = "conectado: " + firstOr(strings.Join(on, ", "), "nenhum serviço autorizado")
+		if s.Google.NeedsReconnect() {
+			gs += " (reconecte para liberar o restante)"
+		}
 	} else if s.Google.Configured() {
 		gs = "configurado, não conectado"
 	}
 	out = append(out, integ{"Google", gs, s.Google.Connected()})
+
 	out = append(out, integ{"Zepp", map[bool]string{true: "configurado", false: "não configurado"}[s.Zepp.Configured()], s.Zepp.Configured()})
 	feeds := s.Cfg.GetList("RSS_FEEDS")
 	out = append(out, integ{"RSS", fmt.Sprintf("%d feed(s)", len(feeds)), len(feeds) > 0})
@@ -250,6 +261,9 @@ type settingsView struct {
 	EnvPath     string
 	GoogleOK    bool
 	GoogleCfg   bool
+	GoogleSvcs  []google.ServiceStatus
+	GoogleNew   bool // enabled services still missing permissions
+	InboxDir    string
 	RedirectURL string
 	PublicURL   string
 	APIToken    string
@@ -285,6 +299,7 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 		byGroup[f.Group] = append(byGroup[f.Group], ef)
 	}
 	v := settingsView{EnvPath: s.Cfg.Path(), GoogleOK: s.Google.Connected(), GoogleCfg: s.Google.Configured(), RedirectURL: s.Google.RedirectURL(),
+		GoogleSvcs: s.Google.Status(), GoogleNew: s.Google.NeedsReconnect(), InboxDir: s.Cfg.GetPath("INBOX_DIR"),
 		PublicURL: s.Cfg.PublicURL(), APIToken: s.Cfg.Get("API_TOKEN"), ActionsRaw: s.Agent.Actions().Raw(), ActionsPath: s.Agent.Actions().Path(), TelegramOK: s.Telegram.Enabled()}
 	for _, g := range config.Groups {
 		v.Groups = append(v.Groups, envGroup{Name: g, Fields: byGroup[g]})
@@ -539,13 +554,28 @@ func (s *Server) googleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.SetCookie(w, &http.Cookie{Name: "g_state", Value: "", Path: "/google", MaxAge: -1})
-	_, _ = s.DB.Enqueue(ctx, "google.calendar.sync", nil, database.EnqueueOpts{DedupeKey: "google.calendar.sync"})
-	redirectFlash(w, r, "/settings", "Google conectado.", false)
+	s.enqueueGoogle(ctx)
+	redirectFlash(w, r, "/settings#google", "Google conectado. A primeira sincronização começou em segundo plano.", false)
+}
+
+func (s *Server) enqueueGoogle(ctx context.Context) {
+	for _, kind := range google.SyncTasks {
+		_, _ = s.DB.Enqueue(ctx, kind, nil, database.EnqueueOpts{DedupeKey: kind, MaxAttempts: 4})
+	}
+}
+
+func (s *Server) googleSync(w http.ResponseWriter, r *http.Request) {
+	if !s.Google.Connected() {
+		redirectFlash(w, r, "/settings#google", "Google não conectado.", true)
+		return
+	}
+	s.enqueueGoogle(r.Context())
+	redirectFlash(w, r, "/settings#google", "Sincronização do Google enfileirada.", false)
 }
 
 func (s *Server) googleDisconnect(w http.ResponseWriter, r *http.Request) {
 	_ = s.Google.Disconnect(r.Context())
-	redirectFlash(w, r, "/settings", "Google desconectado.", false)
+	redirectFlash(w, r, "/settings#google", "Google desconectado.", false)
 }
 
 // ---- self-update ----

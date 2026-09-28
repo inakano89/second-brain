@@ -70,6 +70,34 @@ func (a *Agent) Tools() []llm.Tool {
 				}, "summary", "start")},
 		)
 	}
+	if a.google(GoogleGmail) != nil {
+		tools = append(tools,
+			llm.Tool{Name: "search_email", Description: "Busca e-mails no Gmail do usuário (sintaxe de busca do Gmail: from:, to:, subject:, after:AAAA/MM/DD, has:attachment, label:…).",
+				Parameters: obj(map[string]any{"query": str("Consulta no formato do Gmail"), "limit": integer("Máximo de resultados (padrão 10, máx. 25)")}, "query")},
+			llm.Tool{Name: "read_email", Description: "Lê o conteúdo completo de um e-mail do Gmail pelo ID.",
+				Parameters: obj(map[string]any{"id": str("ID do e-mail (de search_email)")}, "id")},
+		)
+	}
+	if a.google(GoogleDrafts) != nil {
+		tools = append(tools, llm.Tool{Name: "create_email_draft",
+			Description: "Cria um RASCUNHO no Gmail. Nunca envia: o usuário revisa e envia pelo Gmail. Para responder, informe reply_to com o ID do e-mail original.",
+			Parameters: obj(map[string]any{
+				"to": str("Destinatários (vírgula); opcional ao responder"), "cc": str("Cópia opcional"),
+				"subject": str("Assunto; opcional ao responder"), "body": str("Texto do e-mail"), "reply_to": str("ID do e-mail respondido (opcional)"),
+			}, "body")})
+	}
+	if a.google(GoogleDrive) != nil {
+		tools = append(tools,
+			llm.Tool{Name: "search_drive", Description: "Busca arquivos no Google Drive por nome ou conteúdo.",
+				Parameters: obj(map[string]any{"query": str("Termos"), "limit": integer("Máximo de resultados (padrão 10)")}, "query")},
+			llm.Tool{Name: "read_drive_file", Description: "Lê o texto de um arquivo do Google Drive (Docs, Planilhas, Apresentações, PDF, DOCX, texto).",
+				Parameters: obj(map[string]any{"id": str("ID do arquivo (de search_drive)")}, "id")},
+		)
+	}
+	if a.google(GoogleContacts) != nil {
+		tools = append(tools, llm.Tool{Name: "search_contacts", Description: "Busca pessoas nos Contatos do Google (inclui quem já trocou e-mails com o usuário).",
+			Parameters: obj(map[string]any{"query": str("Nome, e-mail, telefone ou empresa")}, "query")})
+	}
 	if acts := a.actions.List(); a.actions.Enabled() && len(acts) > 0 {
 		var names []string
 		var desc strings.Builder
@@ -291,12 +319,56 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 			return nil, err
 		}
 		return ev, nil
+	case "search_email", "read_email", "create_email_draft", "search_drive", "read_drive_file", "search_contacts":
+		return a.execGoogleTool(ctx, name, args)
 	case "run_action":
 		out, err := a.actions.Run(ctx, args.str("name"), args.str("input"))
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"output": out}, nil
+	}
+	return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
+}
+
+func clampLimit(v int64, def, max int) int {
+	if v <= 0 {
+		return def
+	}
+	return min(int(v), max)
+}
+
+func (a *Agent) execGoogleTool(ctx context.Context, name string, args toolArgs) (any, error) {
+	service := map[string]string{
+		"search_email": GoogleGmail, "read_email": GoogleGmail, "create_email_draft": GoogleDrafts,
+		"search_drive": GoogleDrive, "read_drive_file": GoogleDrive, "search_contacts": GoogleContacts,
+	}[name]
+	g := a.google(service)
+	if g == nil {
+		return nil, fmt.Errorf("serviço Google %q não está conectado ou autorizado", service)
+	}
+	switch name {
+	case "search_email":
+		return g.SearchEmail(ctx, args.str("query"), clampLimit(args.int("limit"), 10, 25))
+	case "read_email":
+		e, err := g.ReadEmail(ctx, args.str("id"))
+		if err != nil {
+			return nil, err
+		}
+		e.Body = extract.Truncate(e.Body, 8000)
+		return e, nil
+	case "create_email_draft":
+		return g.CreateDraft(ctx, EmailDraft{To: args.str("to"), Cc: args.str("cc"), Subject: args.str("subject"), Body: args.str("body"), ReplyTo: args.str("reply_to")})
+	case "search_drive":
+		return g.SearchDrive(ctx, args.str("query"), clampLimit(args.int("limit"), 10, 25))
+	case "read_drive_file":
+		f, text, err := g.ReadDriveFile(ctx, args.str("id"))
+		if err != nil {
+			return nil, err
+		}
+		return map[string]any{"file": f, "text": extract.Truncate(text, 10000)}, nil
+	case "search_contacts":
+		return g.SearchContacts(ctx, args.str("query"), 10)
 	}
 	return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
 }

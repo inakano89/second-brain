@@ -11,7 +11,8 @@
     <a href="#ollama">· Modelo local</a>
     <a href="#models">🧩 Modelos e Conselho</a>
     <a href="#telegram">💬 Telegram</a>
-    <a href="#google">📅 Google Agenda e Gmail</a>
+    <a href="#google">🔗 Google (Agenda, Gmail, Drive…)</a>
+    <a href="#takeout">📦 Google Takeout</a>
     <a href="#zepp">❤️ Zepp / Amazfit</a>
     <a href="#rss">📰 RSS</a>
     <a href="#clipper">✂️ Web Clipper</a>
@@ -36,7 +37,7 @@
         <li><b>Uma chave de IA</b> (Gemini tem plano gratuito — é o jeito mais rápido de começar). Veja <a href="#llm">Chaves de IA</a>.</li>
         <li><b>Telegram</b> para capturar notas, áudios e fotos pelo celular. Veja <a href="#telegram">Telegram</a>.</li>
         <li><b>Mais uma ou duas IAs</b> (Claude, GPT) para usar o <a href="#models">Conselho</a>, em que os modelos debatem antes de decidir.</li>
-        <li><b>Google Agenda/Gmail</b> e <b>Zepp</b> para o briefing matinal ficar completo.</li>
+        <li><b>Google</b> (Agenda, Gmail, Drive, Contatos, Tasks, YouTube) e <b>Zepp</b> para o briefing matinal ficar completo. Depois, o <a href="#takeout">Takeout</a> traz o histórico do YouTube, pesquisas, Maps e Keep.</li>
         <li><b>Backup</b> para outro lugar (S3, WebDAV ou Telegram).</li>
       </ol>
       <p class="muted">Onde colar as chaves: menu <b>Configurações → Variáveis (.env)</b>. Campos de senha ficam ocultos depois de salvos (é normal).</p>
@@ -118,19 +119,47 @@
     </section>
 
     <section class="card" id="google">
-      <h2>📅 Google Agenda e Gmail</h2>
-      <p>É a configuração mais longa (~10 min), feita uma única vez. Você cria um “aplicativo” particular no Google que só você usa.</p>
+      <h2>🔗 Google: Agenda, Gmail, Drive, Contatos, Tasks e YouTube</h2>
+      <p>É a configuração mais longa (~10 min), feita uma única vez. Você cria um “aplicativo” particular no Google que só você usa. Tudo é <b>somente leitura</b>, com duas exceções: criar eventos na agenda e criar <b>rascunhos</b> no Gmail (o Second Brain nunca envia e-mails; você revisa e envia).</p>
       <p><b>Pré-requisito:</b> acessar o Second Brain por <b>HTTPS com domínio</b> (veja <a href="#https">HTTPS</a>) ou por <code>http://localhost</code>. O Google não aceita IPs nem HTTP em outros endereços.</p>
       <ol class="steps">
         <li>Abra <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com</a> e crie um projeto (ex.: “second-brain”).</li>
-        <li>Em <b>APIs e serviços → Biblioteca</b>, ative <b>Google Calendar API</b> e <b>Gmail API</b>.</li>
+        <li>Em <b>APIs e serviços → Biblioteca</b>, pesquise e clique <b>Ativar</b> em cada uma: <b>Google Calendar API</b>, <b>Gmail API</b>, <b>Google Drive API</b>, <b>People API</b> (contatos), <b>Google Tasks API</b> e <b>YouTube Data API v3</b>. Pule as que não quiser usar.</li>
         <li>Em <b>Google Auth Platform</b> (tela de consentimento OAuth): tipo <b>Externo</b>, nome do app, seu e-mail de suporte. Em <b>Público-alvo → Usuários de teste</b>, adicione o seu Gmail.</li>
         <li>Em <b>Clientes → Criar cliente</b>: tipo <b>Aplicativo da Web</b>. Em <b>URIs de redirecionamento autorizados</b>, cole exatamente:<br><code class="copy">{{.RedirectURL}}</code>
           <br><small class="muted">Se aparecer localhost e você usa domínio, primeiro preencha <b>URL pública</b> em Configurações → Geral.</small></li>
         <li>Copie o <b>ID do cliente</b> e a <b>Chave secreta</b> para <b>Configurações → Google</b> e salve.</li>
-        <li>Clique <b>Conectar Google</b>. Na tela “o Google não verificou este app”, clique <b>Avançado → Continuar</b> (o app é seu) e permita o acesso.</li>
+        <li>Clique <b>Conectar Google</b>. Na tela “o Google não verificou este app”, clique <b>Avançado → Continuar</b> (o app é seu). <b>Marque todas as caixas</b> de permissão e confirme.</li>
         <li>Importante: em <b>Público-alvo</b>, clique <b>Publicar app</b> (“Em produção”). Em modo “Teste” o Google desconecta a cada 7 dias.</li>
       </ol>
+      <p><b>O que é importado</b> (a tabela em Configurações → Google mostra o estado de cada um):</p>
+      <ul>
+        <li><b>Agenda</b>: todas as agendas visíveis (inclusive aniversários e feriados), o último ano de eventos e os próximos 14 dias. Participantes viram ligações com seus contatos.</li>
+        <li><b>Gmail</b>: e-mails importantes viram notas e tarefas; no chat, a IA pode <b>buscar e ler</b> qualquer e-mail e <b>criar rascunhos</b> de resposta.</li>
+        <li><b>Drive</b>: Documentos, Planilhas, Apresentações, PDFs, Word e textos alterados no último ano (ajuste em <code>DRIVE_SINCE_DAYS</code>; filtre com <code>DRIVE_QUERY</code>, ex.: <code>'me' in owners</code>).</li>
+        <li><b>Contatos</b>: cada contato vira uma pessoa no grafo (e-mails, telefones, empresa, aniversário, anotações).</li>
+        <li><b>Google Tasks</b>: suas tarefas e listas (só leitura: concluir aqui não conclui lá).</li>
+        <li><b>YouTube</b>: vídeos curtidos, canais inscritos e playlists. O <b>histórico</b> não tem API — use o <a href="#takeout">Takeout</a>.</li>
+      </ul>
+      <p class="muted">Já estava conectado antes? Clique <b>Reconectar e autorizar</b> em Configurações → Google para liberar os serviços novos. Para desligar algum, remova-o de <code>GOOGLE_SERVICES</code>.</p>
+      <p class="muted"><b>Sem API (limitação do Google):</b> Google Fotos (desde 2025 só fotos criadas pelo próprio app), Keep (só contas corporativas), Play Store, Linha do tempo do Maps e histórico do YouTube/Chrome. Quase tudo isso chega pelo Takeout.</p>
+    </section>
+
+    <section class="card" id="takeout">
+      <h2>📦 Google Takeout (histórico do YouTube, pesquisas, Maps, Play, Keep)</h2>
+      <p>O <a href="https://takeout.google.com" target="_blank" rel="noopener">Google Takeout</a> exporta seus dados num arquivo <code>.zip</code>. O Second Brain lê o arquivo e cria notas mensais (ex.: “YouTube — vídeos assistidos — setembro de 2026”), com os itens mais frequentes no resumo.</p>
+      <ol class="steps">
+        <li>Abra <a href="https://takeout.google.com" target="_blank" rel="noopener">takeout.google.com</a> e clique <b>Desmarcar tudo</b>.</li>
+        <li>Marque: <b>Minha atividade</b>, <b>YouTube e YouTube Music</b>, <b>Chrome</b>, <b>Maps (seus lugares)</b>, <b>Salvos</b>, <b>Google Play Store</b>, <b>Keep</b> e, se existir, <b>Histórico de localização (Linha do tempo)</b>.</li>
+        <li>Em <b>Minha atividade</b> e em <b>YouTube</b>, clique <b>Vários formatos</b> e troque <b>HTML</b> por <b>JSON</b>. Sem isso o histórico não é importado.</li>
+        <li>Clique <b>Próxima etapa</b>. Escolha o formato <b>.zip</b> e o destino:
+          <ul>
+            <li><b>Adicionar ao Drive</b> + <b>Exportar a cada 2 meses por 1 ano</b> (recomendado): com o Drive conectado, o Second Brain baixa e importa sozinho (<code>CRON_TAKEOUT</code>).</li>
+            <li><b>Enviar link por e-mail</b>: baixe o .zip e envie em <a href="/import"><b>Importar</b></a>, ou copie para a <a href="#inbox">pasta inbox</a> (melhor para arquivos acima de <code>IMPORT_MAX_MB</code>).</li>
+          </ul></li>
+      </ol>
+      <p><b>Linha do tempo do Maps:</b> desde 2024 ela fica só no celular. No app Google Maps: foto do perfil → <b>Configurações → Conteúdo pessoal → Exportar dados da Linha do tempo</b>. Envie o <code>Timeline.json</code> (no iPhone, <code>location-history.json</code>) em <a href="/import"><b>Importar</b></a>, ou coloque-o dentro de um .zip na pasta inbox.</p>
+      <p class="muted">Importar de novo é seguro: meses que não mudaram são ignorados. Anúncios assistidos no YouTube são descartados. Keep, contatos (.vcf), agendas (.ics) e listas salvas do Maps (.csv) do mesmo .zip vão para os leitores próprios da página Importar. A exportação pode ser grande: selecione só os itens acima.</p>
     </section>
 
     <section class="card" id="zepp">
@@ -162,7 +191,7 @@
 
     <section class="card" id="inbox">
       <h2>📂 Pasta inbox</h2>
-      <p>Arquivos colocados na pasta <code>inbox</code> (ao lado do <code>.env</code>) são lidos automaticamente: PDFs, fotos, áudios, <code>.md</code>, <code>.txt</code>. Depois são movidos para <code>inbox/.archive</code>. Dica: sincronize essa pasta com Syncthing/Dropbox para “jogar” arquivos do celular.</p>
+      <p>Arquivos colocados na pasta <code>inbox</code> (ao lado do <code>.env</code>) são lidos automaticamente: PDFs, fotos, áudios, <code>.md</code>, <code>.txt</code> e arquivos <code>.zip</code> exportados de outros apps (Obsidian, Notion, <a href="#takeout">Google Takeout</a>… — veja <a href="#import">Importar</a>). Depois são movidos para <code>inbox/.archive</code>. Dica: sincronize essa pasta com Syncthing/Dropbox para “jogar” arquivos do celular.</p>
     </section>
 
     <section class="card" id="import">
@@ -173,6 +202,7 @@
         <li><b>Notion</b>: Settings → <i>Export all workspace content</i> → formato <b>Markdown &amp; CSV</b>. Envie o <code>.zip</code> baixado, sem descompactar.</li>
         <li><b>Evernote</b>: selecione as notas (ou clique com o botão direito no caderno) → <b>Exportar</b> → formato <b>ENEX</b>.</li>
         <li><b>Google Keep</b>: acesse <a href="https://takeout.google.com" target="_blank" rel="noopener">takeout.google.com</a>, clique em <i>Desmarcar tudo</i>, marque só <b>Keep</b> e exporte. Envie o <code>.zip</code>.</li>
+        <li><b>Google Takeout completo</b> (histórico do YouTube, pesquisas, Chrome, Linha do tempo, Maps, Play Store): veja <a href="#takeout">Google Takeout</a>.</li>
         <li><b>Favoritos do navegador</b>: Chrome/Edge: Ctrl+Shift+O → ⋮ → <i>Exportar favoritos</i>. Firefox: Ctrl+Shift+O → <i>Importar e fazer backup</i> → <i>Exportar para HTML</i>. Marque “baixar o texto de cada página” para ler os artigos depois.</li>
         <li><b>Planilhas (Excel, Google Sheets)</b>: <i>Arquivo → Salvar como → CSV</i>. Nomeie as colunas como <code>título</code>, <code>conteúdo</code>, <code>tags</code>, <code>prazo</code>… (linhas com prazo viram tarefas). Exportações CSV do <b>Todoist</b>, <b>Readwise</b>, <b>Goodreads</b> e <b>Pocket</b> também funcionam.</li>
         <li><b>Kindle</b>: ligue o Kindle no computador pelo cabo USB e envie o arquivo <code>documents/My Clippings.txt</code>. Cada livro vira um artigo com seus destaques.</li>
@@ -257,6 +287,12 @@ docker compose up -d</pre></li>
         <dd>Clique em <b>Verificar bot</b> em Configurações → Telegram. Se o token estiver certo, envie <code>/start</code> e autorize seu usuário.</dd>
         <dt>Google: “redirect_uri_mismatch”</dt>
         <dd>A URI cadastrada no Google precisa ser idêntica a <code>{{.RedirectURL}}</code> (http/https, domínio, porta e barra final).</dd>
+        <dt>Google: “ative a … API no Google Cloud Console”</dt>
+        <dd>Falta ativar aquela API em <b>APIs e serviços → Biblioteca</b> (veja <a href="#google">Google</a>). Ou remova o serviço de <code>GOOGLE_SERVICES</code>.</dd>
+        <dt>Google: “permissão não concedida” ou “reconecte”</dt>
+        <dd>Em Configurações → Google, clique <b>Reconectar e autorizar</b> e marque todas as caixas.</dd>
+        <dt>Takeout: “histórico em HTML”</dt>
+        <dd>Refaça a exportação escolhendo <b>JSON</b> em “Vários formatos” para Minha atividade e YouTube.</dd>
         <dt>IA: “Chave inválida” ou “sem créditos”</dt>
         <dd>Confira a chave e o saldo no site do provedor; use <b>Modelos → Testar</b>.</dd>
         <dt>Esqueci a senha</dt>

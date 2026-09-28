@@ -86,7 +86,7 @@ func setup(t *testing.T) *env {
 	m := llm.NewManager(cfg, nil)
 	ag := agent.New(cfg, db, m, log)
 	gc := google.New(cfg, db, log)
-	ag.SetCalendar(gc)
+	ag.SetGoogle(gc)
 	cat := llm.NewCatalogSync(cfg, m, db, log)
 	cat.URL = func() string { return "" } // offline: remote sync reports an error
 	cat.Init(context.Background())
@@ -188,7 +188,7 @@ func TestEndToEnd(t *testing.T) {
 	e.expect(e.do("GET", "/logs/rows?level=INFO", nil, nil), 200)
 	e.expect(e.do("GET", "/chat", nil, nil), 200, "Nenhum provedor LLM")
 	rec = e.do("GET", "/settings", nil, nil)
-	e.expect(rec, 200, `href="javascript:%28function`, "Editor do .env") // browsers percent-decode javascript: URLs
+	e.expect(rec, 200, `href="javascript:%28function`, "Editor do .env", "Google Takeout", "People API", "aguardando conexão") // browsers percent-decode javascript: URLs
 	if strings.Contains(rec.Body.String(), "ZgotmplZ") {
 		t.Fatal("template sanitized a value (ZgotmplZ)")
 	}
@@ -357,6 +357,24 @@ func TestImport(t *testing.T) {
 	e.expect(anon.do("POST", "/api/import?filename=x.bin", strings.NewReader("\x00\x01"), map[string]string{"Authorization": "Bearer " + token}), 422, "reconhecido")
 	body, ct = multipartBody(t, map[string]string{"llm": "true"}, map[string]string{"a.md": "# Nota A\ncorpo"})
 	e.expect(anon.do("POST", "/api/import", body, map[string]string{"Authorization": "Bearer " + token, "Content-Type": ct}), 200, `"created":1`)
+
+	// Google Takeout: activity history becomes monthly digests; Keep goes to its own reader.
+	var tz bytes.Buffer
+	zw := zip.NewWriter(&tz)
+	for name, content := range map[string]string{
+		"Takeout/YouTube e YouTube Music/histórico/histórico-de-visualização.json": `[{"header":"YouTube","title":"Assistiu a Aula de Go","titleUrl":"https://www.youtube.com/watch?v=abc","subtitles":[{"name":"Canal Dev"}],"time":"2026-08-10T15:04:05Z","products":["YouTube"]}]`,
+		"Takeout/YouTube e YouTube Music/histórico/histórico-de-pesquisa.html":     "<html><body>histórico</body></html>",
+		"Takeout/Keep/Ideia.json": `{"title":"Ideia","textContent":"Plano de estudos","isTrashed":false,"userEditedTimestampUsec":1700000000000000,"createdTimestampUsec":1700000000000000}`,
+	} {
+		w, _ := zw.Create(name)
+		w.Write([]byte(content))
+	}
+	zw.Close()
+	rec = anon.do("POST", "/api/import?filename=takeout-20260928T000000Z-001.zip", &tz, map[string]string{"Authorization": "Bearer " + token})
+	e.expect(rec, 200, `"takeout":1`, `"keep":1`, "escolha JSON")
+	if n, err := e.db.GetNodeBySource(context.Background(), "import:takeout", "youtube-watch:2026-08"); err != nil || !strings.Contains(n.Content, "Aula de Go") || n.Title != "YouTube — vídeos assistidos — agosto de 2026" {
+		t.Fatalf("takeout digest = %+v, %v", n, err)
+	}
 
 	people, _ := e.db.ListNodes(context.Background(), database.NodeFilter{Types: []string{database.TypePerson}, Source: "import:vcard"})
 	if len(people) != 1 || people[0].Title != "Ana Lima" || !strings.Contains(strings.Join(people[0].Tags, ","), "migracao") {

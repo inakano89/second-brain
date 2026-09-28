@@ -128,12 +128,24 @@ func main() {
 		os.Exit(code)
 	}
 	gc := google.New(cfg, db, log)
-	ag.SetCalendar(gc)
+	ag.SetGoogle(gc)
 	gsync := google.NewSyncer(gc, ag)
 	tg := telegram.New(cfg, db, ag, log)
 	zc := zepp.New(cfg, db, ag, log)
 	rp := rss.New(cfg, ag, log)
 	wt := watcher.New(cfg, db, ag, log)
+	imp := importer.New(cfg, ag, log)
+	imp.Done = func(ctx context.Context, t importer.FileTask, rep importer.Report) {
+		if t.Origin == "watcher" {
+			wt.Finish(t.Path, rep.State == importer.StateFailed)
+		}
+		if rep.Created+rep.Updated > 0 || rep.State == importer.StateFailed {
+			_ = tg.Notify(ctx, "📥 *Importação de "+t.Name+"*\n"+rep.Summary())
+		}
+	}
+	gsync.ImportFile = func(ctx context.Context, path, name string) error {
+		return imp.Enqueue(ctx, importer.FileTask{Path: path, Name: name, Origin: "drive", Remove: true})
+	}
 
 	worker := queue.New(db, log)
 	ag.RegisterTasks(worker)
@@ -142,6 +154,7 @@ func main() {
 	zc.RegisterTasks(worker)
 	rp.RegisterTasks(worker)
 	wt.RegisterTasks(worker)
+	imp.RegisterTasks(worker)
 
 	upd := updater.New(cfg, db, log, version, updatePublicKey, exe)
 	upd.Notify = tg.Notify
@@ -174,7 +187,7 @@ func main() {
 
 	hr := &httpRunner{log: log.With("component", "http")}
 	srv, err := web.New(web.Deps{
-		Cfg: cfg, DB: db, LLM: llmMgr, Catalog: catalog, Agent: ag, Google: gc, Zepp: zc, Telegram: tg, Updater: upd, Log: log, Version: version,
+		Cfg: cfg, DB: db, LLM: llmMgr, Catalog: catalog, Agent: ag, Google: gc, Importer: imp, Zepp: zc, Telegram: tg, Updater: upd, Log: log, Version: version,
 		Hooks: web.Hooks{Reload: sup.reload, Rebind: hr.rebind, Jobs: sup.jobs, RunJob: sup.runJob},
 	})
 	if err != nil {

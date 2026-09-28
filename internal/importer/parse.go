@@ -17,6 +17,8 @@ import (
 	"time"
 
 	"golang.org/x/sync/errgroup"
+
+	"github.com/inakano89/second-brain/internal/integrations/takeout"
 )
 
 // Format identifiers (also used as the node source suffix: "import:<format>").
@@ -35,6 +37,7 @@ const (
 	FormatICal      = "ical"
 	FormatOPML      = "opml"
 	FormatHTML      = "html"
+	FormatTakeout   = "takeout"
 
 	formatZip = "zip"
 )
@@ -63,6 +66,9 @@ var Formats = []FormatInfo{
 	{FormatICal, "Agenda (Google Agenda, Outlook, Apple)", ".ics", "Google Agenda → Configurações → Importar e exportar → Exportar (.zip com .ics).", "eventos e tarefas (VTODO)", true},
 	{FormatOPML, "OPML: Feedly, Inoreader, outliners", ".opml", "Leitor RSS → Exportar OPML. Outliners (Workflowy, Dynalist) também exportam OPML.", "feeds vão para RSS_FEEDS; tópicos viram notas", true},
 	{FormatHTML, "Páginas HTML (Notion/Evernote em HTML)", ".html", "Qualquer página salva ou exportada em HTML.", "notas com o texto principal da página", true},
+	{FormatTakeout, "Google Takeout: histórico do YouTube, pesquisas, Chrome, Linha do tempo, Maps, Play Store", ".zip, .json",
+		"takeout.google.com → Minha atividade, YouTube, Chrome, Maps (seus lugares), Histórico de localização, Google Play Store e Keep → em “Vários formatos” troque HTML por JSON → .zip. Linha do tempo: app Maps → Configurações → Conteúdo pessoal → Exportar.",
+		"uma nota por produto e mês (itens mais frequentes no resumo) e listas de lugares e apps; Keep, contatos e agendas vão para os leitores próprios", false},
 }
 
 // Item is a normalized record ready to become a node.
@@ -136,6 +142,7 @@ type parser struct {
 	loc      *time.Location
 	maxBytes int64        // per-file limit
 	budget   atomic.Int64 // remaining uncompressed bytes for archives
+	takeout  *takeout.Collector
 }
 
 func newParser(loc *time.Location, maxBytes int64) *parser {
@@ -145,7 +152,7 @@ func newParser(loc *time.Location, maxBytes int64) *parser {
 	if maxBytes <= 0 {
 		maxBytes = 200 << 20
 	}
-	p := &parser{loc: loc, maxBytes: maxBytes}
+	p := &parser{loc: loc, maxBytes: maxBytes, takeout: takeout.NewCollector(loc)}
 	p.budget.Store(max(4*maxBytes, 1<<30))
 	return p
 }
@@ -171,13 +178,29 @@ func (p *parser) parseFile(ctx context.Context, filePath, name, format string) (
 		return p.parseZip(ctx, f, st.Size(), 0)
 	}
 	kind := format
-	if kind == "" || kind == FormatAuto {
+	if kind == "" || kind == FormatAuto || kind == FormatTakeout {
+		if takeout.Recognizes(head) {
+			return newBatch(), p.takeout.Parse(name, br)
+		}
 		kind = detect(name, head)
 	}
 	if kind == "" {
 		return nil, fmt.Errorf("%s: %w", name, ErrUnknownFormat)
 	}
 	return p.parseStream(kind, name, name, br, time.Time{}, false)
+}
+
+// takeoutItems turns the Takeout activity read so far into one item per digest.
+func (p *parser) takeoutItems() *Batch {
+	b := newBatch()
+	for _, n := range p.takeout.Notes() {
+		b.addItems(Item{Format: FormatTakeout, Ref: n.Ref, Type: "note", Title: n.Title, Content: n.Content, Summary: n.Summary,
+			Tags: n.Tags, CreatedAt: n.CreatedAt, Meta: n.Meta})
+	}
+	for _, w := range p.takeout.Warnings() {
+		b.warn("Google Takeout: %s", w)
+	}
+	return b
 }
 
 func isZip(head []byte) bool { return bytes.HasPrefix(head, []byte("PK\x03\x04")) }
@@ -431,7 +454,7 @@ func (p *parser) parseEntry(ctx context.Context, e zipEntry, depth int, hasMD bo
 		b.Ignored = 1
 		return b, nil
 	}
-	if junkFiles[base] {
+	if junkFiles[base] || (base == "records.json" && strings.Contains("/"+e.name, "/Takeout/")) { // raw location pings: huge, no value
 		return ignored()
 	}
 	switch ext {
@@ -444,6 +467,10 @@ func (p *parser) parseEntry(ctx context.Context, e zipEntry, depth int, hasMD bo
 	}
 	if (ext == ".html" || ext == ".htm") && jsonBase[strings.TrimSuffix(e.name, path.Ext(e.name))] {
 		return ignored() // Keep: .html duplicates the .json note
+	}
+	if (ext == ".html" || ext == ".htm") && strings.Contains("/"+e.name, "/Takeout/") && takeout.ActivityHTML(e.name) {
+		p.takeout.WarnHTML(e.name) // My Activity / YouTube history in HTML: only JSON is supported
+		return ignored()
 	}
 	rc, err := e.f.Open()
 	if err != nil {
@@ -465,6 +492,9 @@ func (p *parser) parseEntry(ctx context.Context, e zipEntry, depth int, hasMD bo
 		return p.parseZip(ctx, bytes.NewReader(data), int64(len(data)), depth+1)
 	}
 	head, _ := r.Peek(8192)
+	if ext == ".json" && takeout.Recognizes(head) {
+		return newBatch(), p.takeout.Parse(path.Base(e.name), r) // streamed; digests are built after the whole import
+	}
 	kind := detect(e.name, head)
 	switch {
 	case kind == "":

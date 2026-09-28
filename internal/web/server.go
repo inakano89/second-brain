@@ -170,6 +170,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /google/connect", s.auth(s.googleConnect))
 	mux.HandleFunc("GET /google/callback", s.auth(s.googleCallback))
 	mux.HandleFunc("POST /google/disconnect", s.auth(s.googleDisconnect))
+	mux.HandleFunc("POST /google/sync", s.auth(s.googleSync))
 
 	mux.HandleFunc("OPTIONS /api/clip", s.cors(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("POST /api/clip", s.cors(s.tokenOrSession(s.apiClip)))

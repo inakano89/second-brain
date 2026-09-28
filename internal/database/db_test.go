@@ -87,3 +87,22 @@ func TestNodesFTSGraphQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFindPersonByEmail(t *testing.T) {
+	ctx := context.Background()
+	db := openTest(t)
+	p := &Node{Type: TypePerson, Title: "Ana Lima", Meta: map[string]any{"emails": []string{"Ana@Exemplo.com", "ana.lima@work.io"}}}
+	other := &Node{Type: TypeNote, Title: "Nota", Meta: map[string]any{"emails": []string{"ana@exemplo.com"}}}
+	for _, n := range []*Node{other, p} {
+		if err := db.CreateNode(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := db.FindPersonByEmail(ctx, " ana@exemplo.COM ")
+	if err != nil || got.ID != p.ID {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if _, err := db.FindPersonByEmail(ctx, "x@y.z"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}

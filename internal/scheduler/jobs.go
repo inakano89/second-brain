@@ -59,6 +59,11 @@ func Register(s *Scheduler, d *Deps) error {
 		{"rss", "CRON_RSS", enqueue(rss.TaskPoll)},
 		{"gmail", "CRON_GMAIL", enqueue(google.TaskGmailSync)},
 		{"calendar", "CRON_CALENDAR", enqueue(google.TaskCalendarSync)},
+		{"drive", "CRON_DRIVE", enqueue(google.TaskDriveSync)},
+		{"contacts", "CRON_CONTACTS", enqueue(google.TaskContactsSync)},
+		{"google-tasks", "CRON_GOOGLE_TASKS", enqueue(google.TaskTasksSync)},
+		{"youtube", "CRON_YOUTUBE", enqueue(google.TaskYouTubeSync)},
+		{"takeout", "CRON_TAKEOUT", enqueue(google.TaskTakeoutSync)},
 		{"zepp", "CRON_ZEPP", enqueue(zepp.TaskSync)},
 	}
 	if d.Update != nil {
