@@ -71,6 +71,9 @@ func (im *Importer) handleFile(ctx context.Context, raw json.RawMessage) error {
 // Summary describes a finished import in one paragraph (notifications).
 func (r Report) Summary() string {
 	s := fmt.Sprintf("%d novos, %d atualizados, %d sem mudança", r.Created, r.Updated, r.Skipped)
+	if r.Deleted > 0 {
+		s += fmt.Sprintf(", %d apagados por você antes", r.Deleted)
+	}
 	if r.Failed > 0 {
 		s += fmt.Sprintf(", %d falhas", r.Failed)
 	}

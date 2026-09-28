@@ -314,5 +314,8 @@ func (s *Syncer) ingestDriveFile(ctx context.Context, f gDriveFile) (bool, error
 		Source: "drive", SourceRef: f.ID, CreatedAt: pub.Created, Enrich: true,
 		Meta: map[string]any{"link": f.WebViewLink, "mime": f.MimeType, "modified": f.ModifiedTime, "owner": pub.Owner, "hash": hash, "enriched": false},
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return false, nil
+	}
 	return err == nil, err
 }

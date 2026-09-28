@@ -5,6 +5,7 @@ import (
 	"crypto/sha1"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -79,7 +80,8 @@ func hashOf(parts ...string) string {
 func (s *Syncer) unchanged(ctx context.Context, source, ref, hash string) bool {
 	n, err := s.ag.DB().GetNodeBySource(ctx, source, ref)
 	if err != nil {
-		return false
+		gone, _ := s.ag.DB().IsDeletedRef(ctx, source, ref) // deleted by the user: skip the download
+		return gone
 	}
 	h, _ := n.Meta["hash"].(string)
 	return h == hash
@@ -186,6 +188,9 @@ Inclua ações apenas se o e-mail exigir algo do destinatário. Ignore marketing
 		Type: database.TypeNote, Title: "📧 " + e.Subject, Content: content, Summary: an.Summary, Tags: []string{"email"},
 		Source: "gmail", SourceRef: e.ID, CreatedAt: e.Date, Meta: map[string]any{"from": e.From, "link": e.Link, "priority": an.Priority, "enriched": true},
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}
@@ -204,6 +209,9 @@ Inclua ações apenas se o e-mail exigir algo do destinatário. Ignore marketing
 			Type: database.TypeTask, Title: a.Title, Content: "Origem: " + e.Subject + "\n" + e.Link, DueAt: due, Tags: []string{"email"},
 			Source: "gmail", SourceRef: fmt.Sprintf("%s#%d", e.ID, i), Meta: map[string]any{"email_id": e.ID},
 		})
+		if errors.Is(err, database.ErrDeleted) {
+			continue
+		}
 		if err != nil {
 			return err
 		}
@@ -226,5 +234,8 @@ func (s *Syncer) handleNewsletter(ctx context.Context, e *Email) error {
 		Type: database.TypeArticle, Title: e.Subject, Content: summary + "\n\n---\n" + extract.Truncate(e.Body, 20000), Summary: extract.Truncate(summary, 400),
 		Tags: []string{"newsletter"}, Source: "newsletter", SourceRef: e.ID, CreatedAt: e.Date, Meta: map[string]any{"from": e.From, "link": e.Link}, Enrich: true,
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return nil
+	}
 	return err
 }

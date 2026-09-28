@@ -349,6 +349,9 @@ func (s *Syncer) upsertContact(ctx context.Context, p *gPerson) (bool, error) {
 		Type: database.TypePerson, Title: name, Content: content, Tags: []string{"contato"},
 		Source: "contacts", SourceRef: p.ResourceName, Meta: meta, Enrich: true,
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}

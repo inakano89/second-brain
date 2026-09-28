@@ -317,6 +317,9 @@ func (c *Client) Store(ctx context.Context, date string, m map[string]float64, s
 		Type: database.TypeHealth, Title: "Saúde " + date, Content: b.String(), Tags: []string{"saude", source},
 		Source: "health", SourceRef: date, CreatedAt: d, Meta: meta,
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return nil
+	}
 	return err
 }
 

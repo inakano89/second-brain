@@ -179,5 +179,8 @@ func (s *Syncer) upsertTask(ctx context.Context, l gTaskList, t gTask) (bool, er
 		Tags: []string{"google-tasks", l.Title}, Source: "gtasks", SourceRef: t.ID, Enrich: true,
 		Meta: map[string]any{"list": l.Title, "updated": t.Updated, "link": t.WebViewLink, "enriched": true},
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return false, nil
+	}
 	return err == nil, err
 }

@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
+	"errors"
 	"fmt"
 	"io"
 	"log/slog"
@@ -290,10 +291,12 @@ func (p *Poller) Poll(ctx context.Context) (int, error) {
 				Source: "rss", SourceRef: it.GUID, CreatedAt: it.Published,
 				Meta: map[string]any{"url": it.Link, "feed": it.Feed, "relevance": s.Score}, Enrich: true,
 			})
-			if err != nil {
+			switch {
+			case err == nil:
+				stored++
+			case !errors.Is(err, database.ErrDeleted):
 				return stored, err
 			}
-			stored++
 		}
 		db.MarkSeen(ctx, "rss", it.GUID)
 	}

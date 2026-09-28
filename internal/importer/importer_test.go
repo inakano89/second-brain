@@ -4,6 +4,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"log/slog"
 	"os"
@@ -180,5 +181,59 @@ func TestZipRootFolderStripped(t *testing.T) {
 	}
 	if !has(refs, "a.md") || !has(refs, "sub/b.md") {
 		t.Fatalf("refs: %v", refs)
+	}
+}
+
+func TestReimportSkipsDeleted(t *testing.T) {
+	im, db, _, dir := setupImporter(t)
+	ctx := context.Background()
+	html := filepath.Join(dir, "favoritos.html")
+	os.WriteFile(html, []byte(`<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><p>
+<DT><A HREF="https://go.dev/">Go</A>
+<DT><A HREF="https://pkg.go.dev/">Pacotes</A>
+<DT><A HREF="https://sqlite.org/">SQLite</A>
+</DL>`), 0o644)
+	files := []File{{Path: html, Name: "favoritos.html"}}
+	rep := im.Run(ctx, files, Options{})
+	if rep.Created != 3 {
+		t.Fatalf("first import: %+v", rep)
+	}
+	batches, err := db.ImportBatches(ctx, 10)
+	if err != nil || len(batches) != 1 || batches[0].Batch != rep.ID || batches[0].Count != 3 || batches[0].Name != "favoritos.html" {
+		t.Fatalf("batches = %+v, %v", batches, err)
+	}
+	ids, _ := db.NodeIDs(ctx, database.NodeFilter{Batch: rep.ID, Text: "go"}, 100)
+	if len(ids) != 2 {
+		t.Fatalf("batch+text ids = %v", ids)
+	}
+	if _, _, err := db.TrashNodes(ctx, ids, true); err != nil {
+		t.Fatal(err)
+	}
+	again := im.Run(ctx, files, Options{})
+	if again.Created != 0 || again.Deleted != 2 || again.Skipped != 1 || again.Failed != 0 {
+		t.Fatalf("re-import brought deleted items back: %+v", again)
+	}
+	if !strings.Contains(again.Summary(), "2 apagados por você antes") {
+		t.Errorf("summary = %q", again.Summary())
+	}
+
+	// Integrations respect the tombstone; channels where the user sends by hand lift it.
+	for _, src := range []string{"rss", "telegram"} {
+		n, _, err := im.ag.Ingest(ctx, agent.IngestInput{Title: "Post", Source: src, SourceRef: "1"})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, _, err := db.TrashNodes(ctx, []int64{n.ID}, true); err != nil {
+			t.Fatal(err)
+		}
+	}
+	if _, _, err := im.ag.Ingest(ctx, agent.IngestInput{Title: "Post", Source: "rss", SourceRef: "1"}); !errors.Is(err, database.ErrDeleted) {
+		t.Fatalf("rss err = %v", err)
+	}
+	if _, _, err := im.ag.Ingest(ctx, agent.IngestInput{Title: "Post", Source: "telegram", SourceRef: "1"}); err != nil {
+		t.Fatalf("telegram err = %v", err)
+	}
+	if gone, _ := db.IsDeletedRef(ctx, "telegram", "1"); gone {
+		t.Error("explicit send kept the tombstone")
 	}
 }

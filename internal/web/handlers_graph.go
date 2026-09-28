@@ -3,10 +3,8 @@ package web
 import (
 	"encoding/json"
 	"errors"
-	"fmt"
 	"html/template"
 	"net/http"
-	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -271,16 +269,30 @@ func (s *Server) nodeDelete(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "nó não encontrado", http.StatusNotFound)
 		return
 	}
-	if err := s.DB.DeleteNode(r.Context(), n.ID); err != nil {
+	batch, _, err := s.DB.TrashNodes(r.Context(), []int64{n.ID}, true)
+	if err != nil {
 		http.Error(w, err.Error(), 500)
 		return
 	}
-	if f, ok := n.Meta["file"].(string); ok && f != "" {
-		os.Remove(filepath.Join(s.Agent.MediaDir(), filepath.Base(f)))
-	}
-	s.log.Info("nó removido", "id", n.ID, "title", n.Title)
+	s.log.Info("nó movido para a lixeira", "id", n.ID, "title", n.Title)
 	triggerRefresh(w, 0)
-	fmt.Fprintf(w, `<div class="empty">Nó #%d removido.</div>`, n.ID)
+	s.fragment(w, "node_trashed", map[string]any{"ID": n.ID, "Title": n.Title, "Batch": batch})
+}
+
+// nodeRestore undoes a delete made from the detail panel.
+func (s *Server) nodeRestore(w http.ResponseWriter, r *http.Request) {
+	if _, err := s.DB.RestoreBatch(r.Context(), r.FormValue("batch")); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	id, _ := strconv.ParseInt(r.FormValue("id"), 10, 64)
+	n, err := s.DB.GetNode(r.Context(), id)
+	if err != nil {
+		http.Error(w, "nó não encontrado", http.StatusNotFound)
+		return
+	}
+	triggerRefresh(w, n.ID)
+	s.renderNode(w, r, n, "Restaurado.")
 }
 
 func (s *Server) nodeToggle(w http.ResponseWriter, r *http.Request) {

@@ -71,9 +71,12 @@ type NodeFilter struct {
 	Source  string
 	Sources []string // any of these sources
 	Status  string
+	Text    string // full-text match, every word (listings only; Matches ignores it)
+	Batch   string // meta.import_batch
+	Special string // "dup" same type and title, "empty" no content, "orphan" no links (listings only)
 	Limit   int
 	Offset  int
-	Order   string // "created" (default), "updated", "due"
+	Order   string // "created" (default), "oldest", "updated", "due", "title"
 }
 
 // ScoredNode pairs a node with a relevance score.
@@ -361,28 +364,99 @@ func (f NodeFilter) where(alias string) (string, []any) {
 		conds = append(conds, col("status")+" = ?")
 		args = append(args, f.Status)
 	}
+	if m := FTSQueryAll(f.Text); m != "" {
+		conds = append(conds, col("id")+" IN (SELECT rowid FROM nodes_fts WHERE nodes_fts MATCH ?)")
+		args = append(args, m)
+	}
+	if f.Batch != "" {
+		conds = append(conds, "json_extract(CASE WHEN json_valid("+col("meta")+") THEN "+col("meta")+" ELSE '{}' END, '$.import_batch') = ?")
+		args = append(args, f.Batch)
+	}
+	switch f.Special {
+	case "dup":
+		conds = append(conds, "("+col("type")+", lower("+col("title")+")) IN (SELECT type, lower(title) FROM nodes GROUP BY type, lower(title) HAVING COUNT(*) > 1)")
+	case "empty":
+		conds = append(conds, "trim("+col("content")+") = '' AND trim("+col("summary")+") = ''")
+	case "orphan":
+		conds = append(conds, "NOT EXISTS (SELECT 1 FROM edges e WHERE e.source_id = "+col("id")+" OR e.target_id = "+col("id")+")")
+	}
 	if len(conds) == 0 {
 		return "1=1", nil
 	}
 	return strings.Join(conds, " AND "), args
 }
 
+func (f NodeFilter) order() string {
+	switch f.Order {
+	case "oldest":
+		return "created_at ASC, id ASC"
+	case "updated":
+		return "updated_at DESC"
+	case "due":
+		return "due_at IS NULL, due_at ASC, created_at DESC"
+	case "title":
+		return "lower(title), type, id"
+	}
+	return "created_at DESC, id DESC"
+}
+
 // ListNodes lists nodes matching f.
 func (db *DB) ListNodes(ctx context.Context, f NodeFilter) ([]Node, error) {
 	where, args := f.where("")
-	order := "created_at DESC"
-	switch f.Order {
-	case "updated":
-		order = "updated_at DESC"
-	case "due":
-		order = "due_at IS NULL, due_at ASC, created_at DESC"
-	}
+	order := f.order()
 	limit := f.Limit
 	if limit <= 0 || limit > 5000 {
 		limit = 100
 	}
 	args = append(args, limit, f.Offset)
 	return db.queryNodes(ctx, `SELECT `+nodeCols+` FROM nodes WHERE `+where+` ORDER BY `+order+` LIMIT ? OFFSET ?`, args...)
+}
+
+// CountNodes counts nodes matching f.
+func (db *DB) CountNodes(ctx context.Context, f NodeFilter) (int, error) {
+	where, args := f.where("")
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM nodes WHERE `+where, args...).Scan(&n)
+	return n, err
+}
+
+// NodeIDs returns the ids of every node matching f (up to max), in listing order.
+func (db *DB) NodeIDs(ctx context.Context, f NodeFilter, max int) ([]int64, error) {
+	where, args := f.where("")
+	return db.int64s(ctx, `SELECT id FROM nodes WHERE `+where+` ORDER BY `+f.order()+` LIMIT ?`, append(args, max)...)
+}
+
+// ImportBatch is one import run as recorded in its nodes.
+type ImportBatch struct {
+	Batch  string    `json:"batch"`
+	Name   string    `json:"name"`
+	Source string    `json:"source"`
+	Count  int       `json:"count"`
+	At     time.Time `json:"at"`
+}
+
+// ImportBatches lists import runs that still have nodes, newest first.
+func (db *DB) ImportBatches(ctx context.Context, limit int) ([]ImportBatch, error) {
+	rows, err := db.QueryContext(ctx, `SELECT b, MAX(name), MIN(source), COUNT(*), MAX(at) FROM (
+			SELECT json_extract(meta, '$.import_batch') AS b, COALESCE(json_extract(meta, '$.import_name'), '') AS name,
+				source, COALESCE(json_extract(meta, '$.import_at'), created_at) AS at
+			FROM nodes WHERE source LIKE 'import:%' AND json_valid(meta))
+		WHERE b IS NOT NULL AND b <> '' GROUP BY b ORDER BY MAX(at) DESC LIMIT ?`, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ImportBatch
+	for rows.Next() {
+		var b ImportBatch
+		var at string
+		if err := rows.Scan(&b.Batch, &b.Name, &b.Source, &b.Count, &at); err != nil {
+			return nil, err
+		}
+		b.At = parseTime(at)
+		out = append(out, b)
+	}
+	return out, rows.Err()
 }
 
 // Matches reports whether n satisfies f (used to post-filter vector hits).
@@ -412,6 +486,9 @@ func (f NodeFilter) Matches(n *Node) bool {
 		return false
 	}
 	if f.Status != "" && n.Status != f.Status {
+		return false
+	}
+	if f.Batch != "" && n.Meta["import_batch"] != f.Batch {
 		return false
 	}
 	if f.Tag != "" {
@@ -446,6 +523,11 @@ func FTSQuery(q string) string {
 		}
 	}
 	return strings.Join(terms, " OR ")
+}
+
+// FTSQueryAll converts free text into an FTS5 expression requiring every word (as prefix).
+func FTSQueryAll(q string) string {
+	return strings.ReplaceAll(FTSQuery(q), " OR ", " ")
 }
 
 // SearchFTS runs a BM25-ranked full-text query.

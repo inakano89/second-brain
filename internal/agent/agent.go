@@ -112,6 +112,11 @@ type IngestInput struct {
 	Enrich    bool
 }
 
+// explicitSources are channels where the user sends content by hand: a deleted item sent
+// again comes back. Everything else (integrations, imports, the agent) returns
+// database.ErrDeleted for items the user deleted with "não trazer de volta".
+var explicitSources = map[string]bool{"telegram": true, "voice": true, "web": true, "api": true, "clip": true, "watcher": true}
+
 // Ingest stores a node (upserting by source ref) and optionally queues enrichment.
 func (a *Agent) Ingest(ctx context.Context, in IngestInput) (*database.Node, bool, error) {
 	if in.Type == "" {
@@ -122,6 +127,20 @@ func (a *Agent) Ingest(ctx context.Context, in IngestInput) (*database.Node, boo
 	}
 	if in.Meta == nil {
 		in.Meta = map[string]any{}
+	}
+	if in.SourceRef != "" {
+		gone, err := a.db.IsDeletedRef(ctx, in.Source, in.SourceRef)
+		if err != nil {
+			return nil, false, err
+		}
+		if gone && !explicitSources[in.Source] {
+			return nil, false, database.ErrDeleted
+		}
+		if gone { // sent again on purpose: it may come back
+			if err := a.db.ForgetDeletedRef(ctx, in.Source, in.SourceRef); err != nil {
+				return nil, false, err
+			}
+		}
 	}
 	n := &database.Node{
 		Type: in.Type, Title: extract.Truncate(strings.TrimSpace(in.Title), 200), Content: in.Content, Summary: in.Summary,
@@ -284,6 +303,9 @@ func (a *Agent) linkEntities(ctx context.Context, n *database.Node, ents []entit
 		if e.Kind == "person" {
 			p, err := a.db.FindByTitle(ctx, database.TypePerson, name)
 			if errors.Is(err, database.ErrNotFound) {
+				if gone, _ := a.db.IsDeletedRef(ctx, database.AutoPersonSource, strings.ToLower(name)); gone {
+					continue
+				}
 				p = &database.Node{Type: database.TypePerson, Title: name, Source: "agent", Meta: map[string]any{"auto": true}}
 				if err := a.db.CreateNode(ctx, p); err != nil {
 					return err
@@ -322,6 +344,9 @@ func (a *Agent) extractTasks(ctx context.Context, n *database.Node, tasks []extr
 			Type: database.TypeTask, Title: t.Title, Source: "agent", SourceRef: fmt.Sprintf("task:%d:%d", n.ID, i),
 			DueAt: due, Meta: map[string]any{"from_node": n.ID},
 		})
+		if errors.Is(err, database.ErrDeleted) {
+			continue
+		}
 		if err != nil {
 			return err
 		}

@@ -2,6 +2,7 @@ package google
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"net/url"
 	"sort"
@@ -12,6 +13,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/inakano89/second-brain/internal/agent"
+	"github.com/inakano89/second-brain/internal/database"
 )
 
 type gTime struct {
@@ -243,7 +245,7 @@ func (s *Syncer) SyncCalendar(ctx context.Context) (int, error) {
 				return err
 			}
 			for _, ev := range evs {
-				if _, err := s.ag.UpsertEventNode(gctx, ev); err != nil {
+				if _, err := s.ag.UpsertEventNode(gctx, ev); err != nil && !errors.Is(err, database.ErrDeleted) {
 					return err
 				}
 			}

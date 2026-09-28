@@ -5,6 +5,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -318,7 +319,7 @@ func TestEndToEnd(t *testing.T) {
 	if !found {
 		t.Fatal("obsidian export missing note with wiki-links")
 	}
-	e.expect(e.form("/nodes/2/delete", url.Values{}), 200, "removido")
+	e.expect(e.form("/nodes/2/delete", url.Values{}), 200, "lixeira")
 	if r := e.do("POST", "/nodes", strings.NewReader("title=x"), map[string]string{"Origin": "https://evil.example", "Content-Type": "application/x-www-form-urlencoded"}); r.Code != 403 {
 		t.Fatalf("csrf not blocked: %d", r.Code)
 	}
@@ -425,4 +426,130 @@ func TestImport(t *testing.T) {
 	if r := e.do("POST", "/import", body, map[string]string{"Content-Type": ct}); !strings.Contains(r.Header().Get("Location"), "IMPORT_MAX_MB") {
 		t.Fatalf("oversized upload accepted: %d %s", r.Code, r.Header().Get("Location"))
 	}
+}
+
+func TestContentManager(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	token := e.cfg.Get("API_TOKEN")
+	anon := *e
+	anon.cookie = nil
+	var bm strings.Builder
+	bm.WriteString(`<!DOCTYPE NETSCAPE-Bookmark-file-1><DL>`)
+	for i := range 60 {
+		fmt.Fprintf(&bm, `<DT><A HREF="https://site%d.example/">Favorito %02d</A>`, i, i)
+	}
+	bm.WriteString(`</DL>`)
+	rec := anon.do("POST", "/api/import?filename=favoritos.html", strings.NewReader(bm.String()), map[string]string{"Authorization": "Bearer " + token, "Content-Type": "text/html"})
+	e.expect(rec, 200, `"created":60`)
+	var rep struct{ ID string }
+	json.Unmarshal(rec.Body.Bytes(), &rep)
+	note, _, err := e.ag.Ingest(ctx, agent.IngestInput{Title: "Nota pessoal", Content: "texto", Source: "web"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	e.expect(e.do("GET", "/content", nil, nil), 200, `href="/content" class="active"`, "Conteúdo", "1–50 de 61", "📥 Importação: Favoritos (60)", `data-special="dup"`, "/static/content.js")
+	rows := e.do("GET", "/content/rows?source=import:bookmarks&order=title&offset=50", nil, map[string]string{"HX-Request": "true"})
+	e.expect(rows, 200, "51–60 de 60", "Favorito 59", `id="content-rows"`)
+	if u := rows.Header().Get("HX-Push-Url"); u != "/content?offset=50&order=title&source=import%3Abookmarks" {
+		t.Errorf("push url = %q", u)
+	}
+	e.expect(e.do("GET", "/content?batch="+rep.ID, nil, nil), 200, "📥 favoritos.html ✕", "1–50 de 60")
+	e.expect(e.do("GET", "/content/sends", nil, nil), 200, "favoritos.html", "/content?batch="+rep.ID, "Apagar envio")
+	e.expect(e.form("/content/bulk", url.Values{"action": {"trash"}}), 200, "Nenhum item selecionado")
+
+	// Tag, retype and delete a hand-picked selection.
+	ids, _ := e.db.NodeIDs(ctx, database.NodeFilter{Batch: rep.ID, Order: "title"}, 3)
+	sel := url.Values{"source": {"import:bookmarks"}}
+	for _, id := range ids {
+		sel.Add("id", fmt.Sprint(id))
+	}
+	with := func(kv ...string) url.Values {
+		v := url.Values{}
+		for k, vals := range sel {
+			v[k] = append([]string(nil), vals...)
+		}
+		for i := 0; i+1 < len(kv); i += 2 {
+			v.Set(kv[i], kv[i+1])
+		}
+		return v
+	}
+	e.expect(e.form("/content/bulk", with("action", "tag_add", "set_tag", "#Ler Depois")), 200, "Tag #ler-depois adicionada a 3 itens")
+	if n, _ := e.db.CountNodes(ctx, database.NodeFilter{Tag: "ler-depois"}); n != 3 {
+		t.Fatalf("tagged = %d", n)
+	}
+	e.expect(e.form("/content/bulk", with("action", "retype", "to_type", "task")), 200, "3 itens movido(s) para Tarefas")
+	e.expect(e.form("/content/bulk", with("action", "done")), 200, "3 tarefas atualizadas")
+	e.expect(e.form("/content/bulk", with("action", "tag_remove", "set_tag", "ler-depois")), 200, "removida de 3 itens")
+	rec = e.form("/content/bulk", with("action", "trash", "forget", "1"))
+	e.expect(rec, 200, "3 itens movidos para a lixeira", "Não voltam", "Desfazer", "1–50 de 57")
+	between := func(s, start, end string) string {
+		t.Helper()
+		i := strings.Index(s, start)
+		if i < 0 {
+			t.Fatalf("%q not found", start)
+		}
+		s = s[i+len(start):]
+		return s[:strings.Index(s, end)]
+	}
+	undo := between(rec.Body.String(), `{"undo":"`, `"`)
+	e.expect(e.form("/content/undo", url.Values{"undo": {undo}, "source": {"import:bookmarks"}}), 200, "3 itens restaurados", "1–50 de 60")
+	if n, _ := e.db.DeletedRefCount(ctx); n != 0 {
+		t.Fatalf("tombstones after undo = %d", n)
+	}
+
+	// Export the selection, then delete every result of a filter.
+	rec = e.form("/content/export", with())
+	e.expect(rec, 200)
+	if zr, err := zip.NewReader(bytes.NewReader(rec.Body.Bytes()), int64(rec.Body.Len())); err != nil || len(zr.File) != 4 {
+		t.Fatalf("export = %v, %v", zr, err)
+	}
+	e.expect(e.form("/content/bulk", url.Values{"action": {"trash"}, "all": {"1"}, "batch": {rep.ID}, "forget": {"1"}}), 200, "60 itens movidos", "Nada encontrado")
+	if n, _ := e.db.CountNodes(ctx, database.NodeFilter{}); n != 1 {
+		t.Fatalf("left %d nodes", n)
+	}
+
+	// Re-importing the same file does not bring them back.
+	rec = anon.do("POST", "/api/import?filename=favoritos.html", strings.NewReader(bm.String()), map[string]string{"Authorization": "Bearer " + token, "Content-Type": "text/html"})
+	e.expect(rec, 200, `"created":0`, `"deleted":60`)
+
+	// Trash: list, restore a batch, purge, unblock.
+	trash := e.do("GET", "/content/trash", nil, nil)
+	e.expect(trash, 200, "Lixeira", "60</b> itens", "Restaurar lote", "60 item(ns) apagado(s)", "Permitir que voltem")
+	items, _, _ := e.db.ListTrash(ctx, "", "", 1, 0)
+	rec = e.form("/content/trash/action", url.Values{"action": {"restore"}, "batch": {items[0].Batch}})
+	if rec.Code != 303 || !strings.Contains(rec.Header().Get("Location"), "60+itens+restaurados") {
+		t.Fatalf("restore batch: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	e.form("/content/bulk", url.Values{"action": {"trash"}, "id": {fmt.Sprint(note.ID)}})
+	rec = e.form("/content/trash/action", url.Values{"action": {"purge"}, "id": {fmt.Sprint(note.ID)}})
+	if !strings.Contains(rec.Header().Get("Location"), "1+item+apagado+definitivamente") {
+		t.Fatalf("purge: %s", rec.Header().Get("Location"))
+	}
+	rec = e.form("/content/trash/action", url.Values{"action": {"unblock"}})
+	if !strings.Contains(rec.Header().Get("Location"), "flash=") {
+		t.Fatalf("unblock: %s", rec.Header().Get("Location"))
+	}
+	if n, _ := e.db.DeletedRefCount(ctx); n != 0 {
+		t.Fatalf("tombstones = %d", n)
+	}
+
+	// Whole source from the Envios tab, then empty the trash.
+	rec = e.form("/content/sends/trash", url.Values{"source": {"import:bookmarks"}, "forget": {"1"}})
+	if !strings.Contains(rec.Header().Get("Location"), "/content/trash?flash=60+itens") {
+		t.Fatalf("send trash: %s", rec.Header().Get("Location"))
+	}
+	e.form("/content/trash/action", url.Values{"action": {"empty"}})
+	if n, _ := e.db.TrashCount(ctx); n != 0 {
+		t.Fatalf("trash = %d", n)
+	}
+
+	// Detail panel delete goes to the trash and can be undone.
+	n2, _, _ := e.ag.Ingest(ctx, agent.IngestInput{Title: "Outra", Source: "web"})
+	rec = e.form(fmt.Sprintf("/nodes/%d/delete", n2.ID), url.Values{})
+	e.expect(rec, 200, "lixeira", "Desfazer")
+	batch := between(rec.Body.String(), `{"batch":"`, `"`)
+	e.expect(e.form("/nodes/restore", url.Values{"batch": {batch}, "id": {fmt.Sprint(n2.ID)}}), 200, "Restaurado", "Outra")
 }

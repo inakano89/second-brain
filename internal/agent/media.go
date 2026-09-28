@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
@@ -56,6 +57,16 @@ func DetectMIME(name string, data []byte) string {
 
 // MediaDir is where original images/documents are kept for reference.
 func (a *Agent) MediaDir() string { return filepath.Join(a.cfg.GetPath("DATA_DIR"), "media") }
+
+// PurgeTrash permanently deletes trashed nodes (ids, or with ids nil everything deleted
+// before the cutoff) together with their media files.
+func (a *Agent) PurgeTrash(ctx context.Context, ids []int64, before time.Time) (int, error) {
+	files, n, err := a.db.PurgeTrash(ctx, ids, before)
+	for _, f := range files {
+		os.Remove(filepath.Join(a.MediaDir(), filepath.Base(f)))
+	}
+	return n, err
+}
 
 func (a *Agent) keepFile(data []byte, name string) string {
 	dir := a.MediaDir()
