@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 func sse(w http.ResponseWriter, events ...string) {
@@ -155,5 +156,20 @@ func TestHelpers(t *testing.T) {
 	}
 	if c := p.Cost("x", "meu-modelo-v2", Usage{InputTokens: 1e6}); c != 1 {
 		t.Fatalf("override = %v", c)
+	}
+	// Long-prompt tier (Gemini > 200k) and dated price changes.
+	if c := p.Cost("gemini", "gemini-3.1-pro-preview", Usage{InputTokens: 100_000, OutputTokens: 1e6}); c != 0.2+12 {
+		t.Fatalf("gemini pro short = %v", c)
+	}
+	if c := p.Cost("gemini", "gemini-3.1-pro-preview", Usage{InputTokens: 300_000, OutputTokens: 1e6}); c != 1.2+18 {
+		t.Fatalf("gemini pro long = %v", c)
+	}
+	pl, _ := p.Plan("gemini", "models/gemini-3.8-flash")
+	jan := time.Date(2027, 1, 1, 0, 0, 0, 0, time.UTC)
+	if pl.At(jan.Add(-time.Second), 0) != (Price{0.75, 3.75}) || pl.At(jan, 0) != (Price{1.5, 7.5}) {
+		t.Fatalf("flash schedule = %+v", pl)
+	}
+	if m, _ := BuiltinCatalog().Lookup("gemini:gemini-3.8-flash"); len(m.PriceNotes(jan.Add(-time.Hour))) != 1 || len(m.PriceNotes(jan)) != 0 {
+		t.Fatal("price notes should list only upcoming changes")
 	}
 }

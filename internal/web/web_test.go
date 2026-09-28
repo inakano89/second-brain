@@ -211,7 +211,7 @@ func TestEndToEnd(t *testing.T) {
 	}
 
 	// Models page: catalogue, defaults, routes, council.
-	e.expect(e.do("GET", "/models", nil, nil), 200, "Catálogo", "Conselho", "LLM_ROUTE_BRIEFING", "Lista recomendada", "claude-opus-5-5", "US$ 4 / 20", "gpt-6-astra", "gemini-3.1-pro-preview")
+	e.expect(e.do("GET", "/models", nil, nil), 200, "Catálogo", "Conselho", "LLM_ROUTE_BRIEFING", "Lista recomendada", "claude-opus-5-5", "US$ 4 / 20", "gpt-6-astra", "US$ 10 / 50", "gemini-3.1-pro-preview", "prompts acima de 200k tokens: US$ 4 / 18", "US$ 0.75 / 3.75")
 	if r := e.form("/models/sync", url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "error=") {
 		t.Fatalf("offline sync should report an error: %s", r.Header().Get("Location"))
 	}

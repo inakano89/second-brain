@@ -6,8 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
+	"time"
 )
 
 //go:embed models.json
@@ -18,11 +20,29 @@ type CatalogModel struct {
 	ID    string    `json:"id"`
 	Name  string    `json:"name,omitempty"`
 	Price []float64 `json:"price,omitempty"` // USD per 1M tokens: [input, output]
-	Note  string    `json:"note,omitempty"`
+	// PriceChanges are announced price changes ({"from": "2027-01-01", "price": [in, out]}).
+	PriceChanges []CatalogPriceChange `json:"price_changes,omitempty"`
+	// LongContext is the price when the prompt exceeds Above input tokens.
+	LongContext *CatalogLongContext `json:"long_context,omitempty"`
+	Note        string              `json:"note,omitempty"`
 	// Replaces lists older ids of the same provider this model succeeds; installs
 	// move defaults, routes and council seats from them to this model.
 	Replaces []string `json:"replaces,omitempty"`
 }
+
+// CatalogPriceChange is a dated price change.
+type CatalogPriceChange struct {
+	From  string    `json:"from"` // YYYY-MM-DD (UTC)
+	Price []float64 `json:"price"`
+}
+
+// CatalogLongContext is a long-prompt price tier.
+type CatalogLongContext struct {
+	Above int       `json:"above"`
+	Price []float64 `json:"price"`
+}
+
+func validPrice(p []float64) bool { return len(p) == 2 && p[0] >= 0 && p[1] >= 0 }
 
 // CatalogProvider lists a provider's curated models and its recommended default.
 type CatalogProvider struct {
@@ -74,8 +94,19 @@ func ParseCuratedCatalog(b []byte) (*CuratedCatalog, error) {
 				return nil, fmt.Errorf("catálogo: modelo repetido %q", m.ID)
 			}
 			seen[m.ID] = true
-			if len(m.Price) != 0 && (len(m.Price) != 2 || m.Price[0] < 0 || m.Price[1] < 0) {
+			if len(m.Price) != 0 && !validPrice(m.Price) {
 				return nil, fmt.Errorf("catálogo: preço inválido em %q", m.ID)
+			}
+			if (len(m.PriceChanges) > 0 || m.LongContext != nil) && len(m.Price) == 0 {
+				return nil, fmt.Errorf("catálogo: %q tem regras de preço sem preço base", m.ID)
+			}
+			for _, pc := range m.PriceChanges {
+				if _, err := time.Parse(time.DateOnly, pc.From); err != nil || !validPrice(pc.Price) {
+					return nil, fmt.Errorf("catálogo: price_changes inválido em %q", m.ID)
+				}
+			}
+			if lc := m.LongContext; lc != nil && (lc.Above <= 0 || !validPrice(lc.Price)) {
+				return nil, fmt.Errorf("catálogo: long_context inválido em %q", m.ID)
 			}
 			for _, r := range m.Replaces {
 				if !catalogIDRe.MatchString(r) {
@@ -155,14 +186,41 @@ func (c *CuratedCatalog) successors() map[string]string {
 	return out
 }
 
-func (c *CuratedCatalog) prices() map[string]Price {
-	out := map[string]Price{}
+func (c *CuratedCatalog) pricePlans() map[string]PricePlan {
+	out := map[string]PricePlan{}
 	for _, cp := range c.Providers {
 		for _, m := range cp.Models {
 			if len(m.Price) == 2 {
-				out[strings.ToLower(m.ID)] = Price{m.Price[0], m.Price[1]}
+				out[strings.ToLower(m.ID)] = m.plan()
 			}
 		}
+	}
+	return out
+}
+
+func (m CatalogModel) plan() PricePlan {
+	pl := PricePlan{Base: Price{m.Price[0], m.Price[1]}}
+	for _, pc := range m.PriceChanges {
+		from, _ := time.Parse(time.DateOnly, pc.From)
+		pl.Changes = append(pl.Changes, PriceChange{From: from, Price: Price{pc.Price[0], pc.Price[1]}})
+	}
+	slices.SortFunc(pl.Changes, func(a, b PriceChange) int { return a.From.Compare(b.From) })
+	if lc := m.LongContext; lc != nil {
+		pl.LongAbove, pl.Long = lc.Above, Price{lc.Price[0], lc.Price[1]}
+	}
+	return pl
+}
+
+// PriceNotes describes upcoming price changes and the long-prompt tier.
+func (m CatalogModel) PriceNotes(now time.Time) []string {
+	var out []string
+	for _, pc := range m.plan().Changes {
+		if now.Before(pc.From) {
+			out = append(out, fmt.Sprintf("a partir de %s: US$ %g / %g", pc.From.Format("02/01/2006"), pc.Price.In, pc.Price.Out))
+		}
+	}
+	if lc := m.LongContext; lc != nil {
+		out = append(out, fmt.Sprintf("prompts acima de %dk tokens: US$ %g / %g", lc.Above/1000, lc.Price[0], lc.Price[1]))
 	}
 	return out
 }

@@ -479,7 +479,7 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 
 **Modelos**: os padrões vêm da [lista recomendada](internal/llm/models.json) (hoje `claude-opus-5-5`, `gpt-6-astra`, `gemini-3.1-pro-preview`, e `llama3.1` no local) e se atualizam sozinhos. Gerencie-os em [Modelos de IA e Conselho](#modelos-de-ia-e-conselho). As chaves `LLM_MODELS`, `*_MODEL`, `LLM_ROUTE_*` e `LLM_COUNCIL_*` são editadas pela página `/models`.
 
-**Custos**: estimados por tabela de preços (USD por 1M tokens, correspondência pelo maior prefixo do nome do modelo), com os preços da lista recomendada por cima. Modelo sem preço conhecido aparece como “preço desconhecido” em `/models` e conta US$ 0 no painel. Sobrescreva com `LLM_PRICING='{"meu-modelo":[0.5,1.5]}'`.
+**Custos**: estimados por tabela de preços (USD por 1M tokens, correspondência pelo maior prefixo do nome do modelo), com os preços da lista recomendada por cima (inclusive mudanças de preço com data marcada e a faixa mais cara para prompts longos, como a do Gemini acima de 200 mil tokens). Modelo sem preço conhecido aparece como “preço desconhecido” em `/models` e conta US$ 0 no painel. Sobrescreva com `LLM_PRICING='{"meu-modelo":[0.5,1.5]}'`.
 
 Alterações feitas pelo editor web são aplicadas na hora: clientes LLM, ações e serviços de fundo são reiniciados, e mudanças de `HTTP_PORT`/`HTTP_HOST` migram o listener sem derrubar o processo. `DATA_DIR` exige reinício.
 

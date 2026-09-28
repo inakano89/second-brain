@@ -49,8 +49,10 @@ func TestBuiltinCatalogMatchesSchemaDefaults(t *testing.T) {
 			t.Fatalf("schema %s default = %q, models.json = %q", DefaultModelKey(p), f.Default, b.DefaultFor(p))
 		}
 	}
-	if len(b.prices()) == 0 {
-		t.Fatal("builtin catalogue has no prices")
+	for _, spec := range b.Specs() {
+		if m, _ := b.Lookup(spec); len(m.Price) != 2 {
+			t.Errorf("%s has no price in models.json", spec)
+		}
 	}
 }
 

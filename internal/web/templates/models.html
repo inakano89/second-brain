@@ -32,7 +32,7 @@
           {{range .Models}}
             <tr>
               <td><code>{{.Model}}</code>{{if .Name}}<br><small class="muted">{{.Name}}</small>{{end}}{{if .Note}}<br><small class="warn">{{.Note}}</small>{{end}}</td>
-              <td class="nowrap"><small class="muted">{{if eq .Provider "ollama"}}grátis (local){{else}}{{price .Price}}{{end}}</small></td>
+              <td><small class="muted nowrap">{{if eq .Provider "ollama"}}grátis (local){{else}}{{price .Price}}{{end}}</small>{{if .PriceNote}}<br><small class="muted">{{.PriceNote}}</small>{{end}}</td>
               <td>{{if .Default}}<span class="pill ok">★ padrão</span>{{else}}
                 <form method="post" action="/models/default" class="inline"><input type="hidden" name="spec" value="{{.Spec}}"><button class="btn small">Tornar padrão</button></form>{{end}}</td>
               <td class="r">

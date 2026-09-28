@@ -19,18 +19,20 @@
     "openai": {
       "default": "gpt-6-astra",
       "models": [
-        {"id": "gpt-6-astra", "name": "GPT-6 Astra"},
-        {"id": "gpt-6-sol", "name": "GPT-6 Sol"},
-        {"id": "gpt-6-luna", "name": "GPT-6 Luna"}
+        {"id": "gpt-6-astra", "name": "GPT-6 Astra", "price": [10, 50]},
+        {"id": "gpt-6-sol", "name": "GPT-6 Sol", "price": [2, 10]},
+        {"id": "gpt-6-luna", "name": "GPT-6 Luna", "price": [0.1, 0.5]}
       ]
     },
     "gemini": {
       "default": "gemini-3.1-pro-preview",
       "models": [
-        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"},
-        {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro (preview)"}
+        {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash", "price": [0.75, 3.75],
+         "price_changes": [{"from": "2027-01-01", "price": [1.5, 7.5]}]},
+        {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro (preview)", "price": [2, 12],
+         "long_context": {"above": 200000, "price": [4, 18]}}
       ]
     }
   },
-  "watch_ignore": ["claude-haiku-4-5"]
+  "watch_ignore": ["claude-haiku-4-5", "gemini-3.1-pro-preview-customtools"]
 }

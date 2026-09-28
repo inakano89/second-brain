@@ -51,7 +51,7 @@ Fontes oficiais, que devem ser consultadas a cada atualização:
 - Gemini: https://ai.google.dev/gemini-api/docs/models
 
 Para atualizar:
-1. Edite `models.json`: modelos, o `default` de cada provedor (escolhido pelo mantenedor) e o `price` `[entrada, saída]` em US$ por 1M tokens. Se o preço não for conhecido, deixe o campo de fora; nunca invente um. Quando um modelo substitui outro, declare `"replaces": ["id-antigo"]`: as instalações movem para ele o padrão, as tarefas e o Conselho que usavam o antigo.
+1. Edite `models.json`: modelos, o `default` de cada provedor (escolhido pelo mantenedor) e o `price` `[entrada, saída]` em US$ por 1M tokens. Se o preço não for conhecido, deixe o campo de fora; nunca invente um. Mudança de preço anunciada: `"price_changes": [{"from": "AAAA-MM-DD", "price": [in, out]}]`. Preço maior para prompts longos (ex.: Gemini acima de 200k): `"long_context": {"above": 200000, "price": [in, out]}`. Quando um modelo substitui outro, declare `"replaces": ["id-antigo"]`: as instalações movem para ele o padrão, as tarefas e o Conselho que usavam o antigo.
 2. **Aumente `revision`** e atualize `updated`. Sem aumentar a revisão, nenhuma instalação aplica a mudança.
 3. Espelhe a lista nos defaults de `LLM_MODELS` e `*_MODEL` em `internal/config/schema.go`; um teste confere que batem.
 4. Regenere o `.env.example`, rode `make check` e abra o PR.

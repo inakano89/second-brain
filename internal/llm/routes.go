@@ -3,6 +3,7 @@ package llm
 import (
 	"sort"
 	"strings"
+	"time"
 )
 
 // Special route values.
@@ -139,7 +140,8 @@ type ModelEntry struct {
 	Model      string
 	Name       string // friendly name from the curated catalogue
 	Note       string
-	Price      *Price // nil when unknown
+	Price      *Price // today's price; nil when unknown
+	PriceNote  string // upcoming changes / long-prompt tier
 	Default    bool
 	Configured bool
 }
@@ -192,6 +194,7 @@ func (m *Manager) Catalog() []ModelEntry {
 		e := ModelEntry{Provider: p, Model: mdl, Default: cfg.Get(DefaultModelKey(p)) == mdl, Configured: m.Configured(p)}
 		if cm, ok := cur.Lookup(s); ok {
 			e.Name, e.Note = cm.Name, cm.Note
+			e.PriceNote = strings.Join(cm.PriceNotes(time.Now()), " · ")
 		}
 		if pr, ok := m.PriceOf(p, mdl); ok && p != "ollama" {
 			e.Price = &pr
