@@ -1,0 +1,21 @@
+{{define "content"}}
+{{with .Data}}
+<section class="card">
+  <form class="log-filters" hx-get="/logs/rows" hx-target="#log-body" hx-trigger="change, input changed delay:400ms from:#log-q, submit">
+    <select name="level">
+      <option value="">Todos níveis</option>
+      {{range $l := (split "INFO,WARN,ERROR,DEBUG")}}<option value="{{$l}}" {{if eq $l $.Data.Filter.Level}}selected{{end}}>{{$l}}</option>{{end}}
+    </select>
+    <select name="component">
+      <option value="">Todos componentes</option>
+      {{range .Components}}<option value="{{.}}" {{if eq . $.Data.Filter.Component}}selected{{end}}>{{.}}</option>{{end}}
+    </select>
+    <input id="log-q" type="search" name="q" value="{{.Filter.Query}}" placeholder="Buscar…">
+  </form>
+  <table class="tbl logs">
+    <thead><tr><th>Quando</th><th>Nível</th><th>Componente</th><th>Mensagem</th></tr></thead>
+    <tbody id="log-body">{{template "log_rows" .}}</tbody>
+  </table>
+</section>
+{{end}}
+{{end}}

@@ -1,0 +1,166 @@
+{{define "content"}}
+{{with .Data}}
+<div class="settings">
+  <nav class="toc card">
+    <b>Seções</b>
+    <a href="#telegram">Telegram</a>
+    <a href="/models">Modelos de IA →</a>
+    <a href="#env">Variáveis (.env)</a>
+    <a href="#google">Google</a>
+    <a href="#clipper">Web Clipper &amp; API</a>
+    <a href="#updates">Atualizações</a>
+    <a href="#actions">Agent actions</a>
+    <a href="#backup">Backup &amp; export</a>
+    <a href="#password">Senha</a>
+  </nav>
+
+  <div class="settings-main">
+    <section class="card" id="telegram">
+      <h2>💬 Telegram</h2>
+      {{if not .TelegramOK}}
+        <p>Nenhum bot configurado. <a href="/help#telegram">Passo a passo para criar o bot</a> (2 minutos) e cole o token em <a href="#env">Variáveis → Telegram</a>.</p>
+      {{else}}
+        <p><button class="btn small" hx-post="/telegram/check" hx-target="#tg-check">Verificar bot</button> <span id="tg-check"></span></p>
+        <h3>Aguardando autorização</h3>
+        {{if .Pending}}
+        <table class="tbl compact">
+          <tbody>{{range .Pending}}<tr><td><b>{{.FirstName}}</b>{{if .Username}} @{{.Username}}{{end}}<br><small class="muted">ID {{.ID}} · {{fmtTime .At}}</small></td>
+            <td class="r"><form method="post" action="/telegram/authorize" class="inline"><input type="hidden" name="id" value="{{.ID}}"><button class="btn small primary">Autorizar</button></form></td></tr>{{end}}</tbody>
+        </table>
+        {{else}}<p class="muted">Ninguém aguardando. Envie <code>/start</code> ao seu bot e recarregue esta página.</p>{{end}}
+        <h3>Autorizados</h3>
+        {{if .Allowed}}
+        <ul class="plain">{{range .Allowed}}<li><code>{{.}}</code> <form method="post" action="/telegram/revoke" class="inline"><input type="hidden" name="id" value="{{.}}"><button class="btn small danger" data-confirm="Remover o acesso de {{.}}?">remover</button></form></li>{{end}}</ul>
+        {{else}}<p class="muted">Nenhum usuário autorizado — o bot ignora todos.</p>{{end}}
+      {{end}}
+    </section>
+
+    <section class="card" id="env">
+      <h2>⚙️ Editor do .env</h2>
+      <p class="muted">Arquivo: <code>{{.EnvPath}}</code>. Campos secretos em branco mantêm o valor atual; digite <code>!clear</code> para apagar. Alterações são aplicadas imediatamente (serviços reiniciados).</p>
+      <form method="post" action="/settings/env" class="env-form">
+        {{range .Groups}}
+        <fieldset>
+          <legend>{{.Name}}{{with helpAnchor .Name}} · <a href="/help#{{.}}" target="_blank">❓ como configurar</a>{{end}}</legend>
+          {{range .Fields}}
+          <label class="env-field">
+            <span>{{or .Label .Key}} <code class="key">{{.Key}}</code>{{if eq .Source "env"}} <em class="muted">(via ambiente)</em>{{end}}</span>
+            {{if eq .Kind "bool"}}
+              <input type="hidden" name="__bool" value="{{.Key}}"><input type="checkbox" name="{{.Key}}" value="true" {{if eq .Value "true"}}checked{{end}}>
+            {{else if eq .Kind "select"}}
+              <select name="{{.Key}}">{{$v := .Value}}{{range .Options}}<option value="{{.}}" {{if eq . $v}}selected{{end}}>{{.}}</option>{{end}}</select>
+            {{else if eq .Kind "textarea"}}
+              <textarea name="{{.Key}}" rows="3">{{.Value}}</textarea>
+            {{else if .Secret}}
+              <input type="password" name="{{.Key}}" autocomplete="off" placeholder="{{if .IsSet}}•••••••• (definido){{else}}não definido{{end}}">
+            {{else}}
+              <input name="{{.Key}}" value="{{.Value}}" {{if eq .Kind "number"}}inputmode="numeric"{{end}} placeholder="{{.Default}}">
+            {{end}}
+            {{if .Help}}<small class="muted">{{.Help}}</small>{{end}}
+          </label>
+          {{end}}
+        </fieldset>
+        {{end}}
+        <fieldset>
+          <legend>Variáveis adicionais</legend>
+          <textarea name="__extra" rows="4" placeholder="CHAVE=valor (uma por linha)">{{.Extra}}</textarea>
+        </fieldset>
+        <button class="btn primary">Salvar e aplicar</button>
+      </form>
+    </section>
+
+    <section class="card" id="google">
+      <h2>📅 Google Calendar &amp; Gmail</h2>
+      {{if not .GoogleCfg}}
+        <p class="muted">Defina <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> (Google Cloud Console → OAuth client “Web application”).</p>
+      {{else if .GoogleOK}}
+        <p>✅ Conectado.</p>
+        <form method="post" action="/google/disconnect"><button class="btn danger small">Desconectar</button></form>
+      {{else}}
+        <p><a class="btn primary" href="/google/connect">Conectar Google</a></p>
+      {{end}}
+      <p class="muted">Redirect URI autorizado: <code class="copy">{{.RedirectURL}}</code><br>Escopos: calendar.events, gmail.readonly.</p>
+    </section>
+
+    <section class="card" id="clipper">
+      <h2>✂️ Web Clipper &amp; API</h2>
+      <p>Arraste para a barra de favoritos: <a class="btn bookmarklet" href="{{safeURL .Bookmarklet}}">🧠 Salvar no Brain</a></p>
+      <p class="muted">Selecione um trecho (opcional) e clique no favorito. Sem seleção, a página inteira é extraída (Readability) e resumida.</p>
+      <dl class="kv">
+        <dt>API token</dt><dd><code class="copy">{{.APIToken}}</code>
+          <form method="post" action="/settings/api-token" class="inline"><button class="btn small" data-confirm="Gerar novo token? O bookmarklet atual deixará de funcionar.">Rotacionar</button></form></dd>
+        <dt>Clip (REST)</dt><dd><pre>curl -X POST {{.PublicURL}}/api/clip \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"url":"https://exemplo.com/artigo","title":"Título","html":"&lt;p&gt;trecho&lt;/p&gt;"}'</pre></dd>
+        <dt>Criar nó</dt><dd><pre>curl -X POST {{.PublicURL}}/api/nodes -H "Authorization: Bearer $TOKEN" \
+  -d '{"type":"task","title":"Renovar CNH","due":"2026-10-30"}'</pre></dd>
+        <dt>Webhook de saúde</dt><dd><pre>curl -X POST {{.PublicURL}}/api/health/webhook -H "Authorization: Bearer $TOKEN" \
+  -d '{"date":"2026-09-28","source":"gadgetbridge","metrics":{"sleep_minutes":452,"deep_sleep_minutes":95,"sleep_score":84,"resting_hr":54,"steps":10234,"recovery_score":78}}'</pre></dd>
+      </dl>
+      {{if .TelegramOK}}<form method="post" action="/settings/telegram-test"><button class="btn small">Enviar teste no Telegram</button></form>{{end}}
+    </section>
+
+    <section class="card" id="updates">
+      <h2>⬆️ Atualizações</h2>
+      {{with .Update}}
+      <form method="post" action="/settings/updates/toggle">
+        <button class="btn switch {{if .Enabled}}on{{end}}" title="Alternar">
+          <span class="knob"></span>
+          {{if .Enabled}}Atualização automática <b>ativada</b>{{else}}Atualização automática <b>desativada</b>{{end}}
+        </button>
+      </form>
+      <dl class="update-box">
+        <dt>Versão atual</dt><dd><code>{{.Current}}</code></dd>
+        <dt>Última release</dt><dd>{{if .Latest}}<code>{{.Latest}}</code>{{if .URL}} · <a href="{{.URL}}" target="_blank" rel="noopener">notas</a>{{end}}{{else}}—{{end}}{{if .Available}} <span class="pill run">nova versão</span>{{end}}</dd>
+        <dt>Última verificação</dt><dd>{{fmtTime .CheckedAt}}</dd>
+        <dt>Verificação</dt><dd>SHA-256{{if .Signed}} + assinatura ed25519{{end}} · asset <code>{{.Asset}}</code></dd>
+        {{if not .Supported}}<dt>Auto-instalação</dt><dd class="warn">{{.Reason}}</dd>{{end}}
+        {{if .Error}}<dt>Erro</dt><dd class="warn">{{.Error}}</dd>{{end}}
+        {{if .Installing}}<dt>Status</dt><dd><span class="pill run">instalando…</span></dd>{{end}}
+      </dl>
+      <div class="row">
+        <form method="post" action="/settings/updates/check"><button class="btn">Verificar agora</button></form>
+        {{if and .Available .Supported}}<form method="post" action="/settings/updates/install"><button class="btn primary" data-confirm="Instalar {{.Latest}} e reiniciar o servidor?">Instalar {{.Latest}} agora</button></form>{{end}}
+      </div>
+      {{if and .Available .Notes}}<h3>Novidades em {{.Latest}}</h3><div class="notes md-body">{{markdown (truncate .Notes 4000)}}</div>{{end}}
+      <p class="muted">Agendamento: <code>CRON_UPDATE</code>. Antes de instalar, o banco é copiado para <code>backups/pre-update-*.db</code>; se a nova versão falhar em 3 inicializações, o binário anterior é restaurado automaticamente.</p>
+      {{end}}
+    </section>
+
+    <section class="card" id="actions">
+      <h2>🤖 Agent actions (function calling)</h2>
+      <p class="muted">Whitelist de ações que o assistente pode executar (<code>ACTIONS_ENABLED=true</code>). Tipos: <code>webhook</code>, <code>mqtt</code>, <code>command</code> (executado sem shell). <code>{{"{{input}}"}}</code> é substituído pelo parâmetro do modelo. Arquivo: <code>{{.ActionsPath}}</code></p>
+      <form method="post" action="/settings/actions">
+        <textarea name="actions" rows="12" class="mono">{{.ActionsRaw}}</textarea>
+        <button class="btn primary">Salvar ações</button>
+      </form>
+    </section>
+
+    <section class="card" id="backup">
+      <h2>🔐 Backup &amp; Export</h2>
+      <div class="row">
+        <form method="post" action="/backup/now"><button class="btn primary">Backup agora</button></form>
+        <a class="btn" href="/export/obsidian">⬇ Exportar vault Obsidian (.zip)</a>
+      </div>
+      <p class="muted">Snapshots (VACUUM INTO) cifrados com AES-256-GCM (chave derivada via Argon2id). Restaurar: <code>second-brain -decrypt arquivo.db.enc -out brain.db</code></p>
+      {{if .Backups}}
+      <table class="tbl compact">
+        <thead><tr><th>Arquivo</th><th>Data</th><th class="r">Tamanho</th></tr></thead>
+        <tbody>{{range .Backups}}<tr><td><a href="/backups/{{.Name}}">{{.Name}}</a></td><td>{{.Date}}</td><td class="r">{{.Size}}</td></tr>{{end}}</tbody>
+      </table>
+      {{else}}<p class="muted">Nenhum backup local ainda.</p>{{end}}
+    </section>
+
+    <section class="card" id="password">
+      <h2>🔑 Alterar senha</h2>
+      <form method="post" action="/settings/password" class="narrow">
+        <label>Senha atual <input type="password" name="current" required autocomplete="current-password"></label>
+        <label>Nova senha <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+        <label>Confirmar <input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+        <button class="btn">Alterar</button>
+      </form>
+    </section>
+  </div>
+</div>
+{{end}}
+{{end}}

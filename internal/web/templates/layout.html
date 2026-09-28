@@ -1,0 +1,36 @@
+{{define "layout"}}<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{.Title}} · {{.Brain}}</title>
+<link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+<link rel="stylesheet" href="/static/style.css">
+<script src="/static/htmx.min.js" defer></script>
+<script src="/static/app.js" defer></script>
+{{block "head" .}}{{end}}
+</head>
+<body class="page-{{.Active}}">
+{{if .User}}
+<header class="topbar">
+  <a class="brand" href="/"><img src="/static/favicon.svg" alt="" width="22" height="22"> {{.Brain}}</a>
+  <nav>
+    <a href="/" class="{{if eq .Active "graph"}}active{{end}}">Mindmap</a>
+    <a href="/chat" class="{{if eq .Active "chat"}}active{{end}}">Chat</a>
+    <a href="/models" class="{{if eq .Active "models"}}active{{end}}">Modelos</a>
+    <a href="/dashboard" class="{{if eq .Active "dashboard"}}active{{end}}">Painel</a>
+    <a href="/logs" class="{{if eq .Active "logs"}}active{{end}}">Audit log</a>
+    <a href="/settings" class="{{if eq .Active "settings"}}active{{end}}">Configurações</a>
+    <a href="/help" class="{{if eq .Active "help"}}active{{end}}">❓ Ajuda</a>
+  </nav>
+  <form method="post" action="/logout" class="logout"><button class="link">Sair ({{.User}})</button></form>
+</header>
+{{end}}
+{{if .Flash}}<div class="flash ok">{{.Flash}}</div>{{end}}
+{{if .Error}}<div class="flash err">{{.Error}}</div>{{end}}
+<main>
+{{template "content" .}}
+</main>
+{{if .Version}}<footer>Second Brain {{.Version}}{{if .Update}} · <a href="/settings#updates">⬆️ {{.Update}} disponível</a>{{end}} · <a href="https://github.com/inakano89/second-brain" target="_blank" rel="noopener">código-fonte</a></footer>{{end}}
+</body>
+</html>{{end}}

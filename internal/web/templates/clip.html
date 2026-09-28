@@ -1,0 +1,16 @@
+{{define "content"}}
+<section class="card login">
+  {{with .Data}}
+  {{if .Err}}
+    <h1>❌ Falha ao salvar</h1>
+    <p>{{.Err}}</p>
+  {{else}}
+    <h1>✅ Salvo no {{$.Brain}}</h1>
+    <p><strong>{{.Node.Title}}</strong> (#{{.Node.ID}})</p>
+    <p class="muted">O conteúdo será extraído, resumido e conectado ao grafo em segundo plano.</p>
+    <p><a class="btn" href="{{.Base}}/?focus={{.Node.ID}}">Abrir no grafo</a></p>
+  {{end}}
+  <p class="muted">Você já pode fechar esta aba.</p>
+  {{end}}
+</section>
+{{end}}

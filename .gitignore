@@ -1,0 +1,19 @@
+# build
+/dist/
+*.exe
+
+# runtime data & secrets
+.env
+.env.lock
+/data/
+/inbox/
+actions.json
+*.db
+*.db-wal
+*.db-shm
+*.db.enc
+
+# editors / OS
+.idea/
+.vscode/
+.DS_Store

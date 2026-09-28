@@ -1,0 +1,65 @@
+{{define "head"}}<script src="/static/graph.js" defer></script>{{end}}
+{{define "content"}}
+<div class="graph-layout">
+  <aside class="sidebar">
+    <form id="search-form" class="search" hx-get="/search" hx-target="#results" hx-trigger="submit, input changed delay:400ms from:#q, change">
+      <input id="q" type="search" name="q" value="{{.Data.Q}}" placeholder="Busca híbrida (FTS5 + semântica)…" autocomplete="off">
+      <details class="filters">
+        <summary>Filtros</summary>
+        <div class="type-filters">
+          {{range .Data.Types}}
+          <label class="chip" style="--c: {{.Color}}"><input type="checkbox" name="type" value="{{.Type}}"> {{.Label}} <small>{{.Count}}</small></label>
+          {{end}}
+        </div>
+        <div class="row">
+          <label>De <input type="date" name="from"></label>
+          <label>Até <input type="date" name="to"></label>
+        </div>
+        <label>Tag <input name="tag" placeholder="ex: projeto"></label>
+      </details>
+    </form>
+    <div id="results" hx-get="/search?q={{urlquery .Data.Q}}" hx-trigger="load"></div>
+
+    <details class="capture" open>
+      <summary>➕ Captura rápida</summary>
+      <form hx-post="/nodes" hx-target="#detail" class="capture-form" data-reset>
+        <div class="row">
+          <select name="type">
+            {{range .Data.Types}}{{if ne .Type "health"}}<option value="{{.Type}}">{{.Label}}</option>{{end}}{{end}}
+          </select>
+          <input name="title" placeholder="Título (opcional)">
+        </div>
+        <textarea name="content" rows="3" placeholder="Escreva… use [[Título]] para linkar notas e #tags"></textarea>
+        <div class="row">
+          <input name="tags" placeholder="tags, separadas, por vírgula">
+          <input type="datetime-local" name="due" title="Prazo (tarefas/eventos)">
+        </div>
+        <button class="btn primary">Salvar</button>
+      </form>
+    </details>
+  </aside>
+
+  <section class="graph-wrap">
+    <div class="graph-toolbar">
+      <div class="legend" id="legend">
+        {{range .Data.Types}}<button class="chip on" data-type="{{.Type}}" style="--c: {{.Color}}">{{.Label}}</button>{{end}}
+      </div>
+      <div class="tools">
+        <button class="btn small" id="g-fit" title="Enquadrar">⤢</button>
+        <button class="btn small" id="g-labels" title="Rótulos">Aa</button>
+        <button class="btn small" id="g-reset" title="Grafo completo">↺</button>
+      </div>
+    </div>
+    <canvas id="graph" data-q="{{.Data.Q}}" data-focus="{{.Data.Focus}}"></canvas>
+    <div id="g-tip" class="tip" hidden></div>
+    <div id="g-status" class="g-status muted"></div>
+  </section>
+
+  <aside class="detail" id="detail">
+    <div class="empty">
+      <h3>Seu grafo de conhecimento</h3>
+      <p>Clique em um nó para ver detalhes. Arraste para mover, role para zoom, duplo clique para expandir vizinhos.</p>
+    </div>
+  </aside>
+</div>
+{{end}}

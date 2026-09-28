@@ -1,0 +1,99 @@
+{{define "content"}}
+{{with .Data}}
+<div class="models">
+  <section class="card intro-card">
+    <h2>🧩 Modelos de IA</h2>
+    <p>Aqui você escolhe <b>quais modelos existem</b>, <b>qual é o padrão</b> de cada empresa (Claude, GPT, Gemini, Local) e <b>qual modelo faz cada tarefa</b>.
+       O <b>🤝 Conselho</b> faz os modelos padrão debaterem entre si: cada um responde, lê as respostas dos outros, revisa a sua e um moderador escreve a decisão final — mais lento e caro, porém mais confiável.</p>
+    {{if not .Enabled}}<div class="flash err small">Nenhuma chave de API configurada ainda. <a href="/help#llm">Veja o passo a passo</a> e cadastre em <a href="/settings#env">Configurações</a>.</div>{{end}}
+  </section>
+
+  <section class="card" id="catalog">
+    <h2>1 · Catálogo e modelo padrão de cada empresa</h2>
+    <div class="providers">
+    {{range .Providers}}
+      <div class="provider {{if not .Configured}}off{{end}}">
+        <div class="card-head">
+          <h3>{{.Label}}</h3>
+          {{if .Configured}}<span class="pill ok">chave OK</span>{{else}}<a class="pill err" href="/help#{{.KeyHelp}}">sem chave — como obter?</a>{{end}}
+        </div>
+        <table class="tbl compact">
+          <tbody>
+          {{range .Models}}
+            <tr>
+              <td><code>{{.Model}}</code></td>
+              <td>{{if .Default}}<span class="pill ok">★ padrão</span>{{else}}
+                <form method="post" action="/models/default" class="inline"><input type="hidden" name="spec" value="{{.Spec}}"><button class="btn small">Tornar padrão</button></form>{{end}}</td>
+              <td class="r">
+                {{if .Configured}}<button class="btn small" hx-post="/models/test" hx-vals='{"spec":"{{.Spec}}"}' hx-target="next .test-out" hx-indicator="this">Testar</button><span class="test-out"></span>{{end}}
+                {{if not .Default}}<form method="post" action="/models/remove" class="inline"><input type="hidden" name="spec" value="{{.Spec}}"><button class="btn small danger" data-confirm="Remover {{.Spec}} do catálogo?">✕</button></form>{{end}}
+              </td>
+            </tr>
+          {{end}}
+          </tbody>
+        </table>
+        <form method="post" action="/models/add" class="add-model">
+          <input type="hidden" name="provider" value="{{.Name}}">
+          <input name="model" list="sug-{{.Name}}" placeholder="adicionar modelo, ex: {{if .Suggestions}}{{index .Suggestions 0}}{{else}}nome-do-modelo{{end}}" required>
+          <datalist id="sug-{{.Name}}">{{range .Suggestions}}<option value="{{.}}">{{end}}</datalist>
+          <label class="check"><input type="checkbox" name="default" value="true"> padrão</label>
+          <button class="btn small primary">Adicionar</button>
+        </form>
+        {{if .Configured}}
+        <details class="list-remote">
+          <summary hx-get="/models/list?provider={{.Name}}" hx-target="next .remote" hx-trigger="click once">🔎 Ver modelos disponíveis na sua conta</summary>
+          <div class="remote muted">carregando…</div>
+        </details>
+        {{end}}
+      </div>
+    {{end}}
+    </div>
+  </section>
+
+  <section class="card" id="tasks">
+    <h2>2 · Qual modelo faz cada tarefa</h2>
+    <form method="post" action="/models/routes">
+      <label>Provedor padrão global <small class="muted">(usado quando a tarefa está em “Automático”)</small>
+        <select name="DEFAULT_LLM_PROVIDER">{{$g := .GlobalDefault}}{{range .GlobalOptions}}<option value="{{.Value}}" {{if eq .Value $g}}selected{{end}} {{if .Disabled}}disabled{{end}}>{{.Label}}</option>{{end}}</select>
+      </label>
+      <table class="tbl routes">
+        <thead><tr><th>Tarefa</th><th>Modelo</th></tr></thead>
+        <tbody>
+        {{range .Tasks}}
+          <tr>
+            <td><b>{{.Label}}</b><br><small class="muted">{{.Help}}</small></td>
+            <td><select name="{{routeKey .Key}}">{{$v := .Value}}{{range .Options}}<option value="{{.Value}}" {{if eq .Value $v}}selected{{end}} {{if .Disabled}}disabled{{end}}>{{.Label}}</option>{{end}}</select></td>
+          </tr>
+        {{end}}
+        </tbody>
+      </table>
+      <button class="btn primary">Salvar tarefas</button>
+    </form>
+  </section>
+
+  <section class="card" id="council">
+    <h2>3 · 🤝 Conselho</h2>
+    <p class="muted">Membros respondem em paralelo; em cada rodada de debate leem as respostas dos outros (anônimas) e revisam a própria; o moderador escreve a resposta final e pode usar ferramentas (criar tarefas, eventos…). Custo ≈ membros × (rodadas + 1) + 1 chamada.</p>
+    <form method="post" action="/models/council">
+      <fieldset>
+        <legend>Membros (mínimo 2)</legend>
+        <div class="member-grid">
+        {{range .MemberOpts}}<label class="check"><input type="checkbox" name="member" value="{{.Value}}" {{if index $.Data.Members .Value}}checked{{end}} {{if .Disabled}}disabled{{end}}> {{.Label}}{{if .Disabled}} <small class="muted">(sem chave)</small>{{end}}</label>{{end}}
+        </div>
+      </fieldset>
+      <div class="row">
+        <label>Moderador (escreve a decisão final)
+          <select name="judge">{{$j := .Judge}}{{range .JudgeOpts}}<option value="{{.Value}}" {{if eq .Value $j}}selected{{end}} {{if .Disabled}}disabled{{end}}>{{.Label}}</option>{{end}}</select>
+        </label>
+        <label>Rodadas de debate
+          <select name="rounds">{{$r := .Rounds}}{{range $i := (split "0,1,2,3")}}<option value="{{$i}}" {{if eq $i (print $r)}}selected{{end}}>{{$i}}{{if eq $i "0"}} (só respostas independentes){{end}}</option>{{end}}</select>
+        </label>
+      </div>
+      <p class="muted">Composição efetiva agora: {{if .Effective.Members}}{{join .Effective.Members " · "}} → moderador {{.Effective.Judge}}{{else}}—{{end}}
+        {{if lt (len .Effective.Members) 2}}<br><span class="warn">Com menos de 2 modelos configurados, o Conselho usa apenas um modelo.</span>{{end}}</p>
+      <button class="btn primary">Salvar Conselho</button>
+    </form>
+  </section>
+</div>
+{{end}}
+{{end}}

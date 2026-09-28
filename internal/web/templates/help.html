@@ -1,0 +1,252 @@
+{{define "content"}}
+{{with .Data}}
+<div class="help">
+  <nav class="toc card">
+    <b>Guias</b>
+    <a href="#start">✅ Primeiros passos</a>
+    <a href="#llm">🧠 Chaves de IA</a>
+    <a href="#claude">· Claude</a>
+    <a href="#openai">· GPT (OpenAI)</a>
+    <a href="#gemini">· Gemini</a>
+    <a href="#ollama">· Modelo local</a>
+    <a href="#models">🧩 Modelos e Conselho</a>
+    <a href="#telegram">💬 Telegram</a>
+    <a href="#google">📅 Google Agenda e Gmail</a>
+    <a href="#zepp">❤️ Zepp / Amazfit</a>
+    <a href="#rss">📰 RSS</a>
+    <a href="#clipper">✂️ Web Clipper</a>
+    <a href="#inbox">📂 Pasta inbox</a>
+    <a href="#backup">🔐 Backup</a>
+    <a href="#install">🖥️ Instalação</a>
+    <a href="#docker">🐳 Docker na VPS</a>
+    <a href="#https">🔒 HTTPS / domínio</a>
+    <a href="#updates">⬆️ Atualizações</a>
+    <a href="#actions">🤖 Automações</a>
+    <a href="#schedules">⏰ Agendamentos</a>
+    <a href="#faq">🛟 Problemas comuns</a>
+    {{if not .LoggedIn}}<hr>{{if .SetupDone}}<a href="/login">Entrar →</a>{{else}}<a href="/setup">Voltar ao setup →</a>{{end}}{{end}}
+  </nav>
+
+  <div class="help-main">
+    <section class="card" id="start">
+      <h2>✅ Primeiros passos</h2>
+      <p>Você não precisa configurar tudo de uma vez. Uma ordem recomendada:</p>
+      <ol class="steps">
+        <li><b>Uma chave de IA</b> (Gemini tem plano gratuito — é o jeito mais rápido de começar). Veja <a href="#llm">Chaves de IA</a>.</li>
+        <li><b>Telegram</b> para capturar notas, áudios e fotos pelo celular. Veja <a href="#telegram">Telegram</a>.</li>
+        <li><b>Mais uma ou duas IAs</b> (Claude, GPT) para usar o <a href="#models">Conselho</a>, em que os modelos debatem antes de decidir.</li>
+        <li><b>Google Agenda/Gmail</b> e <b>Zepp</b> para o briefing matinal ficar completo.</li>
+        <li><b>Backup</b> para outro lugar (S3, WebDAV ou Telegram).</li>
+      </ol>
+      <p class="muted">Onde colar as chaves: menu <b>Configurações → Variáveis (.env)</b>. Campos de senha ficam ocultos depois de salvos (é normal).</p>
+    </section>
+
+    <section class="card" id="llm">
+      <h2>🧠 Chaves de IA (API keys)</h2>
+      <p>Uma <b>API key</b> é uma senha que permite ao Second Brain usar a IA de uma empresa. É diferente da assinatura do app de chat (ChatGPT Plus / Claude Pro não servem): a API é cobrada por uso, normalmente centavos por dia.</p>
+      <ul>
+        <li>Guarde a chave em local seguro e nunca a compartilhe.</li>
+        <li>Defina um <b>limite de gasto</b> no site do provedor.</li>
+        <li>Depois de colar a chave, vá em <b>Modelos</b> e clique em <b>Testar</b>.</li>
+      </ul>
+    </section>
+
+    <section class="card" id="claude">
+      <h3>Claude (Anthropic)</h3>
+      <ol class="steps">
+        <li>Acesse <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> e crie uma conta.</li>
+        <li>Em <b>Billing</b>, adicione créditos (ex.: US$ 5) e, se quiser, um limite mensal.</li>
+        <li>Abra <b>API Keys → Create Key</b>, dê um nome (ex.: “second-brain”) e copie a chave (começa com <code>sk-ant-</code>). Ela aparece só uma vez.</li>
+        <li>No Second Brain: <b>Configurações → LLM → Anthropic (Claude) API key</b> → cole → <b>Salvar e aplicar</b>.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="openai">
+      <h3>GPT (OpenAI)</h3>
+      <ol class="steps">
+        <li>Acesse <a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a> e entre.</li>
+        <li>Em <b>Settings → Billing</b>, adicione créditos.</li>
+        <li>Clique <b>Create new secret key</b> e copie (começa com <code>sk-</code>).</li>
+        <li>Cole em <b>Configurações → LLM → OpenAI API key</b>. A OpenAI também habilita a <b>transcrição de voz</b> (Whisper).</li>
+      </ol>
+    </section>
+
+    <section class="card" id="gemini">
+      <h3>Gemini (Google) — tem plano gratuito</h3>
+      <ol class="steps">
+        <li>Acesse <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">aistudio.google.com/apikey</a> com sua conta Google.</li>
+        <li>Clique <b>Create API key</b> e copie (começa com <code>AIza</code>).</li>
+        <li>Cole em <b>Configurações → LLM → Google Gemini API key</b>.</li>
+      </ol>
+      <p class="muted">O Gemini lê imagens, PDFs e áudios — ótimo para OCR e transcrição. No plano gratuito o Google pode usar os dados para melhorar produtos; para dados sensíveis, ative o faturamento.</p>
+    </section>
+
+    <section class="card" id="ollama">
+      <h3>Modelo local (Ollama) — grátis e privado</h3>
+      <ol class="steps">
+        <li>Instale o <a href="https://ollama.com/download" target="_blank" rel="noopener">Ollama</a> em um computador com boa memória (8 GB+ de RAM).</li>
+        <li>No terminal: <code>ollama pull llama3.1</code> (e, para embeddings, <code>ollama pull nomic-embed-text</code>).</li>
+        <li>Em <b>Configurações → LLM → LLM local</b>, informe <code>http://IP-DO-COMPUTADOR:11434/v1</code>. Se o Second Brain roda no mesmo computador: <code>http://localhost:11434/v1</code>. No Docker: <code>http://host.docker.internal:11434/v1</code>.</li>
+        <li>Para acessar de outra máquina, inicie o Ollama com <code>OLLAMA_HOST=0.0.0.0</code>.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="models">
+      <h2>🧩 Modelos e Conselho</h2>
+      <ol class="steps">
+        <li>Menu <b>Modelos</b>: cada empresa tem um <b>modelo padrão</b> (★). Adicione ou remova modelos; use “Ver modelos disponíveis na sua conta” para escolher da lista oficial.</li>
+        <li>Em <b>Qual modelo faz cada tarefa</b>, escolha para cada ação (chat, Telegram, OCR, briefing…) um modelo específico, o padrão de uma empresa, “Automático” ou <b>🤝 Conselho</b>.</li>
+        <li>No <b>Conselho</b>, os membros respondem, leem as respostas dos outros e revisam; um moderador escreve a decisão final. Use em decisões importantes (briefing, revisões). É ~7× mais caro que um modelo só com 3 membros e 1 rodada.</li>
+        <li>No Chat, o seletor no topo troca o modelo na hora; no Telegram use <code>/model</code>.</li>
+      </ol>
+      <p class="muted">Dica de custo: deixe <b>Auto-tagging</b> num modelo barato (ex.: Gemini Flash, Claude Haiku, GPT-4o-mini) — ele roda em toda nota nova.</p>
+    </section>
+
+    <section class="card" id="telegram">
+      <h2>💬 Telegram (2 minutos)</h2>
+      <ol class="steps">
+        <li>No Telegram, abra o <a href="https://t.me/BotFather" target="_blank" rel="noopener">@BotFather</a> (selo azul oficial) e envie <code>/newbot</code>.</li>
+        <li>Escolha um <b>nome</b> (ex.: “Meu Cérebro”) e um <b>usuário</b> terminado em <code>bot</code> (ex.: <code>meucerebro_bot</code>).</li>
+        <li>O BotFather envia um <b>token</b> parecido com <code>123456789:AAH...</code>. Copie.</li>
+        <li>Cole em <b>Configurações → Telegram → Token do bot</b> e salve. Os IDs autorizados podem ficar em branco.</li>
+        <li>Abra seu bot no Telegram e toque em <b>Iniciar</b> (<code>/start</code>). Ele responde com seu ID.</li>
+        <li>No painel: <b>Configurações → Telegram → Aguardando autorização → Autorizar</b>. Pronto! Só pessoas autorizadas conseguem usar o bot.</li>
+      </ol>
+      <p>O que enviar: texto (conversa com a IA), <b>áudio</b> (vira nota transcrita), <b>foto</b> (OCR), <b>PDF</b>, e comandos como <code>/task comprar pão</code>, <code>/event amanhã 15h dentista</code>, <code>/brief</code>, <code>/help</code>.</p>
+    </section>
+
+    <section class="card" id="google">
+      <h2>📅 Google Agenda e Gmail</h2>
+      <p>É a configuração mais longa (~10 min), feita uma única vez. Você cria um “aplicativo” particular no Google que só você usa.</p>
+      <p><b>Pré-requisito:</b> acessar o Second Brain por <b>HTTPS com domínio</b> (veja <a href="#https">HTTPS</a>) ou por <code>http://localhost</code>. O Google não aceita IPs nem HTTP em outros endereços.</p>
+      <ol class="steps">
+        <li>Abra <a href="https://console.cloud.google.com/projectcreate" target="_blank" rel="noopener">console.cloud.google.com</a> e crie um projeto (ex.: “second-brain”).</li>
+        <li>Em <b>APIs e serviços → Biblioteca</b>, ative <b>Google Calendar API</b> e <b>Gmail API</b>.</li>
+        <li>Em <b>Google Auth Platform</b> (tela de consentimento OAuth): tipo <b>Externo</b>, nome do app, seu e-mail de suporte. Em <b>Público-alvo → Usuários de teste</b>, adicione o seu Gmail.</li>
+        <li>Em <b>Clientes → Criar cliente</b>: tipo <b>Aplicativo da Web</b>. Em <b>URIs de redirecionamento autorizados</b>, cole exatamente:<br><code class="copy">{{.RedirectURL}}</code>
+          <br><small class="muted">Se aparecer localhost e você usa domínio, primeiro preencha <b>URL pública</b> em Configurações → Geral.</small></li>
+        <li>Copie o <b>ID do cliente</b> e a <b>Chave secreta</b> para <b>Configurações → Google</b> e salve.</li>
+        <li>Clique <b>Conectar Google</b>. Na tela “o Google não verificou este app”, clique <b>Avançado → Continuar</b> (o app é seu) e permita o acesso.</li>
+        <li>Importante: em <b>Público-alvo</b>, clique <b>Publicar app</b> (“Em produção”). Em modo “Teste” o Google desconecta a cada 7 dias.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="zepp">
+      <h2>❤️ Zepp / Amazfit</h2>
+      <ol class="steps">
+        <li>Use o <b>e-mail e senha</b> da sua conta Zepp (se você entra com Google/Apple, defina uma senha no app ou use a alternativa abaixo).</li>
+        <li>Cole em <b>Configurações → Zepp</b>. A sincronização roda a cada 4 horas (sono, frequência cardíaca em repouso, passos).</li>
+      </ol>
+      <p class="muted">A API do Zepp não é oficial e pode mudar. <b>Alternativa estável:</b> envie os dados via webhook (Gadgetbridge, Health Connect + app “HTTP Shortcuts”, Home Assistant) para <code>{{.PublicURL}}/api/health/webhook</code> com o API token (Configurações → Web Clipper &amp; API).</p>
+    </section>
+
+    <section class="card" id="rss">
+      <h2>📰 RSS</h2>
+      <ol class="steps">
+        <li>Encontre o endereço do feed do site (geralmente <code>/feed</code>, <code>/rss</code> ou ícone laranja).</li>
+        <li>Cole um por linha em <b>Configurações → RSS → Feeds</b>.</li>
+        <li>Descreva seus <b>interesses</b> (ex.: “IA aplicada, finanças pessoais, corrida”). A IA dá nota 0–10 a cada notícia e salva só as relevantes.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="clipper">
+      <h2>✂️ Web Clipper (salvar páginas)</h2>
+      <ol class="steps">
+        <li>Mostre a barra de favoritos do navegador (Ctrl+Shift+B).</li>
+        <li>Em <b>Configurações → Web Clipper</b>, arraste o botão <b>🧠 Salvar no Brain</b> para a barra.</li>
+        <li>Em qualquer página, selecione um trecho (opcional) e clique no favorito. Sem seleção, a página inteira é resumida.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="inbox">
+      <h2>📂 Pasta inbox</h2>
+      <p>Arquivos colocados na pasta <code>inbox</code> (ao lado do <code>.env</code>) são lidos automaticamente: PDFs, fotos, áudios, <code>.md</code>, <code>.txt</code>. Depois são movidos para <code>inbox/.archive</code>. Dica: sincronize essa pasta com Syncthing/Dropbox para “jogar” arquivos do celular.</p>
+    </section>
+
+    <section class="card" id="backup">
+      <h2>🔐 Backup</h2>
+      <p>Os backups são cifrados com a <b>chave mestre</b> definida no setup. <b>Guarde essa chave fora do servidor</b> (gerenciador de senhas) — sem ela não há como restaurar.</p>
+      <ul>
+        <li><b>Telegram</b> (mais fácil): em <b>Configurações → Backup → Destinos</b>, escreva <code>local,telegram</code>. O arquivo chega no seu chat (limite 50 MB).</li>
+        <li><b>Backblaze B2 / Cloudflare R2 / AWS S3</b>: crie um bucket e uma chave de aplicação; preencha <code>S3_ENDPOINT</code> (ex.: <code>https://s3.us-west-004.backblazeb2.com</code> ou <code>https://&lt;conta&gt;.r2.cloudflarestorage.com</code>), região (<code>auto</code> no R2), bucket e chaves; destinos <code>local,s3</code>.</li>
+        <li><b>Nextcloud (WebDAV)</b>: URL <code>https://sua-nuvem/remote.php/dav/files/USUARIO/backups</code>, usuário e senha de app; destinos <code>local,webdav</code>.</li>
+      </ul>
+      <p>Restaurar: <code>second-brain -decrypt arquivo.db.enc -out brain.db</code>, pare o serviço e substitua <code>data/brain.db</code>.</p>
+    </section>
+
+    <section class="card" id="install">
+      <h2>🖥️ Instalação</h2>
+      <h3>Linux (VPS, Raspberry/Orange Pi) — sem Docker</h3>
+      <pre>curl -fsSL https://raw.githubusercontent.com/inakano89/second-brain/main/deploy/install.sh | sudo bash</pre>
+      <p class="muted">Detecta a arquitetura (x86-64, ARM64 ou ARMv7), verifica o SHA-256, instala em <code>/opt/second-brain</code>, cria o serviço <code>systemd</code> e mostra o endereço. Atualizações automáticas funcionam normalmente.</p>
+      <h3>Windows</h3>
+      <ol class="steps">
+        <li>Baixe <code>second-brain-windows-amd64.exe</code> em <a href="https://github.com/inakano89/second-brain/releases/latest" target="_blank" rel="noopener">Releases</a> e coloque numa pasta própria (ex.: <code>C:\SecondBrain</code>).</li>
+        <li>Dê dois cliques e abra <a href="http://localhost:{{.Port}}">http://localhost:{{.Port}}</a>. Se o Windows avisar, clique <b>Mais informações → Executar assim mesmo</b> e permita no firewall.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="docker">
+      <h2>🐳 Docker na VPS</h2>
+      <ol class="steps">
+        <li>Instale o Docker: <code>curl -fsSL https://get.docker.com | sh</code></li>
+        <li>Crie uma pasta: <code>mkdir -p ~/second-brain && cd ~/second-brain</code></li>
+        <li><b>Com domínio e HTTPS automático</b> (recomendado):
+<pre>curl -fsSLO https://raw.githubusercontent.com/inakano89/second-brain/main/deploy/docker-compose.https.yml
+curl -fsSLO https://raw.githubusercontent.com/inakano89/second-brain/main/deploy/Caddyfile
+echo "DOMAIN=brain.seudominio.com" > .env
+docker compose -f docker-compose.https.yml up -d</pre>
+          Antes, aponte o domínio para o IP da VPS (registro DNS tipo <b>A</b>) e libere as portas 80 e 443.</li>
+        <li><b>Sem domínio</b> (só IP, porta 8080):
+<pre>curl -fsSLO https://raw.githubusercontent.com/inakano89/second-brain/main/docker-compose.yml
+docker compose up -d</pre></li>
+        <li>Abra o endereço no navegador e conclua o setup.</li>
+      </ol>
+      <p class="muted">Os dados ficam no volume <code>brain-data</code>. As atualizações automáticas também funcionam no Docker: o binário novo é salvo no volume e usado nos próximos inícios. Para atualizar a imagem: <code>docker compose pull && docker compose up -d</code>. Logs: <code>docker compose logs -f</code>.</p>
+    </section>
+
+    <section class="card" id="https">
+      <h2>🔒 HTTPS e domínio</h2>
+      <ol class="steps">
+        <li>Tenha um domínio (Registro.br, Cloudflare, Namecheap…) e crie um registro <b>A</b> apontando para o IP da VPS.</li>
+        <li>Use o arquivo Docker com Caddy acima (certificado gratuito automático) — ou, sem Docker, instale o <a href="https://caddyserver.com/docs/install" target="_blank" rel="noopener">Caddy</a> com o Caddyfile: <code>brain.seudominio.com { reverse_proxy localhost:8080 }</code></li>
+        <li>Em <b>Configurações → Geral → URL pública</b>, informe <code>https://brain.seudominio.com</code>.</li>
+      </ol>
+    </section>
+
+    <section class="card" id="updates">
+      <h2>⬆️ Atualizações</h2>
+      <p>Por padrão o Second Brain instala sozinho as novas versões publicadas no GitHub (de madrugada, depois do backup), confere a integridade do arquivo, guarda uma cópia do banco e volta à versão anterior se algo der errado. Para desligar: <b>Configurações → Atualizações → botão liga/desliga</b>.</p>
+    </section>
+
+    <section class="card" id="actions">
+      <h2>🤖 Automações (avançado)</h2>
+      <p>Permite que a IA acione webhooks (n8n, Home Assistant), MQTT (luzes, tomadas) ou comandos permitidos. Edite a lista em <b>Configurações → Agent actions</b> e ative <code>ACTIONS_ENABLED</code>. Só o que estiver na lista pode ser executado.</p>
+    </section>
+
+    <section class="card" id="schedules">
+      <h2>⏰ Agendamentos</h2>
+      <p>Formato cron com 5 campos: <code>minuto hora dia mês dia-da-semana</code>. Exemplos: <code>0 7 * * *</code> = todo dia às 7h; <code>30 21 * * 1-5</code> = dias úteis às 21h30; <code>*/15 * * * *</code> = a cada 15 min; <code>off</code> desativa.</p>
+    </section>
+
+    <section class="card" id="faq">
+      <h2>🛟 Problemas comuns</h2>
+      <dl class="faq">
+        <dt>O bot do Telegram não responde</dt>
+        <dd>Clique em <b>Verificar bot</b> em Configurações → Telegram. Se o token estiver certo, envie <code>/start</code> e autorize seu usuário.</dd>
+        <dt>Google: “redirect_uri_mismatch”</dt>
+        <dd>A URI cadastrada no Google precisa ser idêntica a <code>{{.RedirectURL}}</code> (http/https, domínio, porta e barra final).</dd>
+        <dt>IA: “Chave inválida” ou “sem créditos”</dt>
+        <dd>Confira a chave e o saldo no site do provedor; use <b>Modelos → Testar</b>.</dd>
+        <dt>Esqueci a senha</dt>
+        <dd>No servidor: <code>second-brain -env .env -reset-password</code> (Docker: <code>docker compose exec second-brain /second-brain -env /data/.env -reset-password</code>).</dd>
+        <dt>“Porta em uso” ao iniciar</dt>
+        <dd>Outro programa usa a porta. Mude <code>HTTP_PORT</code> no arquivo <code>.env</code>.</dd>
+        <dt>Onde vejo o que aconteceu?</dt>
+        <dd>Menu <b>Audit log</b>: erros de sincronização, ações da IA, logins e atualizações.</dd>
+      </dl>
+    </section>
+  </div>
+</div>
+{{end}}
+{{end}}
