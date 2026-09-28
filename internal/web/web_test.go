@@ -21,6 +21,7 @@ import (
 	"github.com/inakano89/second-brain/internal/integrations/zepp"
 	"github.com/inakano89/second-brain/internal/llm"
 	"github.com/inakano89/second-brain/internal/telegram"
+	"github.com/inakano89/second-brain/internal/updater"
 )
 
 type env struct {
@@ -84,7 +85,7 @@ func setup(t *testing.T) *env {
 	ag := agent.New(cfg, db, m, log)
 	gc := google.New(cfg, db, log)
 	ag.SetCalendar(gc)
-	srv, err := New(Deps{Cfg: cfg, DB: db, LLM: m, Agent: ag, Google: gc, Zepp: zepp.New(cfg, db, ag, log), Telegram: telegram.New(cfg, db, ag, log), Log: log, Version: "test"})
+	srv, err := New(Deps{Cfg: cfg, DB: db, LLM: m, Agent: ag, Google: gc, Zepp: zepp.New(cfg, db, ag, log), Telegram: telegram.New(cfg, db, ag, log), Updater: updater.New(cfg, db, log, "dev", "", ""), Log: log, Version: "test"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -103,7 +104,7 @@ func TestEndToEnd(t *testing.T) {
 	e.expect(e.form("/setup", url.Values{"username": {"admin"}, "password": {"curta"}, "password2": {"curta"}, "http_port": {"8080"}}), 400, "ao menos 8")
 	rec = e.form("/setup", url.Values{
 		"brain_name": {"Cérebro Teste"}, "username": {"admin"}, "password": {"senha-forte-1"}, "password2": {"senha-forte-1"},
-		"http_port": {"8080"}, "timezone": {"America/Sao_Paulo"}, "telegram_ids": {"123, 456"},
+		"http_port": {"8080"}, "timezone": {"America/Sao_Paulo"}, "telegram_ids": {"123, 456"}, "auto_update": {"true"},
 	})
 	e.expect(rec, 200, "Tudo pronto")
 	for _, c := range rec.Result().Cookies() {
@@ -192,6 +193,17 @@ func TestEndToEnd(t *testing.T) {
 	e.expect(e.form("/settings/env", url.Values{"BRAIN_NAME": {"Renomeado"}, "__extra": {"MY_VAR=1"}}), 303)
 	if e.cfg.Get("BRAIN_NAME") != "Renomeado" || e.cfg.Get("MY_VAR") != "1" || e.cfg.Get("SESSION_SECRET") == "" {
 		t.Fatal("settings not saved")
+	}
+
+	if !e.cfg.GetBool("AUTO_UPDATE_ENABLED") {
+		t.Fatal("setup should enable auto-update")
+	}
+	e.expect(e.do("GET", "/settings", nil, nil), 200, `id="updates"`, "build de desenvolvimento")
+	if r := e.form("/settings/updates/toggle", url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "#updates") || e.cfg.GetBool("AUTO_UPDATE_ENABLED") {
+		t.Fatalf("toggle failed: %d %s", r.Code, r.Header().Get("Location"))
+	}
+	if r := e.form("/settings/updates/install", url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "error=") {
+		t.Fatalf("dev build install should be refused: %s", r.Header().Get("Location"))
 	}
 
 	rec = e.do("GET", "/export/obsidian", nil, nil)

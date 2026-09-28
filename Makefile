@@ -2,13 +2,15 @@ BINARY  := second-brain
 PKG     := ./cmd/server
 DIST    := dist
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo dev)
-LDFLAGS := -s -w -X main.version=$(VERSION)
+# Chave pública ed25519 (base64) embutida para exigir releases assinadas no auto-update.
+UPDATE_PUBLIC_KEY ?=
+LDFLAGS := -s -w -X main.version=$(VERSION) -X main.updatePublicKey=$(UPDATE_PUBLIC_KEY)
 GOFLAGS := -trimpath
 IMAGE   ?= ghcr.io/inakano89/second-brain
 
 export CGO_ENABLED=0
 
-.PHONY: all build run test vet fmt check tidy clean release \
+.PHONY: all build run test vet fmt check tidy clean release sign \
         build-linux-amd64 build-linux-armv7 build-windows-amd64 \
         docker docker-buildx
 
@@ -25,6 +27,10 @@ run:
 ## release: cross-compile para os 3 alvos (assets embutidos via embed.FS)
 release: build-linux-amd64 build-linux-armv7 build-windows-amd64
 	cd $(DIST) && sha256sum $(BINARY)-* > SHA256SUMS
+
+## sign: assina dist/SHA256SUMS com UPDATE_SIGNING_KEY (gera dist/SHA256SUMS.sig)
+sign:
+	go run ./cmd/signer sign $(DIST)/SHA256SUMS
 
 build-linux-amd64:
 	GOOS=linux GOARCH=amd64 go build $(GOFLAGS) -ldflags "$(LDFLAGS)" -o $(DIST)/$(BINARY)-linux-amd64 $(PKG)

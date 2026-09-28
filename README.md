@@ -7,6 +7,10 @@
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)
 ![CGO](https://img.shields.io/badge/CGO-disabled-success)
 ![Plataformas](https://img.shields.io/badge/linux%2Famd64%20·%20linux%2Farm%2Fv7%20·%20windows%2Famd64-informational)
+[![Licença: MIT](https://img.shields.io/badge/licen%C3%A7a-MIT-green.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/inakano89/second-brain?sort=semver)](https://github.com/inakano89/second-brain/releases)
+
+**Open source (MIT)** · auto-hospedado · seus dados ficam na sua máquina.
 
 ---
 
@@ -22,11 +26,14 @@
 - [Integrações](#integrações)
 - [Rotinas agendadas](#rotinas-agendadas)
 - [Backup e restauração](#backup-e-restauração)
+- [Atualizações automáticas](#atualizações-automáticas)
 - [API REST](#api-rest)
 - [Configuração (.env)](#configuração-env)
 - [Segurança](#segurança)
 - [Desenvolvimento](#desenvolvimento)
 - [Limitações conhecidas](#limitações-conhecidas)
+- [Contribuindo](#contribuindo)
+- [Licença](#licença)
 
 ---
 
@@ -42,6 +49,7 @@
 | **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters. |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
+| **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
 | **Painéis** | Mindmap interativo (canvas, sem dependências), chat streaming com seletor de modelo, painel de custos por provedor, audit log, editor do `.env` e exportação para **Obsidian**. |
 
 ---
@@ -86,7 +94,9 @@ internal/
   extract/                    Readability simplificado, HTML→Markdown, texto de PDF
   export/                     vault Obsidian (.zip) com frontmatter YAML e [[links]]
   crypto/                     Argon2id, AES-256-GCM em streaming
+  updater/                    auto-update via GitHub Releases, verificação, troca atômica, restart e rollback
   web/                        handlers HTTP, setup wizard, SSE, templates HTMX e assets embutidos
+cmd/signer/                   gera chaves e assina SHA256SUMS das releases (ed25519)
 ```
 
 ---
@@ -133,6 +143,7 @@ Requer Go 1.26+.
 git clone https://github.com/inakano89/second-brain && cd second-brain
 make check      # vet + testes + verifica compilação dos 3 alvos (sem gerar artefatos)
 make release    # dist/second-brain-{linux-amd64,linux-armv7,windows-amd64.exe} + SHA256SUMS
+make sign       # assina dist/SHA256SUMS com UPDATE_SIGNING_KEY (opcional)
 make docker-buildx IMAGE=ghcr.io/voce/second-brain
 ```
 
@@ -173,7 +184,7 @@ Para expor na internet, use um proxy reverso com TLS (Caddy, nginx, Traefik) e d
 Enquanto o `.env` não existir ou `SETUP_COMPLETED=false`, **toda requisição é redirecionada para `/setup`**. O formulário coleta:
 
 1. **Identificação** — nome do cérebro, usuário e senha mestre (hash **Argon2id**).
-2. **Servidor** — porta HTTP (padrão `8080`, migração de porta sem reiniciar), timezone e URL pública.
+2. **Servidor** — porta HTTP (padrão `8080`, migração de porta sem reiniciar), timezone, URL pública e atualizações automáticas (marcado por padrão).
 3. **Provedores LLM** — chaves OpenAI, Anthropic, Gemini e endpoint local compatível com OpenAI.
 4. **Telegram** — token do bot e `ALLOWED_TELEGRAM_USER_IDS`.
 5. **Google Workspace** — Client ID/Secret para OAuth2 (Calendar + Gmail).
@@ -194,7 +205,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
 | **Painel** (`/dashboard`) | Custos e tokens por provedor/modelo (7/30/90 dias), gráfico diário, estatísticas do grafo, status das integrações, fila offline (com reprocessamento), rotinas com execução manual, métricas de saúde e último briefing. |
 | **Audit log** (`/logs`) | Execuções, erros de sync, ações do agente e logins, filtráveis por nível/componente/texto. |
-| **Configurações** (`/settings`) | Editor completo do `.env` (segredos mascarados), conexão Google, bookmarklet e API token, editor de ações do agente, backup manual, download de backups, exportação Obsidian e troca de senha. |
+| **Configurações** (`/settings`) | Liga/desliga de atualizações automáticas, verificação/instalação manual, editor completo do `.env` (segredos mascarados), conexão Google, bookmarklet e API token, editor de ações do agente, backup manual, download de backups, exportação Obsidian e troca de senha. |
 
 ---
 
@@ -307,6 +318,7 @@ Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nome
 | `maintenance` | `CRON_MAINTENANCE` | `30 3 * * *` | Purga de temporários de voz/imagem, tarefas e logs antigos; `incremental_vacuum`, `optimize`, FTS optimize, checkpoint WAL (VACUUM completo aos domingos) |
 | `backup` | `CRON_BACKUP` | `0 4 * * *` | Snapshot cifrado para os destinos configurados |
 | `rss` / `gmail` / `calendar` / `zepp` | `CRON_*` | 30 / 15 / 30 min / 4 h | Enfileiram sincronizações (com retry offline) |
+| `update` | `CRON_UPDATE` | `40 4 * * *` | Verifica releases no GitHub e instala se `AUTO_UPDATE_ENABLED=true` (senão só notifica) |
 
 ---
 
@@ -324,6 +336,34 @@ second-brain -decrypt second-brain-20260928-040000.db.enc -out brain.db -key "SU
 ```
 
 **Exportação Obsidian**: Configurações → *Exportar vault Obsidian* gera um `.zip` com pastas por tipo, frontmatter YAML (id, tipo, tags, datas, status, prazo, URL, resumo) e seção **Conexões** com `[[wiki-links]]` para cada aresta.
+
+---
+
+## Atualizações automáticas
+
+O servidor acompanha as [releases do GitHub](https://github.com/inakano89/second-brain/releases) e se atualiza sozinho. **Vem ativado por padrão** e pode ser desligado a qualquer momento em **Configurações → Atualizações** (botão liga/desliga) ou com `AUTO_UPDATE_ENABLED=false`.
+
+Fluxo de cada atualização (`CRON_UPDATE`, padrão diário às 04:40, após o backup):
+
+1. Consulta `GET /repos/{UPDATE_REPO}/releases/latest` (ou a pré-release mais nova com `UPDATE_CHANNEL=prerelease`).
+2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`.
+3. Confere o **SHA-256**; se o binário foi compilado com `UPDATE_PUBLIC_KEY`, exige também `SHA256SUMS.sig` com **assinatura ed25519** válida.
+4. Executa `binário-novo -version` como teste de sanidade.
+5. Salva um snapshot do banco em `data/backups/pre-update-<versão>.db`.
+6. Troca o executável de forma atômica (o anterior fica em `second-brain.old`) e reinicia o processo com os mesmos argumentos (`exec` no Linux; novo processo no Windows).
+7. A nova versão é confirmada após 90 s no ar. **Se falhar em 3 inicializações seguidas, o binário anterior é restaurado** e a versão defeituosa entra numa lista de bloqueio (`second-brain.skip`).
+
+Você é avisado pelo Telegram (instalação iniciada, concluída ou versão nova disponível quando a instalação automática está desligada). O rodapé da interface também mostra quando há versão nova.
+
+| Situação | Comportamento |
+|---|---|
+| Docker | Não substitui o binário da imagem; mostra/notifica a versão nova. Use `docker pull` ou Watchtower. |
+| Build de desenvolvimento (`go run`, `version=dev`) | Apenas verificação, sem instalação. |
+| Pasta do executável sem permissão de escrita | Apenas verificação. No systemd, inclua o diretório em `ReadWritePaths`. |
+
+Pela linha de comando: `second-brain -env .env -update` verifica, instala e sai (reinicie o serviço em seguida).
+
+**Para mantenedores de forks**: gere um par de chaves com `go run ./cmd/signer keygen`, cadastre a pública como *variable* `UPDATE_PUBLIC_KEY` e a privada como *secret* `UPDATE_SIGNING_KEY`. O workflow de release assina o `SHA256SUMS` e embute a chave pública nos binários. Aponte `UPDATE_REPO` para o seu `owner/repo`.
 
 ---
 
@@ -357,7 +397,8 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 | RSS | `RSS_FEEDS`, `RSS_INTERESTS`, `RSS_MIN_SCORE`, `RSS_MAX_ITEMS` |
 | Backup | `BACKUP_ENCRYPTION_KEY`, `BACKUP_TARGETS`, `BACKUP_KEEP`, `S3_*`, `WEBDAV_*`, `BACKUP_TELEGRAM_CHAT_ID` |
 | Automação | `ACTIONS_ENABLED`, `ACTIONS_FILE`, `MQTT_BROKER`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` |
-| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_ZEPP` |
+| Atualizações | `AUTO_UPDATE_ENABLED`, `UPDATE_CHANNEL`, `UPDATE_REPO` |
+| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_ZEPP`, `CRON_UPDATE` |
 
 **Modelos padrão** (editáveis): `gpt-4o-mini`, `claude-opus-5`, `gemini-2.5-flash`, `llama3.1`. No chat é possível usar qualquer modelo com `provedor:modelo` (ex.: `anthropic:claude-sonnet-5`, `openai:gpt-4.1`, `ollama:qwen2.5`).
 
@@ -376,6 +417,9 @@ Alterações feitas pelo editor web são aplicadas na hora: clientes LLM, açõe
 - Markdown renderizado com escape total de HTML; segredos nunca são reexibidos na UI.
 - Ações do agente limitadas a uma whitelist explícita, desativadas por padrão, sem shell.
 - Backups cifrados com autenticação (AES-GCM); a chave nunca sai do `.env`.
+- Auto-update só instala binários que conferem com o `SHA256SUMS` (e com a assinatura ed25519 quando configurada), com rollback automático.
+
+Vulnerabilidades: veja [SECURITY.md](SECURITY.md) (relato privado via GitHub Security Advisories).
 
 Recomendado: servir atrás de proxy reverso com TLS e manter o `.env` com permissão `600` (o próprio servidor grava assim).
 
@@ -400,3 +444,14 @@ Estrutura de testes: parsing SSE de cada provedor com servidores mock (incluindo
 - O Bot API do Telegram limita downloads a 20 MB e uploads a 50 MB (backups maiores devem usar S3/WebDAV).
 - O embedder local é léxico-semântico (hashing); para similaridade semântica real configure embeddings OpenAI, Gemini ou Ollama.
 - A transcrição de voz requer OpenAI (Whisper) ou Gemini.
+- No Windows, o auto-update reinicia o processo em primeiro plano; se rodar como serviço (NSSM/sc), prefira desativar o auto-update ou configure o serviço para reiniciar automaticamente.
+
+---
+
+## Contribuindo
+
+Contribuições são bem-vindas! Leia o [CONTRIBUTING.md](CONTRIBUTING.md): `make check` deve passar, novas variáveis entram em `internal/config/schema.go` e migrações de banco são somente aditivas. Bugs e ideias: [issues](https://github.com/inakano89/second-brain/issues).
+
+## Licença
+
+[MIT](LICENSE) © 2026 inakano89 e contribuidores.

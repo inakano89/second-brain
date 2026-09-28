@@ -15,7 +15,7 @@ type Field struct {
 
 // Groups defines the display order of the editor sections.
 var Groups = []string{
-	"Geral", "Segurança", "LLM", "Telegram", "Google", "Zepp", "RSS", "Backup", "Automação", "Agendamentos",
+	"Geral", "Segurança", "LLM", "Telegram", "Google", "Zepp", "RSS", "Backup", "Automação", "Atualizações", "Agendamentos",
 }
 
 // Schema is the catalogue of known configuration keys.
@@ -99,6 +99,10 @@ var Schema = []Field{
 	{Key: "MQTT_PASSWORD", Label: "MQTT senha", Group: "Automação", Secret: true},
 	{Key: "MQTT_CLIENT_ID", Label: "MQTT client id", Group: "Automação", Default: "second-brain"},
 
+	{Key: "AUTO_UPDATE_ENABLED", Label: "Instalar atualizações automaticamente", Group: "Atualizações", Default: "true", Kind: "bool", Help: "Baixa, verifica (SHA-256/assinatura), instala e reinicia a partir das releases do GitHub."},
+	{Key: "UPDATE_CHANNEL", Label: "Canal", Group: "Atualizações", Default: "stable", Kind: "select", Options: []string{"stable", "prerelease"}},
+	{Key: "UPDATE_REPO", Label: "Repositório GitHub", Group: "Atualizações", Default: "inakano89/second-brain", Help: "owner/repo de onde as releases são baixadas"},
+
 	{Key: "CRON_MORNING", Label: "Briefing matinal", Group: "Agendamentos", Default: "0 7 * * *"},
 	{Key: "CRON_EVENING", Label: "Balanço noturno", Group: "Agendamentos", Default: "0 21 * * *"},
 	{Key: "CRON_WEEKLY", Label: "Weekly review", Group: "Agendamentos", Default: "0 18 * * 0"},
@@ -108,6 +112,7 @@ var Schema = []Field{
 	{Key: "CRON_GMAIL", Label: "Gmail", Group: "Agendamentos", Default: "*/15 * * * *"},
 	{Key: "CRON_CALENDAR", Label: "Calendar", Group: "Agendamentos", Default: "*/30 * * * *"},
 	{Key: "CRON_ZEPP", Label: "Zepp", Group: "Agendamentos", Default: "0 */4 * * *"},
+	{Key: "CRON_UPDATE", Label: "Verificar atualizações", Group: "Agendamentos", Default: "40 4 * * *"},
 }
 
 var schemaIndex = func() map[string]Field {

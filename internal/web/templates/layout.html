@@ -29,6 +29,6 @@
 <main>
 {{template "content" .}}
 </main>
-{{if .Version}}<footer>Second Brain {{.Version}}</footer>{{end}}
+{{if .Version}}<footer>Second Brain {{.Version}}{{if .Update}} · <a href="/settings#updates">⬆️ {{.Update}} disponível</a>{{end}} · <a href="https://github.com/inakano89/second-brain" target="_blank" rel="noopener">código-fonte</a></footer>{{end}}
 </body>
 </html>{{end}}

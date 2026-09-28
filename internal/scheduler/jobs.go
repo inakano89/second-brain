@@ -34,6 +34,7 @@ type Deps struct {
 	Agent     *agent.Agent
 	Notifier  Notifier
 	PurgeTemp func(age time.Duration) int
+	Update    JobFunc // self-update check/install (optional)
 	Log       *slog.Logger
 }
 
@@ -58,6 +59,12 @@ func Register(s *Scheduler, d *Deps) error {
 		{"gmail", "CRON_GMAIL", enqueue(google.TaskGmailSync)},
 		{"calendar", "CRON_CALENDAR", enqueue(google.TaskCalendarSync)},
 		{"zepp", "CRON_ZEPP", enqueue(zepp.TaskSync)},
+	}
+	if d.Update != nil {
+		jobs = append(jobs, struct {
+			name, key string
+			fn        JobFunc
+		}{"update", "CRON_UPDATE", d.Update})
 	}
 	var errs []error
 	for _, j := range jobs {

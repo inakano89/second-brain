@@ -37,6 +37,7 @@
         </label>
       </div>
       <label>URL pública (opcional) <input name="public_url" value="{{index .Values "public_url"}}" placeholder="https://brain.seudominio.com"></label>
+      <label class="check"><input type="checkbox" name="auto_update" value="true" {{if ne (index .Values "auto_update") "false"}}checked{{end}}> Instalar atualizações automaticamente a partir do GitHub (pode ser desativado depois)</label>
     </fieldset>
 
     <fieldset>

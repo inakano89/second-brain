@@ -49,6 +49,7 @@ func (s *Server) setupValues() map[string]string {
 		}
 		v[form] = s.Cfg.Get(key)
 	}
+	v["auto_update"] = s.Cfg.Get("AUTO_UPDATE_ENABLED")
 	return v
 }
 
@@ -79,6 +80,7 @@ func (s *Server) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	for form := range setupFields {
 		data.Values[form] = strings.TrimSpace(r.PostFormValue(form))
 	}
+	data.Values["auto_update"] = strconv.FormatBool(r.PostFormValue("auto_update") == "true")
 	fail := func(err error) {
 		p := s.page(r, "Configuração inicial", "", data)
 		p.Error = err.Error()
@@ -136,6 +138,7 @@ func (s *Server) setupSubmit(w http.ResponseWriter, r *http.Request) {
 	for form, key := range setupFields {
 		changes[key] = v[form]
 	}
+	changes["AUTO_UPDATE_ENABLED"] = strconv.FormatBool(r.PostFormValue("auto_update") == "true")
 	if changes["DEFAULT_LLM_PROVIDER"] == "" {
 		changes["DEFAULT_LLM_PROVIDER"] = "auto"
 	}

@@ -10,6 +10,9 @@ permissions:
 jobs:
   binaries:
     runs-on: ubuntu-latest
+    env:
+      UPDATE_PUBLIC_KEY: ${{ vars.UPDATE_PUBLIC_KEY }}
+      UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -18,11 +21,14 @@ jobs:
         with:
           go-version-file: go.mod
       - run: make test release VERSION=${{ github.ref_name }}
+      - name: Assinar SHA256SUMS (ed25519)
+        if: env.UPDATE_SIGNING_KEY != ''
+        run: make sign
       - uses: softprops/action-gh-release@v2
         with:
           files: |
             dist/second-brain-*
-            dist/SHA256SUMS
+            dist/SHA256SUMS*
           generate_release_notes: true
 
   image:

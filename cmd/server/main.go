@@ -29,11 +29,16 @@ import (
 	"github.com/inakano89/second-brain/internal/queue"
 	"github.com/inakano89/second-brain/internal/scheduler"
 	"github.com/inakano89/second-brain/internal/telegram"
+	"github.com/inakano89/second-brain/internal/updater"
 	"github.com/inakano89/second-brain/internal/watcher"
 	"github.com/inakano89/second-brain/internal/web"
 )
 
-var version = "dev"
+// Set at build time via -ldflags "-X main.version=... -X main.updatePublicKey=...".
+var (
+	version         = "dev"
+	updatePublicKey = ""
+)
 
 func main() {
 	envPath := flag.String("env", ".env", "caminho do arquivo .env")
@@ -42,6 +47,7 @@ func main() {
 	key := flag.String("key", "", "chave do backup (padrão: BACKUP_ENCRYPTION_KEY do .env)")
 	resetSetup := flag.Bool("reset-setup", false, "marca SETUP_COMPLETED=false para refazer o onboarding")
 	showVersion := flag.Bool("version", false, "mostra a versão")
+	updateNow := flag.Bool("update", false, "verifica e instala a última release do GitHub e sai")
 	flag.Parse()
 
 	if *showVersion {
@@ -62,6 +68,11 @@ func main() {
 		}
 		fmt.Println("Onboarding reativado. Inicie o servidor e acesse /setup.")
 		return
+	}
+
+	exe := updater.Executable()
+	if !*updateNow {
+		updater.Recover(exe, func(format string, a ...any) { fmt.Fprintf(os.Stderr, "updater: "+format+"\n", a...) })
 	}
 
 	level := slog.LevelInfo
@@ -101,7 +112,23 @@ func main() {
 	rp.RegisterTasks(worker)
 	wt.RegisterTasks(worker)
 
-	deps := &scheduler.Deps{Cfg: cfg, DB: db, Agent: ag, Notifier: tg, PurgeTemp: tg.PurgeTemp, Log: log.With("component", "routines")}
+	upd := updater.New(cfg, db, log, version, updatePublicKey, exe)
+	upd.Notify = tg.Notify
+	if *updateNow {
+		runUpdateCLI(upd)
+		logHandler.Close()
+		db.Close()
+		return
+	}
+	restart := make(chan struct{}, 1)
+	upd.RequestRestart = func() {
+		select {
+		case restart <- struct{}{}:
+		default:
+		}
+	}
+
+	deps := &scheduler.Deps{Cfg: cfg, DB: db, Agent: ag, Notifier: tg, PurgeTemp: tg.PurgeTemp, Update: upd.Run, Log: log.With("component", "routines")}
 	tg.Briefing = func(ctx context.Context) (string, error) { return deps.MorningBriefing(ctx, false) }
 
 	root, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -112,7 +139,7 @@ func main() {
 
 	hr := &httpRunner{log: log.With("component", "http")}
 	srv, err := web.New(web.Deps{
-		Cfg: cfg, DB: db, LLM: llmMgr, Agent: ag, Google: gc, Zepp: zc, Telegram: tg, Log: log, Version: version,
+		Cfg: cfg, DB: db, LLM: llmMgr, Agent: ag, Google: gc, Zepp: zc, Telegram: tg, Updater: upd, Log: log, Version: version,
 		Hooks: web.Hooks{Reload: sup.reload, Rebind: hr.rebind, Jobs: sup.jobs, RunJob: sup.runJob},
 	})
 	if err != nil {
@@ -126,14 +153,47 @@ func main() {
 		log.Info("primeiro acesso: abra o navegador para concluir o setup", "url", fmt.Sprintf("http://localhost:%d/setup", cfg.GetInt("HTTP_PORT", 8080)))
 	}
 
-	<-root.Done()
-	log.Info("encerrando…")
+	go upd.ConfirmAfter(root, 90*time.Second)
+
+	relaunch := false
+	select {
+	case <-root.Done():
+	case <-restart:
+		relaunch = true
+	}
+	log.Info("encerrando…", "restart", relaunch)
 	shutdownCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
 	hr.shutdown(shutdownCtx)
 	sup.stop()
 	logHandler.Close()
 	db.Close()
+	if relaunch {
+		stop()
+		if err := updater.Relaunch(exe); err != nil {
+			fatal("falha ao reiniciar após atualização", err)
+		}
+	}
+}
+
+func runUpdateCLI(upd *updater.Updater) {
+	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+	defer cancel()
+	st, err := upd.Check(ctx)
+	if err != nil {
+		fatal("verificação de atualização", err)
+	}
+	if !st.Available {
+		fmt.Printf("Já está na versão mais recente (%s; última release %s).\n", st.Current, st.Latest)
+		return
+	}
+	if !st.Supported {
+		fatal("atualização", errors.New(st.Reason))
+	}
+	if err := upd.Install(ctx); err != nil {
+		fatal("atualização", err)
+	}
+	fmt.Printf("Atualizado para %s. Reinicie o serviço para aplicar.\n", st.Latest)
 }
 
 func fatal(msg string, err error) {

@@ -23,6 +23,7 @@ import (
 	"github.com/inakano89/second-brain/internal/llm"
 	"github.com/inakano89/second-brain/internal/scheduler"
 	"github.com/inakano89/second-brain/internal/telegram"
+	"github.com/inakano89/second-brain/internal/updater"
 )
 
 //go:embed templates/*.html
@@ -48,6 +49,7 @@ type Deps struct {
 	Google   *google.Client
 	Zepp     *zepp.Client
 	Telegram *telegram.Service
+	Updater  *updater.Updater
 	Hooks    Hooks
 	Log      *slog.Logger
 	Version  string
@@ -138,6 +140,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /backup/now", s.auth(s.backupNow))
 	mux.HandleFunc("GET /backups/{file}", s.auth(s.backupDownload))
 
+	mux.HandleFunc("POST /settings/updates/toggle", s.auth(s.updateToggle))
+	mux.HandleFunc("POST /settings/updates/check", s.auth(s.updateCheck))
+	mux.HandleFunc("POST /settings/updates/install", s.auth(s.updateInstall))
+
 	mux.HandleFunc("GET /google/connect", s.auth(s.googleConnect))
 	mux.HandleFunc("GET /google/callback", s.auth(s.googleCallback))
 	mux.HandleFunc("POST /google/disconnect", s.auth(s.googleDisconnect))
@@ -223,6 +229,7 @@ type Page struct {
 	Brain   string
 	User    string
 	Version string
+	Update  string // newer release tag, when available
 	Flash   string
 	Error   string
 	Data    any
@@ -231,6 +238,11 @@ type Page struct {
 func (s *Server) page(r *http.Request, title, active string, data any) Page {
 	p := Page{Title: title, Active: active, Brain: s.Cfg.Get("BRAIN_NAME"), Version: s.Version, Data: data}
 	p.User, _ = s.currentUser(r)
+	if s.Updater != nil && p.User != "" {
+		if st := s.Updater.Status(); st.Available {
+			p.Update = st.Latest
+		}
+	}
 	if f := r.URL.Query().Get("flash"); f != "" {
 		p.Flash = f
 	}
@@ -272,7 +284,11 @@ func redirectFlash(w http.ResponseWriter, r *http.Request, path, flash string, i
 	if isErr {
 		key = "error"
 	}
-	target := path + "?" + key + "=" + url.QueryEscape(flash)
+	base, frag, _ := strings.Cut(path, "#")
+	target := base + "?" + key + "=" + url.QueryEscape(flash)
+	if frag != "" {
+		target += "#" + frag
+	}
 	if isHTMX(r) {
 		w.Header().Set("HX-Redirect", target)
 		return

@@ -16,6 +16,7 @@ import (
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/export"
 	"github.com/inakano89/second-brain/internal/scheduler"
+	"github.com/inakano89/second-brain/internal/updater"
 )
 
 // ---- dashboard ----
@@ -136,6 +137,22 @@ func (s *Server) integrations() []integ {
 	out = append(out, integ{"Folder watcher", map[bool]string{true: s.Cfg.GetPath("INBOX_DIR"), false: "desativado"}[s.Cfg.GetBool("WATCHER_ENABLED")], s.Cfg.GetBool("WATCHER_ENABLED")})
 	acts := s.Agent.Actions()
 	out = append(out, integ{"Agent actions", fmt.Sprintf("%d ação(ões), %s", len(acts.List()), map[bool]string{true: "ativas", false: "desativadas"}[acts.Enabled()]), acts.Enabled()})
+	if s.Updater != nil {
+		st := s.Updater.Status()
+		msg := st.Current
+		switch {
+		case st.Available:
+			msg += " → " + st.Latest + " disponível"
+		case !st.CheckedAt.IsZero():
+			msg += " (atualizado)"
+		}
+		if !st.Enabled {
+			msg += ", auto-update desligado"
+		} else if !st.Supported {
+			msg += ", " + st.Reason
+		}
+		out = append(out, integ{"Atualizações", msg, st.Enabled && st.Supported})
+	}
 	bk := s.Cfg.Get("BACKUP_ENCRYPTION_KEY") != ""
 	out = append(out, integ{"Backup", strings.Join(s.Cfg.GetList("BACKUP_TARGETS"), ", "), bk})
 	return out
@@ -240,6 +257,7 @@ type settingsView struct {
 	ActionsPath string
 	Backups     []backupFile
 	TelegramOK  bool
+	Update      *updater.Status
 }
 
 func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
@@ -278,6 +296,10 @@ func (s *Server) settingsPage(w http.ResponseWriter, r *http.Request) {
 	v.Extra = strings.Join(extra, "\n")
 	v.Bookmarklet = bookmarklet(v.PublicURL, v.APIToken)
 	v.Backups = listBackups(scheduler.BackupDir(s.Cfg))
+	if s.Updater != nil {
+		st := s.Updater.Status()
+		v.Update = &st
+	}
 	s.render(w, "settings", s.page(r, "Configurações", "settings", v))
 }
 
@@ -309,12 +331,18 @@ func (s *Server) settingsEnv(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	changes := map[string]string{}
+	rendered := map[string]bool{} // checkboxes present in the submitted form
+	for _, k := range r.PostForm["__bool"] {
+		rendered[k] = true
+	}
 	for _, f := range config.Schema {
 		if f.Hidden {
 			continue
 		}
 		if f.Kind == "bool" {
-			changes[f.Key] = strconv.FormatBool(r.PostFormValue(f.Key) == "true")
+			if rendered[f.Key] {
+				changes[f.Key] = strconv.FormatBool(r.PostFormValue(f.Key) == "true")
+			}
 			continue
 		}
 		vals, present := r.PostForm[f.Key]
@@ -341,7 +369,7 @@ func (s *Server) settingsEnv(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for _, c := range []string{"CRON_MORNING", "CRON_EVENING", "CRON_WEEKLY", "CRON_MAINTENANCE", "CRON_BACKUP", "CRON_RSS", "CRON_GMAIL", "CRON_CALENDAR", "CRON_ZEPP"} {
+	for _, c := range []string{"CRON_MORNING", "CRON_EVENING", "CRON_WEEKLY", "CRON_MAINTENANCE", "CRON_BACKUP", "CRON_RSS", "CRON_GMAIL", "CRON_CALENDAR", "CRON_ZEPP", "CRON_UPDATE"} {
 		if v := changes[c]; v != "" && v != "off" && v != "-" {
 			if _, err := scheduler.Parse(v); err != nil {
 				redirectFlash(w, r, "/settings", c+": "+err.Error(), true)
@@ -513,4 +541,55 @@ func (s *Server) googleCallback(w http.ResponseWriter, r *http.Request) {
 func (s *Server) googleDisconnect(w http.ResponseWriter, r *http.Request) {
 	_ = s.Google.Disconnect(r.Context())
 	redirectFlash(w, r, "/settings", "Google desconectado.", false)
+}
+
+// ---- self-update ----
+
+func (s *Server) updateToggle(w http.ResponseWriter, r *http.Request) {
+	on := !s.Cfg.GetBool("AUTO_UPDATE_ENABLED")
+	if err := s.Cfg.Update(map[string]string{"AUTO_UPDATE_ENABLED": strconv.FormatBool(on)}); err != nil {
+		redirectFlash(w, r, "/settings", err.Error(), true)
+		return
+	}
+	s.log.Info("atualização automática alterada", "enabled", on)
+	msg := "Atualizações automáticas desativadas."
+	if on {
+		msg = "Atualizações automáticas ativadas."
+	}
+	redirectFlash(w, r, "/settings#updates", msg, false)
+}
+
+func (s *Server) updateCheck(w http.ResponseWriter, r *http.Request) {
+	if s.Updater == nil {
+		redirectFlash(w, r, "/settings", "atualizador indisponível", true)
+		return
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 30*time.Second)
+	defer cancel()
+	st, err := s.Updater.Check(ctx)
+	switch {
+	case err != nil:
+		redirectFlash(w, r, "/settings#updates", "Falha ao verificar: "+err.Error(), true)
+	case st.Available:
+		redirectFlash(w, r, "/settings#updates", "Nova versão disponível: "+st.Latest, false)
+	default:
+		redirectFlash(w, r, "/settings#updates", "Você está na versão mais recente ("+st.Current+").", false)
+	}
+}
+
+func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
+	if s.Updater == nil {
+		redirectFlash(w, r, "/settings", "atualizador indisponível", true)
+		return
+	}
+	if ok, reason := s.Updater.Supported(); !ok {
+		redirectFlash(w, r, "/settings#updates", reason, true)
+		return
+	}
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		_ = s.Updater.Install(ctx)
+	}()
+	redirectFlash(w, r, "/settings#updates", "Instalando atualização — o servidor reiniciará em instantes.", false)
 }

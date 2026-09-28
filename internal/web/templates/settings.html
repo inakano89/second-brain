@@ -6,6 +6,7 @@
     <a href="#env">Variáveis (.env)</a>
     <a href="#google">Google</a>
     <a href="#clipper">Web Clipper &amp; API</a>
+    <a href="#updates">Atualizações</a>
     <a href="#actions">Agent actions</a>
     <a href="#backup">Backup &amp; export</a>
     <a href="#password">Senha</a>
@@ -23,7 +24,7 @@
           <label class="env-field">
             <span>{{or .Label .Key}} <code class="key">{{.Key}}</code>{{if eq .Source "env"}} <em class="muted">(via ambiente)</em>{{end}}</span>
             {{if eq .Kind "bool"}}
-              <input type="checkbox" name="{{.Key}}" value="true" {{if eq .Value "true"}}checked{{end}}>
+              <input type="hidden" name="__bool" value="{{.Key}}"><input type="checkbox" name="{{.Key}}" value="true" {{if eq .Value "true"}}checked{{end}}>
             {{else if eq .Kind "select"}}
               <select name="{{.Key}}">{{$v := .Value}}{{range .Options}}<option value="{{.}}" {{if eq . $v}}selected{{end}}>{{.}}</option>{{end}}</select>
             {{else if eq .Kind "textarea"}}
@@ -75,6 +76,33 @@
   -d '{"date":"2026-09-28","source":"gadgetbridge","metrics":{"sleep_minutes":452,"deep_sleep_minutes":95,"sleep_score":84,"resting_hr":54,"steps":10234,"recovery_score":78}}'</pre></dd>
       </dl>
       {{if .TelegramOK}}<form method="post" action="/settings/telegram-test"><button class="btn small">Enviar teste no Telegram</button></form>{{end}}
+    </section>
+
+    <section class="card" id="updates">
+      <h2>⬆️ Atualizações</h2>
+      {{with .Update}}
+      <form method="post" action="/settings/updates/toggle">
+        <button class="btn switch {{if .Enabled}}on{{end}}" title="Alternar">
+          <span class="knob"></span>
+          {{if .Enabled}}Atualização automática <b>ativada</b>{{else}}Atualização automática <b>desativada</b>{{end}}
+        </button>
+      </form>
+      <dl class="update-box">
+        <dt>Versão atual</dt><dd><code>{{.Current}}</code></dd>
+        <dt>Última release</dt><dd>{{if .Latest}}<code>{{.Latest}}</code>{{if .URL}} · <a href="{{.URL}}" target="_blank" rel="noopener">notas</a>{{end}}{{else}}—{{end}}{{if .Available}} <span class="pill run">nova versão</span>{{end}}</dd>
+        <dt>Última verificação</dt><dd>{{fmtTime .CheckedAt}}</dd>
+        <dt>Verificação</dt><dd>SHA-256{{if .Signed}} + assinatura ed25519{{end}} · asset <code>{{.Asset}}</code></dd>
+        {{if not .Supported}}<dt>Auto-instalação</dt><dd class="warn">{{.Reason}}</dd>{{end}}
+        {{if .Error}}<dt>Erro</dt><dd class="warn">{{.Error}}</dd>{{end}}
+        {{if .Installing}}<dt>Status</dt><dd><span class="pill run">instalando…</span></dd>{{end}}
+      </dl>
+      <div class="row">
+        <form method="post" action="/settings/updates/check"><button class="btn">Verificar agora</button></form>
+        {{if and .Available .Supported}}<form method="post" action="/settings/updates/install"><button class="btn primary" data-confirm="Instalar {{.Latest}} e reiniciar o servidor?">Instalar {{.Latest}} agora</button></form>{{end}}
+      </div>
+      {{if and .Available .Notes}}<h3>Novidades em {{.Latest}}</h3><div class="notes md-body">{{markdown (truncate .Notes 4000)}}</div>{{end}}
+      <p class="muted">Agendamento: <code>CRON_UPDATE</code>. Antes de instalar, o banco é copiado para <code>backups/pre-update-*.db</code>; se a nova versão falhar em 3 inicializações, o binário anterior é restaurado automaticamente.</p>
+      {{end}}
     </section>
 
     <section class="card" id="actions">
