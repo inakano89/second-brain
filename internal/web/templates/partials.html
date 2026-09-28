@@ -118,3 +118,24 @@
 {{end}}
 </div>
 {{end}}
+
+{{define "import_job"}}
+<div class="import-job" id="job-{{.ID}}"{{if .Running}} hx-get="/import/jobs/{{.ID}}" hx-trigger="every 1s" hx-swap="outerHTML"{{end}}>
+  <div class="card-head">
+    <b>{{join .Files ", "}}</b>
+    <span class="pill {{if eq .State "done"}}ok{{else if eq .State "failed"}}err{{else}}run{{end}}">{{importState .State}}</span>
+  </div>
+  {{if .Running}}<progress max="100" value="{{.Percent}}">{{.Percent}}%</progress>{{end}}
+  <small class="muted">{{fmtTime .Started}}{{with .FormatList}} · {{.}}{{end}}</small>
+  <div class="stats">
+    <div><b>{{.Created}}</b><span>novos</span></div>
+    <div><b>{{.Updated}}</b><span>atualizados</span></div>
+    <div><b>{{.Skipped}}</b><span>sem mudança</span></div>
+    <div><b>{{.Failed}}</b><span>falhas</span></div>
+    <div><b>{{.Links}}</b><span>conexões</span></div>
+  </div>
+  <small class="muted">{{.Queued}} na fila de enriquecimento{{if .Feeds}} · {{.Feeds}} feed(s) adicionados ao RSS{{end}}{{if .Ignored}} · {{.Ignored}} arquivo(s) ignorado(s) (anexos, índices){{end}}</small>
+  {{if .Errors}}<details open><summary>Erros ({{len .Errors}})</summary><ul class="small">{{range .Errors}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+  {{if .Warnings}}<details><summary>Avisos ({{len .Warnings}})</summary><ul class="small">{{range .Warnings}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
+</div>
+{{end}}

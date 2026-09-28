@@ -23,6 +23,7 @@
 - [Primeiro acesso](#primeiro-acesso-setup-wizard)
 - [Interface web](#interface-web)
 - [Canais de captura](#canais-de-captura)
+- [Importação de dados](#importação-de-dados)
 - [Modelos de IA e Conselho](#modelos-de-ia-e-conselho)
 - [IA, grafo e agentes](#ia-grafo-e-agentes)
 - [Integrações](#integrações)
@@ -50,6 +51,7 @@
 | **Grafo de conhecimento** | Nós tipados (Notas, Tarefas, Pessoas, Eventos, Insights, Artigos, Saúde), auto-tagging, extração de entidades/tarefas, auto-linking semântico, `[[wiki-links]]`. |
 | **Busca híbrida** | BM25 (FTS5) + similaridade vetorial executadas em paralelo e fundidas por *Reciprocal Rank Fusion*, com filtros de tipo, data e tag. |
 | **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters. |
+| **Importação** | Obsidian, Logseq, Notion, Evernote, Google Keep, Joplin/Bear, favoritos do navegador/Pocket, CSV (Excel, Todoist, Readwise), JSON, Kindle, contatos (vCard), agenda (iCalendar) e OPML — com detecção automática, `.zip` aninhados e reimportação sem duplicar. |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
@@ -68,6 +70,7 @@ flowchart LR
     RSS[RSS / Newsletters] --> Q
     GM[Gmail / Calendar] --> Q
     ZP[Zepp / Webhook saúde] --> AG
+    IM[Importação<br/>zip · enex · csv · vcf · ics] --> AG
   end
   Q[(Fila offline<br/>task_queue)] --> W[Workers<br/>goroutines]
   W --> AG[Agent<br/>ingest · enrich · link]
@@ -92,6 +95,7 @@ internal/
   integrations/zepp/          métricas de sono/FC/passos (API Huami) + estimativa de recuperação
   integrations/rss/           parser RSS/Atom/RDF e curadoria por relevância
   watcher/                    monitor fsnotify da pasta inbox
+  importer/                   importação (Obsidian, Notion, Evernote, Keep, favoritos, CSV, JSON, Kindle, vCard, iCal, OPML)
   scheduler/                  cron interno, rotinas diárias/semanais, manutenção, backup cifrado (S3 SigV4/WebDAV/Telegram)
   queue/                      pool de workers da fila offline
   extract/                    Readability simplificado, HTML→Markdown, texto de PDF
@@ -215,6 +219,7 @@ Para expor na internet, use um proxy reverso com TLS (Caddy, nginx, Traefik) e d
 | `-reset-setup` | reabre o assistente `/setup` |
 | `-decrypt arquivo.enc -out brain.db [-key …]` | restaura um backup cifrado |
 | `-healthcheck` | retorna 0 se o servidor local responde (usado pelo Docker) |
+| `-import arquivo [mais arquivos…]` | importa e sai (até 2 GB por arquivo). Opções: `-import-llm`, `-import-fetch`, `-import-tags a,b` |
 
 ---
 
@@ -259,6 +264,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | **Mindmap** (`/`) | Grafo force-directed em canvas (JS puro, embutido): zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas e reprocessamento por IA. Captura rápida. |
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
 | **Painel** (`/dashboard`) | Custos e tokens por provedor/modelo (7/30/90 dias), gráfico diário, estatísticas do grafo, status das integrações, fila offline (com reprocessamento), rotinas com execução manual, métricas de saúde e último briefing. |
+| **Importar** (`/import`) | Envio de um ou vários arquivos, detecção automática do formato, progresso ao vivo e relatório (novos, atualizados, sem mudança, falhas, conexões). Tabela com o passo a passo de exportação de cada app. |
 | **Audit log** (`/logs`) | Execuções, erros de sync, ações do agente e logins, filtráveis por nível/componente/texto. |
 | **Configurações** (`/settings`) | Liga/desliga de atualizações automáticas, verificação/instalação manual, editor completo do `.env` (segredos mascarados), conexão Google, bookmarklet e API token, editor de ações do agente, backup manual, download de backups, exportação Obsidian e troca de senha. |
 
@@ -293,6 +299,35 @@ Arquivos colocados em `INBOX_DIR` (padrão `./inbox`) são detectados via **fsno
 ### RSS e newsletters
 
 `RSS_FEEDS` (um por linha) é consultado em paralelo; itens novos (≤ 7 dias) são pontuados em lote pelo LLM segundo `RSS_INTERESTS`, e os com nota ≥ `RSS_MIN_SCORE` viram artigos resumidos. Newsletters do Gmail (`GMAIL_NEWSLETTER_QUERY`) são resumidas em tópicos.
+
+---
+
+## Importação de dados
+
+Página **Importar** (`/import`), `POST /api/import` ou `second-brain -import arquivo.zip`. O formato é detectado pelo nome e pelo conteúdo; um `.zip` é percorrido por inteiro (inclusive `.zip` dentro de `.zip`, como no export do Notion e no Google Takeout) e cada arquivo interno vai para o leitor certo.
+
+| Fonte | Arquivo | Vira |
+|---|---|---|
+| Obsidian, Logseq, Joplin, Bear, Markdown | `.md` ou pasta compactada em `.zip` | notas; frontmatter YAML (`title`, `tags`, `aliases`, `created`, `type`, `status`, `due`), propriedades `key:: value` do Logseq, `#tags` e `[[links]]` preservados. Notas diárias (`2024-01-15.md`) recebem a data. |
+| Notion | `.zip` (Markdown & CSV) | páginas viram notas; IDs dos nomes são removidos e links entre páginas viram `[[wiki-links]]`. Os CSV de bancos de dados são ignorados (as linhas já vêm como páginas). |
+| Evernote | `.enex` | notas com tags, datas, URL de origem e checklists (`- [x]`); lido em streaming (anexos não ocupam memória). |
+| Google Keep | Takeout `.zip` ou `.json` | notas e listas; lixeira ignorada, marcadores viram tags. |
+| Favoritos (Chrome, Firefox, Edge, Safari), Pocket, Raindrop | `.html` | artigos; a pasta vira tag. Opção de baixar o texto de cada página pela fila. |
+| Planilhas: Excel, Google Sheets, Todoist, Readwise, Goodreads, Pocket | `.csv`/`.tsv` (`,` `;` ou tab) | uma nota/tarefa por linha. Colunas reconhecidas em pt/en (título, conteúdo, tags, tipo, url, prazo, data, status); as demais vão para o conteúdo. CSV do Todoist tem leitor próprio (seções, `@labels`, comentários). |
+| JSON / JSON Lines | `.json`, `.jsonl` | um nó por objeto (mesmos campos; aceita a resposta da própria API). |
+| Kindle | `My Clippings.txt` | um artigo por livro com destaques e notas (pt/en, duplicatas removidas). |
+| Contatos (Google, iPhone, Outlook) | `.vcf` (2.1/3.0/4.0) | pessoas; se a pessoa já existe no grafo, os dados são mesclados. |
+| Agenda (Google Agenda, Outlook, Apple) | `.ics` | eventos (fuso, dia inteiro, recorrência, participantes como `[[links]]`) e tarefas `VTODO`; cancelados ignorados. |
+| OPML (Feedly, Inoreader, Workflowy) | `.opml` | assinaturas vão para `RSS_FEEDS`; tópicos viram notas. |
+| Páginas HTML | `.html` | notas com o texto principal (Readability). |
+
+Como funciona:
+
+- **Sem duplicar**: cada item recebe uma chave estável (`source=import:<formato>`, `source_ref` = caminho no vault, UID, URL ou hash). Reimportar atualiza o que mudou e pula o resto.
+- **Conexões**: `[[links]]` são resolvidos pelo nome do arquivo, `aliases` ou título dentro da própria importação; o vault exportado pelo Second Brain volta com as conexões tipadas da seção “Conexões”.
+- **Custo controlado**: por padrão o enriquecimento usa a análise offline (tags, resumo heurístico, embeddings e auto-links). Marque **Analisar com IA** (ou `llm=true`, `-import-llm`) para resumo/entidades por LLM — ~1 chamada por item. O botão “Reprocessar” de um nó sempre usa a IA.
+- **Paralelismo**: arquivos e entradas do `.zip` são lidos em goroutines (1 por CPU); a gravação usa 4 workers; o enriquecimento segue pela fila offline.
+- **Limites**: `IMPORT_MAX_MB` (padrão 200 MB por envio). Atrás de nginx, ajuste `client_max_body_size`. Para arquivos maiores use `-import` no servidor. Anexos (imagens, PDFs) dentro de exports são ignorados — use a pasta `inbox` para eles.
 
 ---
 
@@ -452,6 +487,7 @@ Autenticação: cookie de sessão **ou** `Authorization: Bearer <API_TOKEN>` (ta
 | `POST` | `/api/clip` | Salva página/seleção. JSON ou form: `url`, `title`, `html`, `text`, `note`, `tags`. CORS habilitado. |
 | `POST` | `/api/nodes` | Cria nó: `{"type","title","content","tags":[],"due":"YYYY-MM-DD[THH:MM]"}` |
 | `POST` | `/api/health/webhook` | Métricas diárias (objeto ou lista) |
+| `POST` | `/api/import?format=&llm=&fetch=&tags=` | Importa (síncrono) e devolve o relatório JSON. Multipart (campo `file`, repetível) ou corpo bruto com `?filename=arquivo.ext`. Ex.: `curl -H "Authorization: Bearer $TOKEN" -F file=@Evernote.enex $URL/api/import` |
 | `GET` | `/api/search?q=&types=&from=&to=&tag=&limit=` | Busca híbrida (sessão) |
 | `GET` | `/api/graph?q=&focus=&types=&limit=` | Subgrafo para visualização (sessão) |
 | `POST` | `/api/chat` | Chat SSE (`message`, `provider`, `file`) — eventos `context`, `token`, `tool_call`, `tool_result`, `done`, `error` (sessão) |
@@ -465,7 +501,7 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 
 | Grupo | Principais variáveis |
 |---|---|
-| Geral | `BRAIN_NAME`, `HTTP_HOST`, `HTTP_PORT`, `PUBLIC_URL`, `TIMEZONE`, `DATA_DIR`, `INBOX_DIR`, `WATCHER_ENABLED`, `WATCHER_ACTION`, `QUEUE_WORKERS`, `LOG_RETENTION_DAYS` |
+| Geral | `BRAIN_NAME`, `HTTP_HOST`, `HTTP_PORT`, `PUBLIC_URL`, `TIMEZONE`, `DATA_DIR`, `INBOX_DIR`, `WATCHER_ENABLED`, `WATCHER_ACTION`, `QUEUE_WORKERS`, `LOG_RETENTION_DAYS`, `IMPORT_MAX_MB` |
 | LLM | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL`, `EMBEDDING_PROVIDER`, `LLM_PRICING`, `AUTOLINK_THRESHOLD` |
 | Modelos (página `/models`) | `LLM_MODELS`, `DEFAULT_LLM_PROVIDER`, `ANTHROPIC_MODEL`, `OPENAI_MODEL`, `GEMINI_MODEL`, `OLLAMA_MODEL`, `LLM_ROUTE_*`, `LLM_COUNCIL_MEMBERS`, `LLM_COUNCIL_JUDGE`, `LLM_COUNCIL_ROUNDS` |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_USER_IDS` |
@@ -511,7 +547,7 @@ make check      # vet + testes + compilação de todos os alvos
 SB_DEBUG=1 make run   # logs em nível debug
 ```
 
-Estrutura de testes: parsing SSE de cada provedor com servidores mock (incluindo replay de blocos de raciocínio do Claude e `thoughtSignature` do Gemini), cron, criptografia em streaming, FTS5/grafo/fila no SQLite, Readability, RSS/Atom e fluxo web completo.
+Estrutura de testes: parsing SSE de cada provedor com servidores mock (incluindo replay de blocos de raciocínio do Claude e `thoughtSignature` do Gemini), cron, criptografia em streaming, FTS5/grafo/fila no SQLite, Readability, RSS/Atom, cada formato de importação (e reimportação idempotente) e fluxo web completo.
 
 ---
 

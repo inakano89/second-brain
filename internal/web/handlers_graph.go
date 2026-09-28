@@ -291,6 +291,7 @@ func (s *Server) nodeEnrich(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	n.Meta["enriched"] = false
+	delete(n.Meta, agent.MetaNoLLM)
 	if err := s.DB.UpdateNode(r.Context(), n); err != nil {
 		http.Error(w, err.Error(), 500)
 		return

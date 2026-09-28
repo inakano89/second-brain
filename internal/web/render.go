@@ -78,7 +78,8 @@ func (s *Server) funcs() template.FuncMap {
 			}
 			return fmt.Sprintf("%.0f", v)
 		},
-		"levelClass": func(l string) string { return "lvl-" + strings.ToLower(l) },
+		"levelClass":  func(l string) string { return "lvl-" + strings.ToLower(l) },
+		"importState": func(st string) string { return importStates[st] },
 	}
 }
 
