@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -83,7 +84,7 @@ func setup(t *testing.T) *env {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { db.Close() })
-	log := slog.New(slog.NewTextHandler(io.Discard, nil))
+	log := slog.New(slog.NewTextHandler(os.Stderr, nil))
 	m := llm.NewManager(cfg, nil)
 	ag := agent.New(cfg, db, m, log)
 	gc := google.New(cfg, db, log)
@@ -552,4 +553,78 @@ func TestContentManager(t *testing.T) {
 	e.expect(rec, 200, "lixeira", "Desfazer")
 	batch := between(rec.Body.String(), `{"batch":"`, `"`)
 	e.expect(e.form("/nodes/restore", url.Values{"batch": {batch}, "id": {fmt.Sprint(n2.ID)}}), 200, "Restaurado", "Outra")
+}
+
+func TestCleanupTabAndDashboard(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	long := time.Now().AddDate(0, 0, -40)
+	mk := func(in agent.IngestInput) *database.Node {
+		t.Helper()
+		n, _, err := e.ag.Ingest(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	a := mk(agent.IngestInput{Type: database.TypeArticle, Title: "Go Docs", Content: "https://go.dev", Source: "import:bookmarks", SourceRef: "1", CreatedAt: long})
+	b := mk(agent.IngestInput{Type: database.TypeArticle, Title: "Go Docs", Content: "https://go.dev", Source: "import:bookmarks", SourceRef: "2"})
+	stale := mk(agent.IngestInput{Type: database.TypeTask, Title: "Tarefa esquecida", Source: "web", CreatedAt: long})
+	e.db.ExecContext(ctx, `UPDATE nodes SET updated_at = created_at WHERE id = ?`, stale.ID)
+
+	e.expect(e.do("GET", "/content/cleanup", nil, nil), 200, "Faxina semanal", "Nada para limpar agora")
+	rec := e.form("/content/cleanup/run", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "2+sugest") {
+		t.Fatalf("run: %s", rec.Header().Get("Location"))
+	}
+	page := e.do("GET", "/content/cleanup", nil, nil)
+	e.expect(page, 200, "Duplicados", "Tarefas paradas", "🔗 Juntar", "✓ Concluir", `<span class="count">2</span>`, "Go Docs", ">fica<")
+	e.expect(e.do("GET", "/content", nil, nil), 200, `href="/content/cleanup"`, `<span class="count">2</span>`)
+	list, _ := e.db.ListCleanup(ctx, database.CleanupPending, 10)
+	var dup, task database.CleanupSuggestion
+	for _, c := range list {
+		switch c.Kind {
+		case database.CleanupDuplicate:
+			dup = c
+		case database.CleanupStaleTask:
+			task = c
+		}
+	}
+	rec = e.do("POST", fmt.Sprintf("/content/cleanup/%d", dup.ID), strings.NewReader("action=merge"),
+		map[string]string{"Content-Type": "application/x-www-form-urlencoded", "HX-Request": "true"})
+	e.expect(rec, 200, "juntados", fmt.Sprintf(`id="cl-%d"`, dup.ID))
+	if _, err := e.db.GetNode(ctx, b.ID); err != database.ErrNotFound {
+		t.Fatal("copy still there")
+	}
+	rec = e.form("/content/cleanup/apply-all", url.Values{"kind": {database.CleanupStaleTask}})
+	if !strings.Contains(rec.Header().Get("Location"), "1+sugest") {
+		t.Fatalf("apply all: %s", rec.Header().Get("Location"))
+	}
+	if n, _ := e.db.GetNode(ctx, stale.ID); n.Status != database.StatusDone {
+		t.Fatalf("task = %+v", n)
+	}
+	_ = task
+	_ = a
+
+	// Dashboard: KPIs, to-do with AI tasks, memory, charts with a table view.
+	due := time.Now().AddDate(0, 0, -2)
+	late := mk(agent.IngestInput{Type: database.TypeTask, Title: "Pagar boleto", DueAt: &due, Source: "web"})
+	meeting := mk(agent.IngestInput{Title: "Reunião de kickoff", Content: "notas", Source: "web"})
+	aiTask := mk(agent.IngestInput{Type: database.TypeTask, Title: "Enviar cronograma", Source: "agent", SourceRef: "meeting:1:x"})
+	e.db.AddEdge(ctx, aiTask.ID, meeting.ID, "derived_from", 1)
+	mk(agent.IngestInput{Type: database.TypeInsight, Title: "Prioridades atuais", Content: "1. **Lançar a v0.5**", Source: agent.MemorySource, SourceRef: "priorities"})
+	mk(agent.IngestInput{Type: database.TypeInsight, Title: "Usar SQLite", Content: "x", Source: agent.MemorySource, SourceRef: "decision:1", Tags: []string{agent.TagMemory, agent.TagDecision}})
+	dash := e.do("GET", "/dashboard", nil, nil)
+	e.expect(dash, 200, "Capturas (7 dias)", "Tarefas abertas", "⚠ 1 atrasada(s)", "Novas da IA (24 h)", "Faxina", "Custo de IA (7 dias)",
+		"Pagar boleto", "⚠ atrasada", "Enviar cronograma", "← Reunião de kickoff", "Lançar a v0.5", "Usar SQLite", "✔ decisão",
+		"Capturas por dia", "Últimos 7 dias", "Ver em tabela", "/static/dashboard.js", "Consumo de LLM", "Integrações")
+	rec = e.do("POST", fmt.Sprintf("/dashboard/tasks/%d/done", late.ID), nil, map[string]string{"HX-Request": "true"})
+	e.expect(rec, 200, "Concluída", "Pagar boleto")
+	rec = e.do("POST", fmt.Sprintf("/dashboard/tasks/%d/discard", aiTask.ID), nil, map[string]string{"HX-Request": "true"})
+	e.expect(rec, 200, "Descartada")
+	if gone, _ := e.db.IsDeletedRef(ctx, "agent", "meeting:1:x"); !gone {
+		t.Error("discarded AI task must not come back")
+	}
+	e.expect(e.do("POST", fmt.Sprintf("/dashboard/tasks/%d/nope", meeting.ID), nil, nil), 404)
 }

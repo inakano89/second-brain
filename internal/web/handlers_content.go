@@ -135,6 +135,7 @@ type contentOption struct {
 
 type contentView struct {
 	Tab        string
+	Cleanup    int
 	Rows       contentRows
 	Types      []string
 	Sources    []contentOption
@@ -176,6 +177,7 @@ func (s *Server) contentPage(w http.ResponseWriter, r *http.Request) {
 	g.Go(func() (err error) { v.Rows, err = s.contentRowsFor(gctx, q, f); return })
 	g.Go(func() (err error) { bySource, err = s.DB.SourceTypeCounts(gctx); return })
 	g.Go(func() (err error) { v.Trash, err = s.DB.TrashCount(gctx); return })
+	g.Go(func() (err error) { v.Cleanup, err = s.DB.CleanupPendingCount(gctx); return })
 	specials := []string{"dup", "empty", "orphan"}
 	v.Specials = make([]contentOption, len(specials))
 	for i, sp := range specials {
@@ -426,6 +428,7 @@ func (s *Server) contentExport(w http.ResponseWriter, r *http.Request) {
 
 type sendsView struct {
 	Tab     string
+	Cleanup int
 	Batches []database.ImportBatch
 	Sources []contentOption
 	Trash   int
@@ -439,6 +442,7 @@ func (s *Server) contentSends(w http.ResponseWriter, r *http.Request) {
 	g.Go(func() (err error) { v.Batches, err = s.DB.ImportBatches(gctx, 200); return })
 	g.Go(func() (err error) { bySource, err = s.DB.SourceTypeCounts(gctx); return })
 	g.Go(func() (err error) { v.Trash, err = s.DB.TrashCount(gctx); return })
+	g.Go(func() (err error) { v.Cleanup, err = s.DB.CleanupPendingCount(gctx); return })
 	if err := g.Wait(); err != nil {
 		http.Error(w, err.Error(), 500)
 		return
@@ -483,6 +487,7 @@ func (s *Server) contentSendTrash(w http.ResponseWriter, r *http.Request) {
 
 type trashView struct {
 	Tab      string
+	Cleanup  int
 	Trash    int
 	Items    []database.TrashItem
 	Batches  []database.TrashBatch
@@ -512,6 +517,7 @@ func (s *Server) contentTrash(w http.ResponseWriter, r *http.Request) {
 	g.Go(func() (err error) { v.Batches, err = s.DB.TrashBatches(gctx, 30); return })
 	g.Go(func() (err error) { v.Blocked, err = s.DB.DeletedRefCount(gctx); return })
 	g.Go(func() (err error) { v.Trash, err = s.DB.TrashCount(gctx); return })
+	g.Go(func() (err error) { v.Cleanup, err = s.DB.CleanupPendingCount(gctx); return })
 	if err := g.Wait(); err != nil {
 		http.Error(w, err.Error(), 500)
 		return

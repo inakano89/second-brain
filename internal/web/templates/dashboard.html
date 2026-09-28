@@ -1,7 +1,81 @@
+{{define "head"}}<script src="/static/dashboard.js" defer></script>{{end}}
 {{define "content"}}
 {{with .Data}}
 <div class="dash">
-  <section class="card span2">
+  <section class="kpis span3" aria-label="Indicadores">
+    {{range .Tiles}}
+    <a class="kpi card" href="{{.Href}}">
+      <span class="kpi-label">{{.Label}}</span>
+      <b class="kpi-value">{{.Value}}</b>
+      {{if .Delta}}<span class="kpi-delta {{.Tone}}">{{.Delta}}</span>{{end}}
+      {{if .Note}}<span class="kpi-note {{.NoteTone}}">{{.Note}}</span>{{end}}
+    </a>
+    {{end}}
+  </section>
+
+  <section class="card span2 briefing">
+    <div class="card-head">
+      <h2>☀️ Briefing de hoje</h2>
+      {{with .Briefing}}<small class="muted">{{fmtTime .CreatedAt}}</small>{{end}}
+    </div>
+    {{with .Briefing}}
+      <div class="md-body clamp" id="briefing-body">{{markdown .Content}}</div>
+      <button type="button" class="btn small" data-expand="briefing-body" aria-expanded="false">Ver tudo</button>
+    {{else}}
+      <p class="muted">Nenhum briefing ainda. Ele é gerado toda manhã pela rotina <b>morning</b>.</p>
+      <form method="post" action="/jobs/morning/run"><button class="btn small">☀️ Gerar agora</button></form>
+    {{end}}
+  </section>
+
+  <section class="card todo">
+    <h2>✅ A fazer</h2>
+    <ul class="todo-list">
+    {{range .Todo}}
+      <li>
+        <div class="todo-main">
+          <span class="todo-when{{if .Overdue}} warn{{end}}">{{if .Overdue}}⚠ atrasada{{else if .Today}}hoje{{else}}🤖 nova{{end}}</span>
+          <a href="/?focus={{.Task.ID}}">{{.Task.Title}}</a>
+          {{if or .Task.DueAt .Origin}}<small class="muted">{{if .Task.DueAt}}prazo {{fmtDate .Task.DueAt}}{{end}}{{with .Origin}} ← {{truncate .Title 50}}{{end}}</small>{{end}}
+        </div>
+        <span class="todo-actions">
+          <button type="button" class="btn small" hx-post="/dashboard/tasks/{{.Task.ID}}/done" hx-target="closest li" hx-swap="outerHTML" title="Concluir" aria-label="Concluir “{{.Task.Title}}”">✓</button>
+          {{if .AI}}<button type="button" class="btn small" hx-post="/dashboard/tasks/{{.Task.ID}}/discard" hx-target="closest li" hx-swap="outerHTML" title="Descartar: a IA errou (vai para a lixeira)" aria-label="Descartar “{{.Task.Title}}”">✕</button>{{end}}
+        </span>
+      </li>
+    {{else}}
+      <li class="muted">Nada atrasado nem para hoje. 🎉</li>
+    {{end}}
+    </ul>
+    <a class="small" href="/content?type=task&amp;status=open&amp;order=oldest">Todas as tarefas abertas →</a>
+  </section>
+
+  <section class="card">
+    <h2>🎯 Prioridades atuais</h2>
+    {{with .Memory.Priorities}}
+      <div class="md-body">{{markdown .Content}}</div>
+    {{else}}
+      <p class="muted">A rotina <b>memory</b> monta esta lista toda noite a partir do que você registra, das reuniões e das conversas (precisa de um provedor de IA).</p>
+    {{end}}
+  </section>
+
+  <section class="card">
+    <h2>🧭 Decisões e aprendizados</h2>
+    {{if or .Memory.Decisions .Memory.Learnings}}
+    <ul class="mem-list">
+      {{range .Memory.Decisions}}<li><span class="mem-kind">✔ decisão</span><a href="/?focus={{.ID}}">{{.Title}}</a><small class="muted">{{fmtTime .CreatedAt}}</small></li>{{end}}
+      {{range .Memory.Learnings}}<li><span class="mem-kind">💡 aprendizado</span><a href="/?focus={{.ID}}">{{.Title}}</a><small class="muted">{{fmtTime .CreatedAt}}</small></li>{{end}}
+    </ul>
+    <a class="small" href="/content?tag=memoria">Toda a memória →</a>
+    {{else}}
+      <p class="muted">Decisões e aprendizados tirados das suas notas, reuniões e conversas aparecem aqui depois da primeira execução da rotina <b>memory</b>.</p>
+    {{end}}
+  </section>
+
+  <section class="card">
+    {{template "colchart" .Captures}}
+  </section>
+
+  <section class="card span2" id="costs">
     <div class="card-head">
       <h2>💰 Consumo de LLM ({{.Days}} dias)</h2>
       <div class="seg">
@@ -15,9 +89,7 @@
       <div><b>{{num .TokensIn}}</b><span>tokens entrada</span></div>
       <div><b>{{num .TokensOut}}</b><span>tokens saída</span></div>
     </div>
-    <div class="bars" aria-label="Custo diário (14 dias)">
-      {{range .Daily}}<div class="bar" title="{{.Day}}: {{usd .Cost}}"><i style="height: {{pct .Pct}}"></i><small>{{.Day}}</small></div>{{end}}
-    </div>
+    {{template "colchart" .Costs}}
     <table class="tbl">
       <thead><tr><th>Provedor</th><th>Modelo</th><th class="r">Chamadas</th><th class="r">Entrada</th><th class="r">Saída</th><th class="r">Custo</th></tr></thead>
       <tbody>
@@ -88,13 +160,28 @@
     {{else}}<p class="muted">Sem métricas. Configure Zepp ou use o webhook de saúde.</p>{{end}}
   </section>
 
-  <section class="card span3">
-    <h2>☀️ Último briefing</h2>
-    {{with .Briefing}}
-      <small class="muted">{{fmtTime .CreatedAt}}</small>
-      <div class="md-body">{{markdown .Content}}</div>
-    {{else}}<p class="muted">Nenhum briefing gerado ainda. Execute o job <b>morning</b>.</p>{{end}}
-  </section>
 </div>
 {{end}}
+{{end}}
+
+{{define "colchart"}}
+<figure class="colchart" data-chart>
+  <figcaption>
+    <b>{{.Title}}</b>
+    {{if .Current}}<span class="legend"><i class="key cur"></i>{{.Current}}<i class="key past"></i>{{.Past}}</span>{{end}}
+  </figcaption>
+  <div class="plot">
+    <span class="ymax">{{.Max}}</span>
+    <div class="cols">
+      {{range .Cols}}<div class="col{{if .Muted}} past{{end}}{{if .Zero}} zero{{end}}" tabindex="0" data-tip-value="{{.Value}}" data-tip-label="{{.Label}}" aria-label="{{.Label}}: {{.Value}}"><i style="height: {{pct .Pct}}"></i></div>{{end}}
+    </div>
+    <div class="xaxis" aria-hidden="true">{{range .Cols}}<span>{{.Short}}</span>{{end}}</div>
+  </div>
+  <details class="table-view">
+    <summary>Ver em tabela</summary>
+    <table class="tbl compact"><thead><tr><th>Dia</th><th class="r">{{.Unit}}</th></tr></thead>
+      <tbody>{{range .Cols}}<tr><td>{{.Label}}</td><td class="r">{{.Value}}</td></tr>{{end}}</tbody>
+    </table>
+  </details>
+</figure>
 {{end}}

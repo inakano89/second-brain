@@ -160,4 +160,20 @@ CREATE TABLE deleted_refs (
 	PRIMARY KEY (source, source_ref)
 );
 `,
+	// 3 — weekly cleanup suggestions (approved or dismissed on the Conteúdo page)
+	`
+CREATE TABLE cleanup_suggestions (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind        TEXT NOT NULL,
+	action      TEXT NOT NULL,
+	node_ids    TEXT NOT NULL,
+	reason      TEXT NOT NULL DEFAULT '',
+	fingerprint TEXT NOT NULL,
+	status      TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','applied','dismissed')),
+	created_at  TEXT NOT NULL,
+	resolved_at TEXT
+);
+CREATE UNIQUE INDEX idx_cleanup_fingerprint ON cleanup_suggestions(fingerprint);
+CREATE INDEX idx_cleanup_status ON cleanup_suggestions(status, kind);
+`,
 }

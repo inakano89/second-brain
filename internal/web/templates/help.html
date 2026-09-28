@@ -20,6 +20,7 @@
     <a href="#inbox">📂 Pasta inbox</a>
     <a href="#import">📥 Importar de outros apps</a>
     <a href="#content">🗂 Conteúdo: editar e apagar</a>
+    <a href="#memory">🧠 Memória, tarefas e faxina</a>
     <a href="#backup">🔐 Backup</a>
     <a href="#install">🖥️ Instalação</a>
     <a href="#docker">🐳 Docker na VPS</a>
@@ -237,6 +238,18 @@
       <p class="hint">🚫 <b>Não trazer de volta</b> (já vem marcado): impede que o Google, o RSS, o Zepp ou uma nova importação do mesmo arquivo tragam de novo o que você apagou. Se você mesmo reenviar pelo Telegram, pela web ou pela pasta inbox, o item volta. Mudou de ideia? <b>Lixeira → Permitir que voltem</b>.</p>
     </section>
 
+    <section class="card" id="memory">
+      <h2>🧠 Memória, tarefas de reuniões e faxina</h2>
+      <p>Três rotinas trabalham sozinhas para o seu cérebro não virar um depósito. As duas primeiras usam a inteligência artificial configurada em <a href="#llm">Chaves de IA</a>; a faxina não custa nada.</p>
+      <ul>
+        <li><b>📝 Tarefas de reuniões</b> (ao meio-dia e às 18h): lê anotações, atas e transcrições de reuniões que você salvou (por exemplo, uma nota chamada “Reunião com a equipe”, as “Anotações do Gemini” do Google Meet no Drive ou um áudio longo no Telegram) e cria as tarefas combinadas, com prazo quando alguém disse “até sexta”. O que ficou com outra pessoa vira “Aguardando Fulano: …”. Em seguida você recebe no Telegram a lista de tarefas novas, inclusive as que vieram dos e-mails.</li>
+        <li><b>🧠 Memória</b> (às 22h30): resume o dia em <b>decisões</b>, <b>aprendizados</b> e <b>prioridades atuais</b>, tirados das suas notas, reuniões, e-mails e conversas com o assistente. O chat passa a lembrar disso (“o que eu decidi sobre o banco?”) e o briefing da manhã leva as prioridades em conta. Tudo fica em <a href="/content?tag=memoria">Conteúdo → tag memoria</a>.</li>
+        <li><b>🧹 Faxina semanal</b> (domingo, 17h30): procura cópias, textos quase iguais, tarefas esquecidas há mais de um mês, notas vazias e pessoas que a IA criou por engano. Nada é apagado sozinho: você revisa em <a href="/content/cleanup">Conteúdo → Faxina</a> e escolhe <b>Juntar</b>, <b>Apagar</b>, <b>Concluir</b> ou <b>Manter</b> (a sugestão não volta). O que for apagado fica 30 dias na lixeira.</li>
+      </ul>
+      <p>Tudo aparece no topo do <b>Painel</b>: números da semana, briefing de hoje, lista <b>A fazer</b> (atrasadas, de hoje e novas da IA — ✓ conclui, ✕ descarta uma sugestão errada), prioridades e decisões recentes.</p>
+      <p class="muted">Quer mudar os horários? Em Configurações → Agendamentos: <code>CRON_ACTIONS</code>, <code>CRON_MEMORY</code> e <code>CRON_CLEANUP</code> (use <code>off</code> para desligar). O modelo de IA de cada uma se escolhe em <a href="#models">Modelos</a>.</p>
+    </section>
+
     <section class="card" id="backup">
       <h2>🔐 Backup</h2>
       <p>Os backups são cifrados com a <b>chave mestre</b> definida no setup. <b>Guarde essa chave fora do servidor</b> (gerenciador de senhas) — sem ela não há como restaurar.</p>
@@ -303,6 +316,7 @@ docker compose up -d</pre></li>
     <section class="card" id="schedules">
       <h2>⏰ Agendamentos</h2>
       <p>Formato cron com 5 campos: <code>minuto hora dia mês dia-da-semana</code>. Exemplos: <code>0 7 * * *</code> = todo dia às 7h; <code>30 21 * * 1-5</code> = dias úteis às 21h30; <code>*/15 * * * *</code> = a cada 15 min; <code>off</code> desativa.</p>
+      <p>Rotinas: briefing (7h), tarefas de reuniões (12h e 18h), balanço da noite (21h), memória (22h30), faxina (domingo 17h30) e revisão semanal (domingo 18h), além de backup, manutenção e sincronizações.</p>
       <p><b>E se o computador estiver desligado no horário?</b> A rotina roda uma vez quando o Second Brain voltar a abrir (cerca de 2 minutos depois), inclusive a verificação de atualizações e o backup. O briefing da manhã só é enviado até 5 horas depois do horário marcado, o balanço da noite até 3 horas e a revisão semanal até 3 dias; depois disso ficam para o próximo ciclo.</p>
     </section>
 

@@ -58,6 +58,9 @@ func Register(s *Scheduler, d *Deps) error {
 		{"morning", "CRON_MORNING", func(ctx context.Context) error { _, err := d.MorningBriefing(ctx, true); return err }, []JobOption{CatchUpWithin(5 * time.Hour)}},
 		{"evening", "CRON_EVENING", func(ctx context.Context) error { _, err := d.EveningReview(ctx, true); return err }, []JobOption{CatchUpWithin(3 * time.Hour)}},
 		{"weekly", "CRON_WEEKLY", func(ctx context.Context) error { _, err := d.WeeklyReview(ctx, true); return err }, []JobOption{CatchUpWithin(72 * time.Hour)}},
+		{"actions", "CRON_ACTIONS", func(ctx context.Context) error { _, err := d.ActionItems(ctx, true); return err }, nil},
+		{"memory", "CRON_MEMORY", func(ctx context.Context) error { _, err := d.MemoryRun(ctx, true); return err }, nil},
+		{"cleanup", "CRON_CLEANUP", func(ctx context.Context) error { _, err := d.Cleanup(ctx, true); return err }, []JobOption{CatchUpWithin(72 * time.Hour)}},
 		{"maintenance", "CRON_MAINTENANCE", d.Maintenance, nil},
 		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }, nil},
 		{"rss", "CRON_RSS", enqueue(rss.TaskPoll), nil},
@@ -149,7 +152,13 @@ func (d *Deps) MorningBriefing(ctx context.Context, notify bool) (string, error)
 		recent  []database.Node
 		evErr   error
 	)
-	wg.Add(4)
+	var (
+		memory  agent.MemoryView
+		aiTasks []agent.TaskOrigin
+	)
+	wg.Add(6)
+	go func() { defer wg.Done(); memory, _ = d.Agent.Memory(ctx, 5) }()
+	go func() { defer wg.Done(); aiTasks, _ = d.Agent.NewAITasks(ctx, now.Add(-24*time.Hour), 15) }()
 	go func() {
 		defer wg.Done()
 		metrics, _ = d.DB.MetricsRange(ctx, start.AddDate(0, 0, -1).Format("2006-01-02"), start.Format("2006-01-02"))
@@ -218,6 +227,19 @@ func (d *Deps) MorningBriefing(ctx context.Context, notify bool) (string, error)
 	}
 	fmt.Fprintf(&data, "\n## Tarefas atrasadas (%d)\n%s\n## Tarefas de hoje (%d)\n%s\n## Outras pendências\n%s\n",
 		len(overdue), strings.Join(overdue, "\n"), len(today), strings.Join(today, "\n"), strings.Join(other[:min(len(other), 10)], "\n"))
+	if memory.Priorities != nil {
+		data.WriteString("\n## Prioridades atuais (memória)\n" + extract.Truncate(memory.Priorities.Content, 1500) + "\n")
+	}
+	if len(aiTasks) > 0 {
+		data.WriteString("\n## Tarefas novas criadas pela IA (24h, de reuniões e e-mails)\n")
+		for _, t := range aiTasks {
+			line := taskLine(t.Task, loc)
+			if t.Origin != nil {
+				line += " ← " + t.Origin.Title
+			}
+			data.WriteString(line + "\n")
+		}
+	}
 	if len(recent) > 0 {
 		data.WriteString("\n## Capturas recentes (24h)\n")
 		for _, n := range recent {
@@ -227,7 +249,7 @@ func (d *Deps) MorningBriefing(ctx context.Context, notify bool) (string, error)
 
 	text := d.compose(ctx, "briefing",
 		`Você é o chief-of-staff pessoal do usuário. Gere um BRIEFING MATINAL acionável em português, conciso (máx. 220 palavras), com seções:
-🛌 Recuperação (interprete sono/recuperação e recomende intensidade do dia), 📅 Agenda, ✅ Top 3 prioridades (com IDs), ⚠️ Riscos/atrasos, 💡 Uma sugestão.
+🛌 Recuperação (interprete sono/recuperação e recomende intensidade do dia), 📅 Agenda, ✅ Top 3 prioridades (com IDs; alinhe às prioridades atuais da memória quando houver), 📝 Tarefas novas da IA (se houver), ⚠️ Riscos/atrasos, 💡 Uma sugestão.
 Use apenas os dados fornecidos. Formatação compatível com Telegram Markdown simples (*negrito*, listas com -).`,
 		data.String(), "☀️ *Briefing matinal*\n\n"+data.String())
 	title := "Briefing matinal " + now.Format("02/01/2006")
@@ -298,7 +320,18 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 		usage   []database.UsageRow
 		qs      map[string]int
 	)
-	wg.Add(5)
+	var (
+		cleanup   int
+		decisions []database.Node
+		learnings []database.Node
+	)
+	wg.Add(7)
+	go func() { defer wg.Done(); cleanup, _ = d.DB.CleanupPendingCount(ctx) }()
+	go func() {
+		defer wg.Done()
+		decisions, _ = d.DB.ListNodes(ctx, database.NodeFilter{Tag: agent.TagDecision, From: &weekAgo, Limit: 20})
+		learnings, _ = d.DB.ListNodes(ctx, database.NodeFilter{Tag: agent.TagLearning, From: &weekAgo, Limit: 20})
+	}()
 	go func() {
 		defer wg.Done()
 		orphans, _ = d.DB.OrphanNodes(ctx, []string{database.TypeHealth, database.TypePerson}, 100)
@@ -349,9 +382,19 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 	fmt.Fprintf(&data, "\n## Links quebrados (%d)\n%s\n", len(broken), strings.Join(broken[:min(len(broken), 15)], "\n"))
 	fmt.Fprintf(&data, "\n## Tarefas atrasadas (%d)\n%s\n", len(overdue), strings.Join(overdue[:min(len(overdue), 15)], "\n"))
 	fmt.Fprintf(&data, "\n## Tarefas paradas >14 dias (%d)\n%s\n", len(stale), strings.Join(stale[:min(len(stale), 15)], "\n"))
+	if len(decisions)+len(learnings) > 0 {
+		data.WriteString("\n## Memória da semana\n")
+		for _, n := range decisions {
+			fmt.Fprintf(&data, "- Decisão: %s\n", n.Title)
+		}
+		for _, n := range learnings {
+			fmt.Fprintf(&data, "- Aprendizado: %s\n", n.Title)
+		}
+	}
+	fmt.Fprintf(&data, "\n## Faxina sugerida\n%d sugestões aguardando aprovação em Conteúdo → Faxina\n", cleanup)
 	fmt.Fprintf(&data, "\n## Sistema\nfila_falhas=%d custo_llm_7d=US$%.4f tamanho_db=%.1fMB\n", qs[database.TaskFailed], cost, float64(d.DB.Size())/1e6)
 	text := d.compose(ctx, "weekly",
-		`Gere um RELATÓRIO DE MANUTENÇÃO SEMANAL do Second Brain em português (máx. 300 palavras): 📈 resumo da semana, 🧹 higiene do grafo (órfãos, links quebrados — sugira ações concretas), ⏳ pendências acumuladas (sugira o que delegar, reagendar ou descartar), 🎯 3 intenções para a próxima semana. Telegram Markdown simples.`,
+		`Gere um RELATÓRIO DE MANUTENÇÃO SEMANAL do Second Brain em português (máx. 300 palavras): 📈 resumo da semana, 🧠 decisões e aprendizados (se houver), 🧹 higiene do grafo (órfãos, links quebrados, faxina pendente — sugira ações concretas), ⏳ pendências acumuladas (sugira o que delegar, reagendar ou descartar), 🎯 3 intenções para a próxima semana. Telegram Markdown simples.`,
 		data.String(), "🗓️ *Weekly Review*\n\n"+data.String())
 	year, week := now.ISOWeek()
 	if _, err := d.saveInsight(ctx, fmt.Sprintf("Weekly Review %d-W%02d", year, week), fmt.Sprintf("weekly:%d-W%02d", year, week), text, []string{"review", "semanal"}); err != nil {
@@ -399,4 +442,122 @@ func (d *Deps) Maintenance(ctx context.Context) error {
 	}
 	d.Log.Info("manutenção concluída", "temp_files", purged, "tasks", tasks, "logs", logs, "trash", trash, "vacuum_full", full, "db_mb", float64(d.DB.Size())/1e6)
 	return nil
+}
+
+// cursor reads the last successful run of a cursor-based routine (default: 24 h ago).
+func (d *Deps) cursor(ctx context.Context, key string, now time.Time) time.Time {
+	if v, ok, _ := d.DB.KVGet(ctx, key); ok {
+		if t, err := time.Parse(time.RFC3339, v); err == nil && t.Before(now) {
+			return t
+		}
+	}
+	return now.Add(-24 * time.Hour)
+}
+
+func (d *Deps) link(path string) string {
+	if base := strings.TrimRight(d.Cfg.PublicURL(), "/"); base != "" {
+		return base + path
+	}
+	return path
+}
+
+// ActionItems creates tasks from new meeting notes and transcripts and reports every task
+// the AI created since the last run (meetings, notes and e-mails).
+func (d *Deps) ActionItems(ctx context.Context, notify bool) (string, error) {
+	loc := d.Cfg.Location()
+	now := time.Now()
+	from := d.cursor(ctx, "actions.cursor", now)
+	rep, err := d.Agent.ExtractMeetingTasks(ctx, from, now)
+	if err != nil {
+		return "", err
+	}
+	fresh, err := d.Agent.NewAITasks(ctx, from, 30)
+	if err != nil {
+		return "", err
+	}
+	_ = d.DB.KVSet(ctx, "actions.cursor", now.UTC().Format(time.RFC3339Nano))
+	if len(fresh) == 0 {
+		d.Log.Info("tarefas de reuniões: nada novo", "meetings", rep.Scanned)
+		return "", nil
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "📝 *Tarefas novas* (desde %s)\n\n", from.In(loc).Format("02/01 15:04"))
+	for i, t := range fresh {
+		if i == 15 {
+			fmt.Fprintf(&b, "… e mais %d\n", len(fresh)-15)
+			break
+		}
+		b.WriteString(taskLine(t.Task, loc))
+		if t.Origin != nil {
+			b.WriteString(" ← " + extract.Truncate(t.Origin.Title, 60))
+		}
+		b.WriteString("\n")
+	}
+	fmt.Fprintf(&b, "\nConcluir: /done <id> · Revisar: %s", d.link("/dashboard"))
+	text := b.String()
+	if notify {
+		d.notify(ctx, text)
+	}
+	return text, nil
+}
+
+// MemoryRun distills the period since the last run into the memory layer.
+func (d *Deps) MemoryRun(ctx context.Context, notify bool) (string, error) {
+	now := time.Now()
+	loc := d.Cfg.Location()
+	var last time.Time
+	if v, ok, _ := d.DB.KVGet(ctx, "memory.cursor"); ok {
+		last, _ = time.Parse(time.RFC3339, v)
+	}
+	rep, err := d.Agent.DistillMemory(ctx, agent.MemoryWindow(last, now, loc), now)
+	if err != nil {
+		return "", err
+	}
+	_ = d.DB.KVSet(ctx, "memory.cursor", now.UTC().Format(time.RFC3339Nano))
+	if rep == nil || rep.Snapshot == nil {
+		d.Log.Info("memória: nada novo ou sem IA")
+		return "", nil
+	}
+	_ = d.DB.KVSet(ctx, "memory.latest", fmt.Sprint(rep.Snapshot.ID))
+	if len(rep.Decisions)+len(rep.Learnings) == 0 {
+		return rep.Snapshot.Content, nil
+	}
+	var b strings.Builder
+	b.WriteString("🧠 *Memória do dia*\n")
+	for _, n := range rep.Decisions {
+		b.WriteString("\n✔️ " + n.Title)
+	}
+	for _, n := range rep.Learnings {
+		b.WriteString("\n💡 " + n.Title)
+	}
+	text := b.String()
+	if notify {
+		d.notify(ctx, text)
+	}
+	return text, nil
+}
+
+// Cleanup refreshes the cleanup suggestions and tells the user how many await review.
+func (d *Deps) Cleanup(ctx context.Context, notify bool) (string, error) {
+	counts, err := d.Agent.SuggestCleanup(ctx)
+	if err != nil {
+		return "", err
+	}
+	total := 0
+	var parts []string
+	for _, k := range agent.CleanupKinds {
+		if counts[k] > 0 {
+			total += counts[k]
+			parts = append(parts, fmt.Sprintf("%d %s", counts[k], strings.ToLower(agent.CleanupLabels[k])))
+		}
+	}
+	d.Log.Info("faxina semanal", "suggestions", total)
+	if total == 0 {
+		return "", nil
+	}
+	text := fmt.Sprintf("🧹 *Faxina semanal*: %d sugestões (%s).\nRevise e aprove: %s", total, strings.Join(parts, ", "), d.link("/content/cleanup"))
+	if notify {
+		d.notify(ctx, text)
+	}
+	return text, nil
 }

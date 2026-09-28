@@ -87,8 +87,10 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 		wg      sync.WaitGroup
 		hits    []SearchResult
 		history []database.ChatMessage
+		memory  string
 	)
-	wg.Add(2)
+	wg.Add(3)
+	go func() { defer wg.Done(); memory = a.memoryPrompt(ctx) }()
 	go func() {
 		defer wg.Done()
 		if strings.TrimSpace(req.Text) != "" {
@@ -123,7 +125,7 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 	if !req.NoTools {
 		tools = a.Tools()
 	}
-	system := a.systemPrompt(hits)
+	system := a.systemPrompt(hits) + memory
 
 	purpose := "chat"
 	provider := strings.TrimSpace(req.Provider)

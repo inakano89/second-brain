@@ -24,6 +24,8 @@ const (
 	TaskRSS           = "rss"
 	TaskBriefing      = "briefing"
 	TaskReview        = "review"
+	TaskActions       = "actions"
+	TaskMemory        = "memory"
 )
 
 // TaskInfo describes a routable task for the UI.
@@ -48,6 +50,8 @@ var Tasks = []TaskInfo{
 	{Key: TaskRSS, Label: "Curadoria de RSS", Help: "Nota de relevância e resumo das notícias.", Purposes: []string{"rss"}, AllowCouncil: true},
 	{Key: TaskBriefing, Label: "Briefing matinal", Help: "Cruza sono, agenda e pendências. Ideal para o Conselho.", Purposes: []string{"briefing"}, AllowCouncil: true},
 	{Key: TaskReview, Label: "Balanço noturno e weekly review", Help: "Revisões diária e semanal. Ideal para o Conselho.", Purposes: []string{"evening", "weekly"}, AllowCouncil: true},
+	{Key: TaskActions, Label: "Tarefas de reuniões", Help: "Lê atas, transcrições e notas de reunião duas vezes por dia e cria as tarefas combinadas.", Purposes: []string{"actions"}, AllowCouncil: true},
+	{Key: TaskMemory, Label: "Memória (decisões e aprendizados)", Help: "Resume o dia em decisões, aprendizados e prioridades que o chat e o briefing consultam.", Purposes: []string{"memory"}, AllowCouncil: true},
 }
 
 var purposeTask = func() map[string]string {

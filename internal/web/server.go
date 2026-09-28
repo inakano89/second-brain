@@ -150,6 +150,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /telegram/check", s.auth(s.telegramCheck))
 
 	mux.HandleFunc("GET /dashboard", s.auth(s.dashboardPage))
+	mux.HandleFunc("POST /dashboard/tasks/{id}/{action}", s.auth(s.dashboardTask))
 	mux.HandleFunc("POST /jobs/{name}/run", s.auth(s.runJob))
 	mux.HandleFunc("POST /queue/retry", s.auth(s.queueRetry))
 	mux.HandleFunc("GET /logs", s.auth(s.logsPage))
@@ -169,6 +170,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /content/export", s.auth(s.contentExport))
 	mux.HandleFunc("GET /content/sends", s.auth(s.contentSends))
 	mux.HandleFunc("POST /content/sends/trash", s.auth(s.contentSendTrash))
+	mux.HandleFunc("GET /content/cleanup", s.auth(s.contentCleanup))
+	mux.HandleFunc("POST /content/cleanup/run", s.auth(s.contentCleanupRun))
+	mux.HandleFunc("POST /content/cleanup/apply-all", s.auth(s.contentCleanupApplyAll))
+	mux.HandleFunc("POST /content/cleanup/{id}", s.auth(s.contentCleanupApply))
 	mux.HandleFunc("GET /content/trash", s.auth(s.contentTrash))
 	mux.HandleFunc("POST /content/trash/action", s.auth(s.contentTrashAction))
 	mux.HandleFunc("GET /import", s.auth(s.importPage))

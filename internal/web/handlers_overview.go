@@ -21,7 +21,7 @@ var sourceInfo = map[string][2]string{
 	"watcher": {"Pasta inbox", "📂"}, "gmail": {"Gmail", "✉️"}, "newsletter": {"Newsletters", "📰"}, "calendar": {"Agenda", "📅"},
 	"drive": {"Drive", "📁"}, "contacts": {"Contatos", "👥"}, "gtasks": {"Google Tasks", "✅"}, "youtube": {"YouTube", "▶️"},
 	"rss": {"RSS", "📡"}, "zepp": {"Zepp", "❤️"}, "webhook": {"Saúde (webhook)", "🩺"}, "agent": {"IA", "🤖"},
-	"routine": {"Rotinas", "⏰"}, "import": {"Importação", "📥"}, "import:takeout": {"Google Takeout", "📦"}, "": {"Outros", "•"},
+	"routine": {"Rotinas", "⏰"}, "memory": {"Memória", "🧠"}, "import": {"Importação", "📥"}, "import:takeout": {"Google Takeout", "📦"}, "": {"Outros", "•"},
 }
 
 // sourceKey groups raw sources shown as one item (every "import:*" but Takeout).
@@ -38,14 +38,14 @@ var systemTags = map[string]bool{
 	"keep": true, "clip": true, "imagem": true, "pdf": true, "documento": true, "voz": true, "briefing": true, "review": true,
 	"diario": true, "semanal": true, "takeout": true, "atividade": true, "historico": true, "maps": true, "localizacao": true,
 	"chrome": true, "navegacao": true, "google-play": true, "lugares": true, "pesquisas": true, "inscricoes": true,
-	"playlists": true, "planilha": true, "apresentacao": true, "texto": true, "import": true,
+	"playlists": true, "planilha": true, "apresentacao": true, "texto": true, "import": true, "memoria": true, "prioridades": true, "ia": true,
 }
 
 var jobLabels = map[string]string{
 	"morning": "Briefing matinal", "evening": "Balanço noturno", "weekly": "Revisão semanal", "maintenance": "Manutenção",
 	"backup": "Backup", "rss": "RSS", "gmail": "Gmail", "calendar": "Agenda", "drive": "Drive", "contacts": "Contatos",
 	"google-tasks": "Google Tasks", "youtube": "YouTube", "takeout": "Takeout do Drive", "zepp": "Zepp",
-	"update": "Atualizações", "models": "Catálogo de IA",
+	"update": "Atualizações", "models": "Catálogo de IA", "actions": "Tarefas de reuniões", "memory": "Memória", "cleanup": "Faxina semanal",
 }
 
 type overviewItem struct {

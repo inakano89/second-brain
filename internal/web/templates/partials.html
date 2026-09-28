@@ -208,3 +208,36 @@
   <button type="button" class="btn small" hx-post="/nodes/restore" hx-vals='{"batch":"{{.Batch}}","id":"{{.ID}}"}' hx-target="#detail">↺ Desfazer</button>
 </div>
 {{end}}
+
+{{define "cleanup_card"}}
+<article class="cleanup-card" id="cl-{{.ID}}">
+  <p class="small">{{.Reason}}</p>
+  <ul class="cl-nodes">
+    {{range $i, $n := .Nodes}}
+    <li>
+      {{if and (eq $.Action "merge") (eq $i 0)}}<span class="pill ok" title="Este item fica; os outros são juntados nele">fica</span>{{end}}
+      <span class="badge" style="--c: {{typeColor $n.Type}}">{{typeLabel $n.Type}}</span>
+      <a href="/?focus={{$n.ID}}" hx-get="/nodes/{{$n.ID}}" hx-target="#detail">{{$n.Title}}</a>
+      <small class="muted">{{sourceLabel $n.Source}} · {{fmtTime $n.CreatedAt}}{{if $n.DueAt}} · prazo {{fmtDate $n.DueAt}}{{end}}</small>
+      {{with $n.Summary}}<small class="snippet">{{truncate . 160}}</small>{{else}}{{with $n.Content}}<small class="snippet">{{truncate . 160}}</small>{{end}}{{end}}
+    </li>
+    {{end}}
+  </ul>
+  <div class="actions">
+    {{if eq .Action "merge"}}
+      <button class="btn small primary" hx-post="/content/cleanup/{{.ID}}" hx-vals='{"action":"merge"}' hx-target="#cl-{{.ID}}" hx-swap="outerHTML">🔗 Juntar</button>
+      <button class="btn small danger" hx-post="/content/cleanup/{{.ID}}" hx-vals='{"action":"trash"}' hx-target="#cl-{{.ID}}" hx-swap="outerHTML">🗑 Apagar as cópias</button>
+    {{else if eq .Action "done"}}
+      <button class="btn small primary" hx-post="/content/cleanup/{{.ID}}" hx-vals='{"action":"done"}' hx-target="#cl-{{.ID}}" hx-swap="outerHTML">✓ Concluir</button>
+      <button class="btn small danger" hx-post="/content/cleanup/{{.ID}}" hx-vals='{"action":"trash"}' hx-target="#cl-{{.ID}}" hx-swap="outerHTML">🗑 Apagar</button>
+    {{else}}
+      <button class="btn small danger" hx-post="/content/cleanup/{{.ID}}" hx-vals='{"action":"trash"}' hx-target="#cl-{{.ID}}" hx-swap="outerHTML">🗑 Apagar</button>
+    {{end}}
+    <button class="btn small" hx-post="/content/cleanup/{{.ID}}" hx-vals='{"action":"dismiss"}' hx-target="#cl-{{.ID}}" hx-swap="outerHTML" title="Manter como está e não sugerir de novo">Manter</button>
+  </div>
+</article>
+{{end}}
+
+{{define "cleanup_done"}}
+<article class="cleanup-card resolved" id="cl-{{.ID}}"><p class="small">{{if .Error}}<span class="warn">{{.Error}}</span>{{else}}✓ {{.Message}}{{end}}</p></article>
+{{end}}
