@@ -1,6 +1,8 @@
 package extract
 
 import (
+	"archive/zip"
+	"bytes"
 	"strings"
 	"testing"
 )
@@ -24,5 +26,22 @@ func TestReadability(t *testing.T) {
 	}
 	if !strings.Contains(a.Text, "[uma fonte](https://fonte.com)") || !strings.Contains(a.Text, "- item um") {
 		t.Fatalf("markdown conversion: %q", a.Text)
+	}
+}
+
+func TestDOCXBytes(t *testing.T) {
+	var buf bytes.Buffer
+	zw := zip.NewWriter(&buf)
+	w, _ := zw.Create("word/document.xml")
+	w.Write([]byte(`<?xml version="1.0"?><w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body>
+<w:p><w:r><w:t>Relatório</w:t></w:r><w:r><w:t xml:space="preserve"> anual</w:t></w:r></w:p>
+<w:p><w:r><w:t>Receita &amp; custos</w:t><w:tab/><w:t>2026</w:t></w:r></w:p><w:p></w:p></w:body></w:document>`))
+	zw.Close()
+	got, err := DOCXBytes(buf.Bytes())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "Relatório anual\n\nReceita & custos\t2026" {
+		t.Fatalf("docx = %q", got)
 	}
 }

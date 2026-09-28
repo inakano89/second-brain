@@ -39,6 +39,8 @@ type Hooks struct {
 	Rebind func(addr string)
 	Jobs   func() []scheduler.JobInfo
 	RunJob func(name string) error
+	// Shutdown stops the server gracefully (desktop installs without a console window).
+	Shutdown func()
 }
 
 // Deps are the components the web layer needs.
@@ -115,6 +117,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /{$}", s.auth(s.graphPage))
 	mux.HandleFunc("GET /api/graph", s.auth(s.apiGraph))
+	mux.HandleFunc("GET /api/overview", s.auth(s.apiOverview))
+	mux.HandleFunc("GET /overview/nodes", s.auth(s.overviewNodes))
 	mux.HandleFunc("GET /search", s.auth(s.searchPartial))
 	mux.HandleFunc("GET /api/search", s.auth(s.apiSearch))
 	mux.HandleFunc("POST /nodes", s.auth(s.createNode))
@@ -163,6 +167,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /backup/now", s.auth(s.backupNow))
 	mux.HandleFunc("GET /backups/{file}", s.auth(s.backupDownload))
 
+	mux.HandleFunc("POST /settings/autostart", s.auth(s.autostartToggle))
+	mux.HandleFunc("POST /settings/shutdown", s.auth(s.shutdown))
 	mux.HandleFunc("POST /settings/updates/toggle", s.auth(s.updateToggle))
 	mux.HandleFunc("POST /settings/updates/check", s.auth(s.updateCheck))
 	mux.HandleFunc("POST /settings/updates/install", s.auth(s.updateInstall))
@@ -170,6 +176,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /google/connect", s.auth(s.googleConnect))
 	mux.HandleFunc("GET /google/callback", s.auth(s.googleCallback))
 	mux.HandleFunc("POST /google/disconnect", s.auth(s.googleDisconnect))
+	mux.HandleFunc("POST /google/sync", s.auth(s.googleSync))
 
 	mux.HandleFunc("OPTIONS /api/clip", s.cors(func(w http.ResponseWriter, r *http.Request) {}))
 	mux.HandleFunc("POST /api/clip", s.cors(s.tokenOrSession(s.apiClip)))

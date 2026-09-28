@@ -44,18 +44,27 @@ type Worker struct {
 	log      *slog.Logger
 	mu       sync.RWMutex
 	handlers map[string]Handler
+	timeouts map[string]time.Duration
 	timeout  time.Duration
 }
 
 // New creates a worker.
 func New(db *database.DB, log *slog.Logger) *Worker {
-	return &Worker{db: db, log: log.With("component", "queue"), handlers: map[string]Handler{}, timeout: 10 * time.Minute}
+	return &Worker{db: db, log: log.With("component", "queue"), handlers: map[string]Handler{}, timeouts: map[string]time.Duration{}, timeout: 10 * time.Minute}
 }
 
 // Handle registers a handler for kind.
 func (w *Worker) Handle(kind string, h Handler) {
 	w.mu.Lock()
 	w.handlers[kind] = h
+	w.mu.Unlock()
+}
+
+// HandleTimeout registers a handler whose runs may take up to d (long imports/downloads).
+func (w *Worker) HandleTimeout(kind string, d time.Duration, h Handler) {
+	w.mu.Lock()
+	w.handlers[kind] = h
+	w.timeouts[kind] = d
 	w.mu.Unlock()
 }
 
@@ -127,13 +136,17 @@ func (w *Worker) loop(ctx context.Context, wake <-chan struct{}) {
 func (w *Worker) execute(ctx context.Context, t *database.Task) {
 	w.mu.RLock()
 	h := w.handlers[t.Kind]
+	timeout := w.timeout
+	if d, ok := w.timeouts[t.Kind]; ok {
+		timeout = d
+	}
 	w.mu.RUnlock()
 	bg := context.WithoutCancel(ctx)
 	if h == nil {
 		_ = w.db.FailTask(bg, t, fmt.Errorf("sem handler para %q", t.Kind), false)
 		return
 	}
-	tctx, cancel := context.WithTimeout(ctx, w.timeout)
+	tctx, cancel := context.WithTimeout(ctx, timeout)
 	start := time.Now()
 	err := func() (err error) {
 		defer func() {

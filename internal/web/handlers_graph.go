@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ import (
 type typeInfo struct {
 	Type  string
 	Label string
-	Color string
+	Color template.CSS // constant var(--t-*) reference
 	Count int
 }
 
@@ -27,23 +28,39 @@ var typeLabels = map[string]string{
 	database.TypeInsight: "Insights", database.TypeArticle: "Artigos", database.TypeHealth: "Saúde",
 }
 
-var typeColors = map[string]string{
-	database.TypeNote: "#4f8cff", database.TypeTask: "#f5a524", database.TypePerson: "#e5484d", database.TypeEvent: "#30a46c",
-	database.TypeInsight: "#8e4ec6", database.TypeArticle: "#12a594", database.TypeHealth: "#e93d82",
+// typeColors reference the theme-aware CSS variables (--t-<type> in style.css): a
+// colour-blind-safe categorical palette, validated for light and dark surfaces.
+var typeColors = func() map[string]string {
+	m := map[string]string{}
+	for _, t := range database.NodeTypes {
+		m[t] = "var(--t-" + t + ")"
+	}
+	return m
+}()
+
+// typeHex is the light-theme fallback for canvas code that cannot resolve CSS variables.
+var typeHex = map[string]string{
+	database.TypeNote: "#2a78d6", database.TypeTask: "#eb6834", database.TypePerson: "#1baf7a", database.TypeEvent: "#eda100",
+	database.TypeInsight: "#e87ba4", database.TypeArticle: "#008300", database.TypeHealth: "#4a3aa7",
 }
 
 func (s *Server) graphPage(w http.ResponseWriter, r *http.Request) {
 	counts, _ := s.DB.CountByType(r.Context())
 	var types []typeInfo
 	for _, t := range database.NodeTypes {
-		types = append(types, typeInfo{Type: t, Label: typeLabels[t], Color: typeColors[t], Count: counts[t]})
+		types = append(types, typeInfo{Type: t, Label: typeLabels[t], Color: template.CSS(typeColors[t]), Count: counts[t]})
 	}
 	s.render(w, "graph", s.page(r, "Mindmap", "graph", map[string]any{"Types": types, "Q": r.URL.Query().Get("q"), "Focus": r.URL.Query().Get("focus")}))
 }
 
 func (s *Server) filterFromQuery(r *http.Request) database.NodeFilter {
 	q := r.URL.Query()
-	f := database.NodeFilter{Tag: q.Get("tag"), Source: q.Get("source"), Status: q.Get("status")}
+	f := database.NodeFilter{Tag: q.Get("tag"), Status: q.Get("status")}
+	for _, src := range strings.Split(q.Get("source"), ",") {
+		if src = strings.TrimSpace(src); src != "" {
+			f.Sources = append(f.Sources, src)
+		}
+	}
 	for _, t := range strings.Split(q.Get("types"), ",") {
 		if database.ValidType(t) {
 			f.Types = append(f.Types, t)
@@ -94,7 +111,7 @@ func (s *Server) apiGraph(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 500, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"nodes": g.Nodes, "edges": g.Edges, "highlight": highlight, "colors": typeColors})
+	writeJSON(w, 200, map[string]any{"nodes": g.Nodes, "edges": g.Edges, "highlight": highlight, "colors": typeHex})
 }
 
 type searchView struct {

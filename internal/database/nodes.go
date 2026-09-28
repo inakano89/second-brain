@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -63,15 +64,16 @@ type Node struct {
 
 // NodeFilter restricts listings and searches.
 type NodeFilter struct {
-	Types  []string
-	From   *time.Time
-	To     *time.Time
-	Tag    string
-	Source string
-	Status string
-	Limit  int
-	Offset int
-	Order  string // "created" (default), "updated", "due"
+	Types   []string
+	From    *time.Time
+	To      *time.Time
+	Tag     string
+	Source  string
+	Sources []string // any of these sources
+	Status  string
+	Limit   int
+	Offset  int
+	Order   string // "created" (default), "updated", "due"
 }
 
 // ScoredNode pairs a node with a relevance score.
@@ -349,6 +351,12 @@ func (f NodeFilter) where(alias string) (string, []any) {
 		conds = append(conds, col("source")+" = ?")
 		args = append(args, f.Source)
 	}
+	if len(f.Sources) > 0 {
+		conds = append(conds, col("source")+" IN ("+strings.TrimSuffix(strings.Repeat("?,", len(f.Sources)), ",")+")")
+		for _, s := range f.Sources {
+			args = append(args, s)
+		}
+	}
 	if f.Status != "" {
 		conds = append(conds, col("status")+" = ?")
 		args = append(args, f.Status)
@@ -398,6 +406,9 @@ func (f NodeFilter) Matches(n *Node) bool {
 		return false
 	}
 	if f.Source != "" && n.Source != f.Source {
+		return false
+	}
+	if len(f.Sources) > 0 && !slices.Contains(f.Sources, n.Source) {
 		return false
 	}
 	if f.Status != "" && n.Status != f.Status {
@@ -548,4 +559,84 @@ func (db *DB) IterateNodes(ctx context.Context, fn func(*Node) error) error {
 		}
 	}
 	return rows.Err()
+}
+
+// NodesWithMetaValue lists ids of nodes of type typ whose meta array key contains value (case-insensitive).
+func (db *DB) NodesWithMetaValue(ctx context.Context, typ, key, value string) ([]int64, error) {
+	rows, err := db.QueryContext(ctx, `SELECT id FROM nodes WHERE type = ?
+		AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(nodes.meta) THEN nodes.meta ELSE '{}' END, '$.'||?) WHERE lower(json_each.value) = lower(?))`,
+		typ, key, strings.TrimSpace(value))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+	return ids, rows.Err()
+}
+
+// FindPersonByEmail finds the person node whose meta.emails lists email (case-insensitive).
+func (db *DB) FindPersonByEmail(ctx context.Context, email string) (*Node, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
+	if email == "" {
+		return nil, ErrNotFound
+	}
+	n, err := scanNode(db.QueryRowContext(ctx, `SELECT `+nodeCols+` FROM nodes WHERE type = ?
+		AND EXISTS (SELECT 1 FROM json_each(CASE WHEN json_valid(nodes.meta) THEN nodes.meta ELSE '{}' END, '$.emails') WHERE lower(json_each.value) = ?)
+		ORDER BY id LIMIT 1`, TypePerson, email))
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrNotFound
+	}
+	return n, err
+}
+
+// SourceTypeCounts returns node counts per source and type.
+func (db *DB) SourceTypeCounts(ctx context.Context) (map[string]map[string]int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT source, type, COUNT(*) FROM nodes GROUP BY source, type`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var src, typ string
+		var n int
+		if err := rows.Scan(&src, &typ, &n); err != nil {
+			return nil, err
+		}
+		if out[src] == nil {
+			out[src] = map[string]int{}
+		}
+		out[src][typ] = n
+	}
+	return out, rows.Err()
+}
+
+// TagTypeCounts returns node counts per tag and type.
+func (db *DB) TagTypeCounts(ctx context.Context) (map[string]map[string]int, error) {
+	rows, err := db.QueryContext(ctx, `SELECT type, tags FROM nodes WHERE tags <> ''`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var typ, tags string
+		if err := rows.Scan(&typ, &tags); err != nil {
+			return nil, err
+		}
+		for _, t := range SplitTags(tags) {
+			if out[t] == nil {
+				out[t] = map[string]int{}
+			}
+			out[t][typ]++
+		}
+	}
+	return out, rows.Err()
 }

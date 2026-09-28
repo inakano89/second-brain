@@ -13,21 +13,23 @@ import (
 
 // CalendarEvent is a provider-neutral calendar entry.
 type CalendarEvent struct {
-	ID          string    `json:"id"`
-	Summary     string    `json:"summary"`
-	Description string    `json:"description,omitempty"`
-	Location    string    `json:"location,omitempty"`
-	Start       time.Time `json:"start"`
-	End         time.Time `json:"end"`
-	AllDay      bool      `json:"all_day"`
-	Link        string    `json:"link,omitempty"`
+	ID          string     `json:"id"`
+	Summary     string     `json:"summary"`
+	Description string     `json:"description,omitempty"`
+	Location    string     `json:"location,omitempty"`
+	Start       time.Time  `json:"start"`
+	End         time.Time  `json:"end"`
+	AllDay      bool       `json:"all_day"`
+	Link        string     `json:"link,omitempty"`
+	Calendar    string     `json:"calendar,omitempty"`
+	Attendees   []Attendee `json:"attendees,omitempty"`
 }
 
-// CalendarAPI is implemented by the Google Calendar integration.
-type CalendarAPI interface {
-	Connected() bool
-	ListEvents(ctx context.Context, from, to time.Time) ([]CalendarEvent, error)
-	CreateEvent(ctx context.Context, ev CalendarEvent) (*CalendarEvent, error)
+// Attendee is an event guest (the owner excluded).
+type Attendee struct {
+	Name   string `json:"name,omitempty"`
+	Email  string `json:"email"`
+	Status string `json:"status,omitempty"`
 }
 
 // ErrNoCalendar means Google Calendar is not connected.
@@ -119,15 +121,34 @@ func (a *Agent) UpsertEventNode(ctx context.Context, ev CalendarEvent) (*databas
 	if ev.Location != "" {
 		fmt.Fprintf(&b, "**Local:** %s\n", ev.Location)
 	}
+	if ev.Calendar != "" {
+		fmt.Fprintf(&b, "**Agenda:** %s\n", ev.Calendar)
+	}
+	var emails []string
+	if len(ev.Attendees) > 0 {
+		names := make([]string, 0, len(ev.Attendees))
+		for _, at := range ev.Attendees {
+			emails = append(emails, at.Email)
+			if at.Name != "" {
+				names = append(names, at.Name+" <"+at.Email+">")
+			} else {
+				names = append(names, at.Email)
+			}
+		}
+		fmt.Fprintf(&b, "**Participantes:** %s\n", strings.Join(names, ", "))
+	}
 	if ev.Description != "" {
 		b.WriteString("\n" + ev.Description + "\n")
 	}
 	start := ev.Start
 	n, created, err := a.Ingest(ctx, IngestInput{
 		Type: database.TypeEvent, Title: ev.Summary, Content: b.String(), Source: "calendar", SourceRef: ev.ID,
-		DueAt: &start, Meta: map[string]any{"start": ev.Start.Format(time.RFC3339), "end": ev.End.Format(time.RFC3339), "link": ev.Link, "all_day": ev.AllDay},
+		DueAt: &start, Meta: map[string]any{"start": ev.Start.Format(time.RFC3339), "end": ev.End.Format(time.RFC3339), "link": ev.Link, "all_day": ev.AllDay, "calendar": ev.Calendar, "attendees": emails},
 	})
 	if err != nil {
+		return nil, err
+	}
+	if err := a.LinkPeople(ctx, n.ID, emails, "attendee"); err != nil {
 		return nil, err
 	}
 	if created {

@@ -1,5 +1,6 @@
 // Package watcher monitors the inbox directory (fsnotify) and ingests dropped
-// files (Markdown, TXT, PDF, images, audio, HTML), then archives or deletes them.
+// files (Markdown, TXT, PDF, images, audio, HTML; .zip exports go to the importer:
+// Obsidian, Notion, Google Takeout…), then archives or deletes them.
 package watcher
 
 import (
@@ -21,6 +22,7 @@ import (
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/importer"
 	"github.com/inakano89/second-brain/internal/queue"
 )
 
@@ -33,6 +35,7 @@ var supported = map[string]bool{
 	".md": true, ".markdown": true, ".txt": true, ".pdf": true, ".html": true, ".htm": true, ".json": true,
 	".png": true, ".jpg": true, ".jpeg": true, ".webp": true, ".gif": true,
 	".ogg": true, ".oga": true, ".opus": true, ".mp3": true, ".m4a": true, ".wav": true,
+	".zip": true, // exports (Obsidian, Notion, Evernote, Google Takeout…) → importer
 }
 
 // Watcher monitors the inbox.
@@ -154,7 +157,11 @@ func (w *Watcher) debounce(ctx context.Context, path string) {
 			return
 		}
 		key := fmt.Sprintf("file:%s:%d:%d", path, st.Size(), st.ModTime().UnixNano())
-		if _, err := w.db.Enqueue(ctx, TaskIngest, map[string]string{"path": path}, database.EnqueueOpts{DedupeKey: key}); err != nil {
+		kind, payload, opts := TaskIngest, any(map[string]string{"path": path}), database.EnqueueOpts{DedupeKey: key}
+		if strings.EqualFold(filepath.Ext(path), ".zip") {
+			kind, payload, opts.MaxAttempts = importer.TaskImportFile, importer.FileTask{Path: path, Origin: "watcher", Name: filepath.Base(path)}, 3
+		}
+		if _, err := w.db.Enqueue(ctx, kind, payload, opts); err != nil {
 			w.log.Error("falha ao enfileirar arquivo", "path", path, "err", err)
 		}
 	})
@@ -183,17 +190,17 @@ func (w *Watcher) handle(ctx context.Context, raw json.RawMessage) error {
 	})
 	if err != nil {
 		if queue.IsPermanent(err) {
-			w.finish(p.Path, true)
+			w.Finish(p.Path, true)
 		}
 		return err
 	}
 	w.log.Info("arquivo ingerido", "file", filepath.Base(p.Path), "node", n.ID)
-	w.finish(p.Path, false)
+	w.Finish(p.Path, false)
 	return nil
 }
 
-// finish archives (or deletes) a processed file; failed files go to .archive/failed.
-func (w *Watcher) finish(path string, failed bool) {
+// Finish archives (or deletes) a processed file; failed files go to .archive/failed.
+func (w *Watcher) Finish(path string, failed bool) {
 	if w.cfg.Get("WATCHER_ACTION") == "delete" && !failed {
 		if err := os.Remove(path); err != nil {
 			w.log.Warn("falha ao remover arquivo", "path", path, "err", err)

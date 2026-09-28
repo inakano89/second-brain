@@ -51,7 +51,7 @@ func (s *Server) funcs() template.FuncMap {
 		"truncate":  extract.Truncate,
 		"join":      strings.Join,
 		"typeLabel": func(t string) string { return typeLabels[t] },
-		"typeColor": func(t string) string { return typeColors[t] },
+		"typeColor": func(t string) template.CSS { return template.CSS(typeColors[t]) }, // constant var(--t-*) values
 		"markdown":  Markdown,
 		"json": func(v any) string {
 			b, _ := json.Marshal(v)

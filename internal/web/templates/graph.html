@@ -1,4 +1,4 @@
-{{define "head"}}<script src="/static/graph.js" defer></script>{{end}}
+{{define "head"}}<script src="/static/graph.js" defer></script><script src="/static/orbit.js" defer></script>{{end}}
 {{define "content"}}
 <div class="graph-layout">
   <aside class="sidebar">
@@ -39,7 +39,15 @@
     </details>
   </aside>
 
-  <section class="graph-wrap">
+  <section class="graph-wrap" id="graph-wrap">
+    <div class="view-switch seg" role="tablist" aria-label="Modo de visualização">
+      <button type="button" role="tab" data-view="orbit" aria-selected="true">◎ Visão geral</button>
+      <button type="button" role="tab" data-view="network" aria-selected="false">🕸 Rede</button>
+    </div>
+    <div id="orbit" class="orbit" role="group" aria-label="Visão geral: tipos, temas, rotinas e fontes"></div>
+    <div id="o-tip" class="tip" hidden></div>
+    <div id="o-legend" class="o-legend muted"></div>
+    <div id="network" class="network" hidden>
     <div class="graph-toolbar">
       <div class="legend" id="legend">
         {{range .Data.Types}}<button class="chip on" data-type="{{.Type}}" style="--c: {{.Color}}">{{.Label}}</button>{{end}}
@@ -53,12 +61,14 @@
     <canvas id="graph" data-q="{{.Data.Q}}" data-focus="{{.Data.Focus}}"></canvas>
     <div id="g-tip" class="tip" hidden></div>
     <div id="g-status" class="g-status muted"></div>
+    </div>
   </section>
 
   <aside class="detail" id="detail">
     <div class="empty">
-      <h3>Seu grafo de conhecimento</h3>
-      <p>Clique em um nó para ver detalhes. Arraste para mover, role para zoom, duplo clique para expandir vizinhos.</p>
+      <h3>Seu Second Brain</h3>
+      <p><b>Visão geral:</b> do centro para fora, os tipos de conteúdo, os temas mais frequentes, as rotinas e as fontes de onde tudo chega. Passe o mouse para ver as ligações; clique para listar o que há dentro.</p>
+      <p><b>Rede:</b> cada nota e suas conexões. Arraste para mover, role para zoom, duplo clique para expandir vizinhos.</p>
     </div>
   </aside>
 </div>

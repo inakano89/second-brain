@@ -157,6 +157,9 @@ type Importer struct {
 	mu    sync.Mutex
 	jobs  map[string]*Job
 	order []string
+
+	// Done runs after a queued file import (archive inbox files, notify).
+	Done func(ctx context.Context, t FileTask, rep Report)
 }
 
 // New creates an importer and removes stale uploads from previous runs.
@@ -292,6 +295,7 @@ func (im *Importer) parse(ctx context.Context, files []File, opt Options) (*Batc
 	for _, b := range batches {
 		out.merge(b)
 	}
+	out.merge(p.takeoutItems())
 	return out, errors.Join(errs...)
 }
 

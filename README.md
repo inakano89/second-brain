@@ -1,7 +1,7 @@
 # 🧠 Second Brain
 
 > Um "segundo cérebro" autônomo, auto-hospedado e distribuído como **binário único** em Go.
-> Captura conhecimento por Telegram, web clipper, pasta monitorada, RSS, Gmail e Google Calendar, organiza tudo num **grafo de conhecimento** com IA (auto-tagging, auto-linking, busca híbrida) e trabalha por você com briefings, revisões e backups cifrados.
+> Captura conhecimento por Telegram, web clipper, pasta monitorada, RSS, Google (Agenda, Gmail, Drive, Contatos, Tasks, YouTube) e Google Takeout, organiza tudo num **grafo de conhecimento** com IA (auto-tagging, auto-linking, busca híbrida) e trabalha por você com briefings, revisões e backups cifrados.
 
 [![CI](https://github.com/inakano89/second-brain/actions/workflows/ci.yml/badge.svg)](https://github.com/inakano89/second-brain/actions/workflows/ci.yml)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go)
@@ -50,12 +50,12 @@
 | **Modelos por tarefa + Conselho** | Catálogo de modelos gerenciável pela UI, um padrão por empresa e um modelo (ou o **🤝 Conselho**, em que Claude, GPT e Gemini debatem e um moderador decide) para cada tarefa. |
 | **Grafo de conhecimento** | Nós tipados (Notas, Tarefas, Pessoas, Eventos, Insights, Artigos, Saúde), auto-tagging, extração de entidades/tarefas, auto-linking semântico, `[[wiki-links]]`. |
 | **Busca híbrida** | BM25 (FTS5) + similaridade vetorial executadas em paralelo e fundidas por *Reciprocal Rank Fusion*, com filtros de tipo, data e tag. |
-| **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters. |
-| **Importação** | Obsidian, Logseq, Notion, Evernote, Google Keep, Joplin/Bear, favoritos do navegador/Pocket, CSV (Excel, Todoist, Readwise), JSON, Kindle, contatos (vCard), agenda (iCalendar) e OPML — com detecção automática, `.zip` aninhados e reimportação sem duplicar. |
+| **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters, Google Agenda/Drive/Contatos/Tasks/YouTube. |
+| **Importação** | Obsidian, Logseq, Notion, Evernote, Google Keep, Joplin/Bear, favoritos do navegador/Pocket, CSV (Excel, Todoist, Readwise), JSON, Kindle, contatos (vCard), agenda (iCalendar), OPML e **Google Takeout** (histórico do YouTube, pesquisas, Chrome, Linha do tempo do Maps, lugares salvos, Play Store) — com detecção automática, `.zip` aninhados e reimportação sem duplicar. |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
-| **Painéis** | Mindmap interativo (canvas, sem dependências), chat streaming com seletor de modelo, painel de custos por provedor, audit log, editor do `.env` e exportação para **Obsidian**. |
+| **Painéis** | Mapa com **Visão geral** em órbitas (tipos, temas, rotinas e fontes) e **Rede** detalhada (canvas, sem dependências), chat streaming com seletor de modelo, painel de custos por provedor, audit log, editor do `.env` e exportação para **Obsidian**. |
 
 ---
 
@@ -68,9 +68,9 @@ flowchart LR
     WC[Web Clipper /api/clip] --> AG
     FW[Folder Watcher ./inbox] --> Q
     RSS[RSS / Newsletters] --> Q
-    GM[Gmail / Calendar] --> Q
+    GM[Google: Gmail · Agenda · Drive<br/>Contatos · Tasks · YouTube] --> Q
     ZP[Zepp / Webhook saúde] --> AG
-    IM[Importação<br/>zip · enex · csv · vcf · ics] --> AG
+    IM[Importação<br/>zip · enex · csv · vcf · ics · Takeout] --> AG
   end
   Q[(Fila offline<br/>task_queue)] --> W[Workers<br/>goroutines]
   W --> AG[Agent<br/>ingest · enrich · link]
@@ -91,7 +91,8 @@ internal/
   llm/                        cliente unificado (streaming SSE, tools, multimodal), embeddings, preços
   agent/                      ingestão, auto-tagging/linking, busca híbrida, chat RAG + tools, ações (webhook/MQTT/comando)
   telegram/                   bot (long polling), mídia, transcrição, OCR, notificações
-  integrations/google/        OAuth2, Calendar, Gmail (+ newsletters)
+  integrations/google/        OAuth2 por serviço, Agenda, Gmail (+ newsletters, rascunhos), Drive, Contatos, Tasks, YouTube
+  integrations/takeout/       leitor do Google Takeout (Minha Atividade, Chrome, Linha do tempo, Maps, Play) → notas mensais
   integrations/zepp/          métricas de sono/FC/passos (API Huami) + estimativa de recuperação
   integrations/rss/           parser RSS/Atom/RDF e curadoria por relevância
   watcher/                    monitor fsnotify da pasta inbox
@@ -137,6 +138,8 @@ mkdir -p ~/brain && cd ~/brain
 ```
 
 > Todos os caminhos relativos (`DATA_DIR`, `INBOX_DIR`, `ACTIONS_FILE`) são resolvidos a partir da pasta do `.env`.
+
+**Windows (PC que não fica ligado 24/7):** dois cliques no `.exe` abrem o servidor numa janela de console e o navegador; um segundo clique só reabre o navegador (instância única). Em **Configurações → Este computador** (ou `second-brain.exe -autostart on`) o Second Brain passa a iniciar no login do usuário, sem janela (chave `HKCU\Software\Microsoft\Windows\CurrentVersion\Run` com `-background`; log em `DATA_DIR/second-brain.log`). O botão **Encerrar o Second Brain** fica na mesma seção. Rotinas perdidas com o PC desligado são recuperadas ao ligar (veja [Rotinas agendadas](#rotinas-agendadas)).
 
 ### Docker
 
@@ -220,6 +223,8 @@ Para expor na internet, use um proxy reverso com TLS (Caddy, nginx, Traefik) e d
 | `-decrypt arquivo.enc -out brain.db [-key …]` | restaura um backup cifrado |
 | `-healthcheck` | retorna 0 se o servidor local responde (usado pelo Docker) |
 | `-import arquivo [mais arquivos…]` | importa e sai (até 2 GB por arquivo). Opções: `-import-llm`, `-import-fetch`, `-import-tags a,b` |
+| `-autostart on\|off` | Windows: liga/desliga o início automático no login (sem janela) |
+| `-background` | Windows: roda sem janela de console, com log em `DATA_DIR/second-brain.log` (usado pelo início automático) |
 
 ---
 
@@ -230,7 +235,7 @@ A interface tem uma página **❓ Ajuda** (`/help`), acessível até antes do se
 - obter as chaves de API do Claude, GPT e Gemini;
 - instalar um modelo local;
 - criar o bot do Telegram;
-- configurar Google Agenda/Gmail;
+- configurar o Google (Agenda, Gmail, Drive, Contatos, Tasks, YouTube) e importar o Google Takeout;
 - configurar Zepp, RSS, Web Clipper e backup em S3/WebDAV/Telegram;
 - instalar em VPS com ou sem Docker e configurar HTTPS com domínio;
 - resolver os problemas mais comuns.
@@ -247,7 +252,7 @@ Enquanto o `.env` não existir ou `SETUP_COMPLETED=false`, **toda requisição �
 2. **Servidor** — porta HTTP (padrão `8080`, migração de porta sem reiniciar), timezone, URL pública e atualizações automáticas (marcado por padrão).
 3. **Provedores LLM** — chaves OpenAI, Anthropic, Gemini e endpoint local compatível com OpenAI.
 4. **Telegram** — token do bot e `ALLOWED_TELEGRAM_USER_IDS`.
-5. **Google Workspace** — Client ID/Secret para OAuth2 (Calendar + Gmail).
+5. **Google** — Client ID/Secret para OAuth2 (Agenda, Gmail, Drive, Contatos, Tasks, YouTube).
 6. **Zepp / Amazfit** — e-mail/senha ou app token + user ID.
 7. **Chave mestre AES-GCM** — para backups (gerada automaticamente se vazia e exibida uma única vez).
 
@@ -261,7 +266,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 
 | Página | Recursos |
 |---|---|
-| **Mindmap** (`/`) | Grafo force-directed em canvas (JS puro, embutido): zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas e reprocessamento por IA. Captura rápida. |
+| **Mindmap** (`/`) | Duas visões. **Visão geral** (padrão, SVG): o cérebro no centro e anéis concêntricos com rotinas (situação de cada uma), tipos de conteúdo, temas mais frequentes e fontes (Telegram, Gmail, Drive, Takeout…), com tamanho proporcional à quantidade; as ligações aparecem só ao passar o mouse, e o clique lista os itens no painel lateral (`/api/overview`, `/overview/nodes`). **Rede**: grafo force-directed em canvas (JS puro, embutido), carregado só quando aberto: zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos; o botão “Ver na rede” abre a rede já filtrada. Cores dos tipos em paleta segura para daltonismo, com tons próprios para os temas claro e escuro. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas e reprocessamento por IA. Captura rápida. |
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
 | **Painel** (`/dashboard`) | Custos e tokens por provedor/modelo (7/30/90 dias), gráfico diário, estatísticas do grafo, status das integrações, fila offline (com reprocessamento), rotinas com execução manual, métricas de saúde e último briefing. |
 | **Importar** (`/import`) | Envio de um ou vários arquivos, detecção automática do formato, progresso ao vivo e relatório (novos, atualizados, sem mudança, falhas, conexões). Tabela com o passo a passo de exportação de cada app. |
@@ -294,7 +299,7 @@ Em **Configurações → Web Clipper**, arraste o botão **🧠 Salvar no Brain*
 
 ### Folder watcher
 
-Arquivos colocados em `INBOX_DIR` (padrão `./inbox`) são detectados via **fsnotify** (com *debounce* até o tamanho estabilizar) e processados: `.md` (frontmatter YAML respeitado), `.txt`, `.pdf`, `.html`, imagens e áudio. Depois vão para `inbox/.archive/AAAA-MM/` ou são apagados (`WATCHER_ACTION=delete`). Falhas permanentes vão para `.archive/failed/`.
+Arquivos colocados em `INBOX_DIR` (padrão `./inbox`) são detectados via **fsnotify** (com *debounce* até o tamanho estabilizar) e processados: `.md` (frontmatter YAML respeitado), `.txt`, `.pdf`, `.html`, imagens e áudio. Arquivos `.zip` (Obsidian, Notion, Google Takeout…) vão para o [importador](#importação-de-dados) pela fila, sem o limite de `IMPORT_MAX_MB`. Depois vão para `inbox/.archive/AAAA-MM/` ou são apagados (`WATCHER_ACTION=delete`). Falhas permanentes vão para `.archive/failed/`.
 
 ### RSS e newsletters
 
@@ -320,6 +325,7 @@ Página **Importar** (`/import`), `POST /api/import` ou `second-brain -import ar
 | Agenda (Google Agenda, Outlook, Apple) | `.ics` | eventos (fuso, dia inteiro, recorrência, participantes como `[[links]]`) e tarefas `VTODO`; cancelados ignorados. |
 | OPML (Feedly, Inoreader, Workflowy) | `.opml` | assinaturas vão para `RSS_FEEDS`; tópicos viram notas. |
 | Páginas HTML | `.html` | notas com o texto principal (Readability). |
+| Google Takeout | `.zip` ou `Timeline.json` | histórico do YouTube, pesquisas, Chrome, Linha do tempo, lugares do Maps e Play Store em notas mensais/listas (veja [Google Takeout](#google-takeout)). |
 
 Como funciona:
 
@@ -369,7 +375,10 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | `search_brain`, `get_node` | Busca híbrida e leitura completa com vizinhos |
 | `create_note`, `create_task`, `complete_task`, `list_tasks`, `link_nodes` | Gestão do grafo |
 | `health_summary` | Métricas de saúde dos últimos N dias |
-| `list_calendar_events`, `create_calendar_event` | Google Calendar (quando conectado) |
+| `list_calendar_events`, `create_calendar_event` | Google Agenda (quando conectado) |
+| `search_email`, `read_email`, `create_email_draft` | Gmail: busca, leitura e **rascunhos** (nunca envia) |
+| `search_drive`, `read_drive_file` | Google Drive: busca e leitura de Docs, Planilhas, Apresentações, PDF, DOCX e texto |
+| `search_contacts` | Contatos do Google (inclui “outros contatos” do Gmail) |
 | `run_action` | Ações de automação da whitelist (quando `ACTIONS_ENABLED=true`) |
 
 ### Agent actions (webhooks, MQTT, comandos)
@@ -392,15 +401,41 @@ Defina ações permitidas em `actions.json` (veja [`actions.example.json`](actio
 
 ## Integrações
 
-### Google Calendar & Gmail
+### Google (Agenda, Gmail, Drive, Contatos, Tasks, YouTube)
 
-1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um **OAuth client ID** do tipo *Web application* e habilite as APIs Calendar e Gmail.
+1. No [Google Cloud Console](https://console.cloud.google.com/apis/credentials), crie um **OAuth client ID** do tipo *Web application* e ative as APIs dos serviços desejados: Google Calendar API, Gmail API, Google Drive API, People API, Google Tasks API e YouTube Data API v3.
 2. Adicione o redirect URI exibido em Configurações (`<PUBLIC_URL>/google/callback`).
-3. Informe Client ID/Secret e clique em **Conectar Google**.
+3. Informe Client ID/Secret e clique em **Conectar Google** (marque todas as permissões). Publique o app (“Em produção”) para o token não expirar em 7 dias.
 
-- Eventos de ontem a +14 dias são espelhados como nós `event` (`CRON_CALENDAR`).
-- E-mails de `GMAIL_QUERY` são triados pelo LLM: pendências viram tarefas ligadas à nota do e-mail.
-- Criação de eventos em linguagem natural: `/event amanhã 15h reunião com Ana no escritório`.
+Os escopos pedidos dependem de `GOOGLE_SERVICES` (padrão: todos). Os escopos concedidos ficam registrados; cada serviço só roda se a permissão existir, e Configurações → Google mostra o que falta (“Reconectar e autorizar”). Tokens de versões anteriores são inspecionados via `tokeninfo`. Erros definitivos (API não ativada, permissão ausente, token revogado) vão para a fila como permanentes, com a correção na mensagem.
+
+| Serviço | Escopo | O que entra no grafo | Agenda |
+|---|---|---|---|
+| `calendar` | `calendar.events` + `calendar.readonly` | Eventos de todas as agendas visíveis (`GOOGLE_CALENDARS=all` ou IDs), de ontem a +14 dias, e uma importação única de `GOOGLE_CALENDAR_PAST_DAYS` (365). Participantes viram arestas `attendee` para os contatos. Eventos novos vão para `GOOGLE_CALENDAR_ID`. | `CRON_CALENDAR` |
+| `gmail` | `gmail.readonly` | E-mails de `GMAIL_QUERY` triados pelo LLM (pendências → tarefas; remetente → aresta `from`), newsletters resumidas. No chat: busca e leitura sob demanda. | `CRON_GMAIL` |
+| `drafts` | `gmail.compose` | Nada; permite à IA criar **rascunhos** (respostas mantêm a thread). Nunca envia. | — |
+| `drive` | `drive.readonly` | Docs (Markdown), Planilhas (CSV), Apresentações, PDF, DOCX e texto modificados desde `DRIVE_SINCE_DAYS`, em lotes de `DRIVE_MAX_FILES`, com filtro opcional `DRIVE_QUERY`. Conteúdo repetido (hash) não é reprocessado. Também baixa as exportações do Takeout salvas no Drive. | `CRON_DRIVE`, `CRON_TAKEOUT` |
+| `contacts` | `contacts.readonly`, `contacts.other.readonly` | Cada contato vira um nó `person` (e-mails, telefones, empresa, aniversário, notas), adotando pessoas criadas automaticamente com o mesmo nome. | `CRON_CONTACTS` |
+| `tasks` | `tasks.readonly` | Tarefas e subtarefas (`part_of`), incremental por `updatedMin`; uma conclusão local é mantida até a tarefa mudar no Google. | `CRON_GOOGLE_TASKS` |
+| `youtube` | `youtube.readonly` | Vídeos curtidos (nós `article`), canais inscritos e playlists (notas-resumo). O histórico não tem API: vem do Takeout. | `CRON_YOUTUBE` |
+
+Criação de eventos em linguagem natural: `/event amanhã 15h reunião com Ana no escritório`. Sem API (limitação do Google): Fotos (desde 03/2025), Keep (só Workspace), Play Store, Linha do tempo do Maps e histórico do YouTube/Chrome. Esses dados chegam pelo Takeout.
+
+### Google Takeout
+
+O que o Google não oferece por API entra pelo [Google Takeout](https://takeout.google.com), lido pelo mesmo importador da página **Importar** (formato `takeout`, fonte `import:takeout`). Três caminhos: enviar o `.zip` (ou o `Timeline.json` avulso do app Maps) em `/import`, copiá-lo para a pasta `inbox` (sem limite de `IMPORT_MAX_MB`) ou agendar a exportação para o **Google Drive**: com o Drive conectado, `CRON_TAKEOUT` baixa as exportações novas (a primeira execução pega só a mais recente) e as importa pela fila (`import.file`).
+
+`internal/integrations/takeout` reconhece os arquivos **pelo conteúdo** (exportações em qualquer idioma) e os lê em *streaming*; milhares de registros viram poucas notas:
+
+| Arquivo | Resultado |
+|---|---|
+| Minha Atividade (JSON): YouTube, Pesquisa, Maps, Chrome, Play, Gemini… | Uma nota por produto e mês (`YouTube — vídeos assistidos — setembro de 2026`), com os itens mais frequentes no resumo. Anúncios são descartados. |
+| Chrome `BrowserHistory` | Nota mensal de navegação (domínios mais visitados). |
+| Linha do tempo: *Semantic Location History* antigo e `Timeline.json` (Android/iOS) | Nota mensal de lugares visitados e deslocamentos (links para o Maps). `Records.json` (pontos brutos) é ignorado. |
+| Maps: lugares salvos e avaliações (GeoJSON) | Uma nota por lista. |
+| Google Play: apps instalados, biblioteca, compras, assinaturas, avaliações | Uma nota por tipo. |
+
+Keep, contatos (`.vcf`), agendas (`.ics`) e listas salvas do Maps (`.csv`) do mesmo arquivo seguem para os leitores próprios do importador. Os resumos não passam pela análise por LLM (só embeddings e auto-links). Histórico exportado em HTML gera um aviso para refazer a exportação em JSON. Reimportar é idempotente.
 
 ### Zepp Health / Amazfit
 
@@ -419,6 +454,8 @@ curl -X POST https://brain.exemplo.com/api/health/webhook \
 ## Rotinas agendadas
 
 Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nomes e `@daily`/`@hourly`…). Use `off` para desativar. Todas podem ser disparadas manualmente no Painel.
+
+**Rotinas perdidas** (PC desligado, programa fechado, suspensão): a última execução bem-sucedida de cada rotina fica gravada no banco (`scheduler.last.<job>`). Ao iniciar, o que deveria ter rodado nesse intervalo roda **uma vez**, em ordem cronológica e uma de cada vez, 2 minutos após subir; falhas continuam pendentes e são tentadas de novo no próximo início. Relatórios com hora certa têm janela: `morning` até 5 h depois do horário, `evening` até 3 h, `weekly` até 3 dias; fora dela são pulados. A mesma regra vale ao acordar de suspensão/hibernação. Como `update` e `models` também são recuperados, um PC ligado só de dia continua recebendo atualizações.
 
 | Job | Variável | Padrão | Descrição |
 |---|---|---|---|
@@ -505,13 +542,13 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 | LLM | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL`, `EMBEDDING_PROVIDER`, `LLM_PRICING`, `AUTOLINK_THRESHOLD` |
 | Modelos (página `/models`) | `LLM_MODELS`, `DEFAULT_LLM_PROVIDER`, `ANTHROPIC_MODEL`, `OPENAI_MODEL`, `GEMINI_MODEL`, `OLLAMA_MODEL`, `LLM_ROUTE_*`, `LLM_COUNCIL_MEMBERS`, `LLM_COUNCIL_JUDGE`, `LLM_COUNCIL_ROUNDS` |
 | Telegram | `TELEGRAM_BOT_TOKEN`, `ALLOWED_TELEGRAM_USER_IDS` |
-| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_CALENDAR_ID`, `GMAIL_QUERY`, `GMAIL_NEWSLETTER_QUERY` |
+| Google | `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`, `GOOGLE_SERVICES`, `GOOGLE_CALENDAR_ID`, `GOOGLE_CALENDARS`, `GOOGLE_CALENDAR_PAST_DAYS`, `GMAIL_QUERY`, `GMAIL_NEWSLETTER_QUERY`, `DRIVE_SINCE_DAYS`, `DRIVE_MAX_FILES`, `DRIVE_QUERY` |
 | Zepp | `ZEPP_EMAIL`, `ZEPP_PASSWORD` ou `ZEPP_APP_TOKEN` + `ZEPP_USER_ID`, `ZEPP_API_BASE` |
 | RSS | `RSS_FEEDS`, `RSS_INTERESTS`, `RSS_MIN_SCORE`, `RSS_MAX_ITEMS` |
 | Backup | `BACKUP_ENCRYPTION_KEY`, `BACKUP_TARGETS`, `BACKUP_KEEP`, `S3_*`, `WEBDAV_*`, `BACKUP_TELEGRAM_CHAT_ID` |
 | Automação | `ACTIONS_ENABLED`, `ACTIONS_FILE`, `MQTT_BROKER`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` |
 | Atualizações | `AUTO_UPDATE_ENABLED`, `UPDATE_CHANNEL`, `UPDATE_REPO`, `LLM_MODELS_AUTO_SYNC` |
-| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_ZEPP`, `CRON_UPDATE`, `CRON_MODELS` |
+| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_DRIVE`, `CRON_CONTACTS`, `CRON_GOOGLE_TASKS`, `CRON_YOUTUBE`, `CRON_TAKEOUT`, `CRON_ZEPP`, `CRON_UPDATE`, `CRON_MODELS` |
 
 **Modelos**: os padrões vêm da [lista recomendada](internal/llm/models.json) (hoje `claude-opus-5-5`, `gpt-6-astra`, `gemini-3.1-pro-preview`, e `llama3.1` no local) e se atualizam sozinhos. Gerencie-os em [Modelos de IA e Conselho](#modelos-de-ia-e-conselho). As chaves `LLM_MODELS`, `*_MODEL`, `LLM_ROUTE_*` e `LLM_COUNCIL_*` são editadas pela página `/models`.
 
@@ -557,7 +594,7 @@ Estrutura de testes: parsing SSE de cada provedor com servidores mock (incluindo
 - O Bot API do Telegram limita downloads a 20 MB e uploads a 50 MB (backups maiores devem usar S3/WebDAV).
 - O embedder local é léxico-semântico (hashing); para similaridade semântica real configure embeddings OpenAI, Gemini ou Ollama.
 - A transcrição de voz requer OpenAI (Whisper) ou Gemini.
-- No Windows, o auto-update reinicia o processo em primeiro plano; se rodar como serviço (NSSM/sc), prefira desativar o auto-update ou configure o serviço para reiniciar automaticamente.
+- No Windows, o auto-update reinicia o processo (sem janela quando iniciado com `-background`); se rodar como serviço (NSSM/sc), prefira desativar o auto-update ou configure o serviço para reiniciar automaticamente. Ao iniciar com `-background`, uma janela de console pode piscar por um instante antes de o processo passar para segundo plano.
 
 ---
 

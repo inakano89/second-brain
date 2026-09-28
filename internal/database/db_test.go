@@ -87,3 +87,48 @@ func TestNodesFTSGraphQueue(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestFindPersonByEmail(t *testing.T) {
+	ctx := context.Background()
+	db := openTest(t)
+	p := &Node{Type: TypePerson, Title: "Ana Lima", Meta: map[string]any{"emails": []string{"Ana@Exemplo.com", "ana.lima@work.io"}}}
+	other := &Node{Type: TypeNote, Title: "Nota", Meta: map[string]any{"emails": []string{"ana@exemplo.com"}}}
+	for _, n := range []*Node{other, p} {
+		if err := db.CreateNode(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	got, err := db.FindPersonByEmail(ctx, " ana@exemplo.COM ")
+	if err != nil || got.ID != p.ID {
+		t.Fatalf("got %+v, %v", got, err)
+	}
+	if _, err := db.FindPersonByEmail(ctx, "x@y.z"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}
+
+func TestOverviewCounts(t *testing.T) {
+	ctx := context.Background()
+	db := openTest(t)
+	for _, n := range []*Node{
+		{Type: TypeNote, Title: "a", Source: "gmail", Tags: []string{"viagem", "japao"}},
+		{Type: TypeTask, Title: "b", Source: "gmail", Tags: []string{"viagem"}},
+		{Type: TypeNote, Title: "c", Source: "import:keep"},
+	} {
+		if err := db.CreateNode(ctx, n); err != nil {
+			t.Fatal(err)
+		}
+	}
+	st, err := db.SourceTypeCounts(ctx)
+	if err != nil || st["gmail"][TypeNote] != 1 || st["gmail"][TypeTask] != 1 || st["import:keep"][TypeNote] != 1 {
+		t.Fatalf("source counts = %v, %v", st, err)
+	}
+	tt, err := db.TagTypeCounts(ctx)
+	if err != nil || tt["viagem"][TypeNote] != 1 || tt["viagem"][TypeTask] != 1 || tt["japao"][TypeNote] != 1 {
+		t.Fatalf("tag counts = %v, %v", tt, err)
+	}
+	nodes, err := db.ListNodes(ctx, NodeFilter{Sources: []string{"import:keep", "gmail"}, Types: []string{TypeNote}})
+	if err != nil || len(nodes) != 2 {
+		t.Fatalf("sources filter = %d, %v", len(nodes), err)
+	}
+}

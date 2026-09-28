@@ -86,7 +86,7 @@ func setup(t *testing.T) *env {
 	m := llm.NewManager(cfg, nil)
 	ag := agent.New(cfg, db, m, log)
 	gc := google.New(cfg, db, log)
-	ag.SetCalendar(gc)
+	ag.SetGoogle(gc)
 	cat := llm.NewCatalogSync(cfg, m, db, log)
 	cat.URL = func() string { return "" } // offline: remote sync reports an error
 	cat.Init(context.Background())
@@ -149,6 +149,36 @@ func TestEndToEnd(t *testing.T) {
 	if len(n.Tags) == 0 || n.Summary == "" {
 		t.Fatalf("enrichment missing: %+v", n)
 	}
+	// Overview (orbit view): summary API and drill-down list.
+	page := e.do("GET", "/", nil, nil)
+	e.expect(page, 200, "orbit.js", `data-view="network"`, "--c: var(--t-note)")
+	if strings.Contains(page.Body.String(), "ZgotmplZ") {
+		t.Fatal("type colour sanitized in template")
+	}
+	rec = e.do("GET", "/api/overview", nil, nil)
+	e.expect(rec, 200)
+	var ov struct {
+		Total int `json:"total"`
+		Types []struct {
+			Key, Color string
+			Count      int
+		}
+		Topics []struct {
+			Key   string
+			Count int
+		}
+		Sources []struct {
+			Key     string
+			Count   int
+			Sources []string
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &ov); err != nil || ov.Total < 2 || len(ov.Types) != len(database.NodeTypes) || len(ov.Sources) == 0 {
+		t.Fatalf("overview = %s (%v)", rec.Body.String(), err)
+	}
+	e.expect(e.do("GET", "/overview/nodes?types=note&label=Notas&count=1", nil, nil), 200, "Notas", "Projeto Atlas", `data-network="types=note"`)
+	e.expect(e.do("GET", "/overview/nodes?source=web,api&label=Web&icon=%F0%9F%96%A5", nil, nil), 200, "Maria Souza", "Projeto Atlas")
+
 	links, _ := e.db.Neighbors(ctx, 1)
 	if len(links) == 0 {
 		t.Fatal("wiki link not created")
@@ -188,7 +218,7 @@ func TestEndToEnd(t *testing.T) {
 	e.expect(e.do("GET", "/logs/rows?level=INFO", nil, nil), 200)
 	e.expect(e.do("GET", "/chat", nil, nil), 200, "Nenhum provedor LLM")
 	rec = e.do("GET", "/settings", nil, nil)
-	e.expect(rec, 200, `href="javascript:%28function`, "Editor do .env") // browsers percent-decode javascript: URLs
+	e.expect(rec, 200, `href="javascript:%28function`, "Editor do .env", "Google Takeout", "People API", "aguardando conexão") // browsers percent-decode javascript: URLs
 	if strings.Contains(rec.Body.String(), "ZgotmplZ") {
 		t.Fatal("template sanitized a value (ZgotmplZ)")
 	}
@@ -199,6 +229,16 @@ func TestEndToEnd(t *testing.T) {
 	e.expect(e.form("/settings/env", url.Values{"BRAIN_NAME": {"Renomeado"}, "__extra": {"MY_VAR=1"}}), 303)
 	if e.cfg.Get("BRAIN_NAME") != "Renomeado" || e.cfg.Get("MY_VAR") != "1" || e.cfg.Get("SESSION_SECRET") == "" {
 		t.Fatal("settings not saved")
+	}
+
+	// Windows-only controls are hidden and refused elsewhere.
+	if rec := e.do("GET", "/settings", nil, nil); strings.Contains(rec.Body.String(), `id="desktop"`) {
+		t.Fatal("desktop card shown outside Windows")
+	}
+	for _, p := range []string{"/settings/autostart", "/settings/shutdown"} {
+		if r := e.form(p, url.Values{}); r.Code != 303 || !strings.Contains(r.Header().Get("Location"), "error=") {
+			t.Fatalf("%s: %d %s", p, r.Code, r.Header().Get("Location"))
+		}
 	}
 
 	if !e.cfg.GetBool("AUTO_UPDATE_ENABLED") {
@@ -357,6 +397,24 @@ func TestImport(t *testing.T) {
 	e.expect(anon.do("POST", "/api/import?filename=x.bin", strings.NewReader("\x00\x01"), map[string]string{"Authorization": "Bearer " + token}), 422, "reconhecido")
 	body, ct = multipartBody(t, map[string]string{"llm": "true"}, map[string]string{"a.md": "# Nota A\ncorpo"})
 	e.expect(anon.do("POST", "/api/import", body, map[string]string{"Authorization": "Bearer " + token, "Content-Type": ct}), 200, `"created":1`)
+
+	// Google Takeout: activity history becomes monthly digests; Keep goes to its own reader.
+	var tz bytes.Buffer
+	zw := zip.NewWriter(&tz)
+	for name, content := range map[string]string{
+		"Takeout/YouTube e YouTube Music/histórico/histórico-de-visualização.json": `[{"header":"YouTube","title":"Assistiu a Aula de Go","titleUrl":"https://www.youtube.com/watch?v=abc","subtitles":[{"name":"Canal Dev"}],"time":"2026-08-10T15:04:05Z","products":["YouTube"]}]`,
+		"Takeout/YouTube e YouTube Music/histórico/histórico-de-pesquisa.html":     "<html><body>histórico</body></html>",
+		"Takeout/Keep/Ideia.json": `{"title":"Ideia","textContent":"Plano de estudos","isTrashed":false,"userEditedTimestampUsec":1700000000000000,"createdTimestampUsec":1700000000000000}`,
+	} {
+		w, _ := zw.Create(name)
+		w.Write([]byte(content))
+	}
+	zw.Close()
+	rec = anon.do("POST", "/api/import?filename=takeout-20260928T000000Z-001.zip", &tz, map[string]string{"Authorization": "Bearer " + token})
+	e.expect(rec, 200, `"takeout":1`, `"keep":1`, "escolha JSON")
+	if n, err := e.db.GetNodeBySource(context.Background(), "import:takeout", "youtube-watch:2026-08"); err != nil || !strings.Contains(n.Content, "Aula de Go") || n.Title != "YouTube — vídeos assistidos — agosto de 2026" {
+		t.Fatalf("takeout digest = %+v, %v", n, err)
+	}
 
 	people, _ := e.db.ListNodes(context.Background(), database.NodeFilter{Types: []string{database.TypePerson}, Source: "import:vcard"})
 	if len(people) != 1 || people[0].Title != "Ana Lima" || !strings.Contains(strings.Join(people[0].Tags, ","), "migracao") {

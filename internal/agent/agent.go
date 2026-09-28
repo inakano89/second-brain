@@ -41,8 +41,8 @@ type Agent struct {
 	log     *slog.Logger
 	actions *Actions
 
-	calMu sync.RWMutex
-	cal   CalendarAPI
+	gMu sync.RWMutex
+	g   GoogleAPI
 
 	qcacheMu sync.Mutex
 	qcache   map[string][]float32
@@ -65,21 +65,7 @@ func (a *Agent) LLM() *llm.Manager { return a.llm }
 // Actions exposes the host action registry.
 func (a *Agent) Actions() *Actions { return a.actions }
 
-// SetCalendar injects the calendar integration.
-func (a *Agent) SetCalendar(c CalendarAPI) {
-	a.calMu.Lock()
-	a.cal = c
-	a.calMu.Unlock()
-}
-
-func (a *Agent) calendar() CalendarAPI {
-	a.calMu.RLock()
-	defer a.calMu.RUnlock()
-	if a.cal != nil && a.cal.Connected() {
-		return a.cal
-	}
-	return nil
-}
+func (a *Agent) calendar() GoogleAPI { return a.google(GoogleCalendar) }
 
 // Location returns the configured timezone.
 func (a *Agent) Location() *time.Location { return a.cfg.Location() }

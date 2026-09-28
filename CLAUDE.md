@@ -26,6 +26,7 @@ Identificadores e comentários de código ficam em inglês.
 | `internal/llm` | provedores (OpenAI/Claude/Gemini/Ollama), roteamento por tarefa (`routes.go`), Conselho (`council.go`), catálogo curado + sync (`models.json`, `catalog*.go`), preços |
 | `internal/agent` | ingestão, enriquecimento, busca híbrida, chat RAG + tools, ações |
 | `internal/telegram`, `internal/integrations/*`, `internal/watcher` | canais de captura |
+| `internal/importer` | importação de arquivos (Obsidian, Notion, Evernote, Keep, CSV, vCard, iCal, Google Takeout via `integrations/takeout`) e fila `import.file` (inbox `.zip`, Takeout do Drive) |
 | `internal/scheduler` | cron, rotinas, backup |
 | `internal/updater` | auto-update via GitHub Releases (+ modo overlay em container, rollback) |
 | `internal/web` | handlers, templates HTMX (`templates/`), assets (`static/`) |
@@ -34,6 +35,7 @@ Identificadores e comentários de código ficam em inglês.
 
 - **Nova variável de config** → `internal/config/schema.go` (aparece no editor web; use `Hidden: true` se for gerida por outra página, como `/models`). Depois regenere o `.env.example` com `go test ./internal/config -run EnvExample -update-env-example` (o teste falha se ele ficar desatualizado).
 - **Migrações SQLite**: só acrescentar no fim de `internal/database/migrations.go`. Nunca editar uma migração já publicada.
+- **Novo serviço Google** → entrada em `google.Services` (escopos obrigatórios/opcionais) e chave em `GOOGLE_SERVICES`; cada sync verifica `Client.Can(serviço)` antes de chamar a API.
 - **Chamadas externas lentas ou falíveis** → fila offline (`internal/queue`). Marque erros definitivos com `queue.Permanent`.
 - **LLM**: sempre via `llm.Manager`. O `Purpose` da requisição define a rota. Para criar uma tarefa roteável, adicione-a em `llm.Tasks` e crie a chave `LLM_ROUTE_*` no schema.
 - **Web**: `html/template` + HTMX. A CSP proíbe scripts inline e `hx-on`, então JS novo vai em `internal/web/static/*.js`.

@@ -7,7 +7,9 @@
     <a href="/models">Modelos de IA →</a>
     <a href="#env">Variáveis (.env)</a>
     <a href="#google">Google</a>
+    <a href="#takeout">Google Takeout</a>
     <a href="#clipper">Web Clipper &amp; API</a>
+    {{if .Desktop}}<a href="#desktop">Este computador</a>{{end}}
     <a href="#updates">Atualizações</a>
     <a href="#actions">Agent actions</a>
     <a href="#backup">Backup &amp; export</a>
@@ -71,16 +73,32 @@
     </section>
 
     <section class="card" id="google">
-      <h2>📅 Google Calendar &amp; Gmail</h2>
+      <h2>🔗 Google</h2>
       {{if not .GoogleCfg}}
-        <p class="muted">Defina <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> (Google Cloud Console → OAuth client “Web application”).</p>
+        <p class="muted">Defina <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> (Google Cloud Console → OAuth client “Web application”). <a href="/help#google">Passo a passo</a>.</p>
       {{else if .GoogleOK}}
         <p>✅ Conectado.</p>
-        <form method="post" action="/google/disconnect"><button class="btn danger small">Desconectar</button></form>
+        {{if .GoogleNew}}<p class="warn">⚠️ Há serviços sem permissão (novos ou desmarcados na tela do Google). <a class="btn small primary" href="/google/connect">Reconectar e autorizar</a></p>{{end}}
       {{else}}
         <p><a class="btn primary" href="/google/connect">Conectar Google</a></p>
       {{end}}
-      <p class="muted">Redirect URI autorizado: <code class="copy">{{.RedirectURL}}</code><br>Escopos: calendar.events, gmail.readonly.</p>
+      <table class="tbl compact">
+        <thead><tr><th>Serviço</th><th>API a ativar no Cloud Console</th><th>Status</th></tr></thead>
+        <tbody>{{range .GoogleSvcs}}<tr><td>{{.Label}} <code class="key">{{.Key}}</code></td><td>{{.API}}</td>
+          <td>{{if not .Enabled}}<span class="muted">desligado</span>{{else if not $.Data.GoogleOK}}<span class="muted">aguardando conexão</span>{{else if not .Granted}}⚠️ sem permissão{{else if .Partial}}✅ parcial — reconecte{{else}}✅ ativo{{end}}</td></tr>{{end}}</tbody>
+      </table>
+      <p class="muted">Liga/desliga em <a href="#env">Variáveis → Google → <code>GOOGLE_SERVICES</code></a>. Somente leitura, exceto criar eventos e <b>rascunhos</b> no Gmail (nada é enviado).</p>
+      {{if .GoogleOK}}<div class="row">
+        <form method="post" action="/google/sync"><button class="btn small">Sincronizar agora</button></form>
+        <form method="post" action="/google/disconnect"><button class="btn danger small" data-confirm="Desconectar o Google e revogar o acesso?">Desconectar</button></form>
+      </div>{{end}}
+      <p class="muted">Redirect URI autorizado: <code class="copy">{{.RedirectURL}}</code></p>
+    </section>
+
+    <section class="card" id="takeout">
+      <h2>📦 Google Takeout</h2>
+      <p>O que o Google não oferece por API (histórico do YouTube, pesquisas, atividade no Maps/Chrome/Play, Linha do tempo, lugares salvos, apps da Play Store e notas do Keep) entra pelo Takeout: envie o <code>.zip</code> em <a href="/import">Importar</a>. <a href="/help#takeout">Como exportar</a>.</p>
+      <p class="muted">Automático: agende a exportação para o <b>Google Drive</b> (a cada 2 meses). Com o Drive conectado, o Second Brain baixa e importa sozinho (<code>CRON_TAKEOUT</code>). Arquivos <code>.zip</code> colocados na pasta monitorada (<code>{{.InboxDir}}</code>) também são importados.</p>
     </section>
 
     <section class="card" id="clipper">
@@ -100,6 +118,20 @@
       </dl>
       {{if .TelegramOK}}<form method="post" action="/settings/telegram-test"><button class="btn small">Enviar teste no Telegram</button></form>{{end}}
     </section>
+
+    {{if .Desktop}}
+    <section class="card" id="desktop">
+      <h2>🖥️ Este computador (Windows)</h2>
+      <form method="post" action="/settings/autostart">
+        <button class="btn switch {{if .Autostart}}on{{end}}" title="Alternar">
+          <span class="knob"></span>
+          {{if .Autostart}}Iniciar com o Windows <b>ativado</b>{{else}}Iniciar com o Windows <b>desativado</b>{{end}}
+        </button>
+      </form>
+      <p class="muted">Ativado, o Second Brain abre sozinho quando você entra no Windows, sem janela, e continua rodando em segundo plano. Rotinas perdidas enquanto o computador estava desligado (backup, atualização, briefing da manhã…) rodam alguns minutos depois de ligar. Log: <code>{{.LogPath}}</code></p>
+      <form method="post" action="/settings/shutdown"><button class="btn danger small" data-confirm="Encerrar o Second Brain agora?">Encerrar o Second Brain</button></form>
+    </section>
+    {{end}}
 
     <section class="card" id="updates">
       <h2>⬆️ Atualizações</h2>
