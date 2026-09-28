@@ -12,7 +12,7 @@
       "models": [
         {"id": "claude-fable-5-1", "name": "Claude Fable 5.1", "price": [10, 50]},
         {"id": "claude-opus-5-5", "name": "Claude Opus 5.5", "price": [4, 20]},
-        {"id": "claude-sonnet-5", "name": "Claude Sonnet 5", "price": [2, 10]},
+        {"id": "claude-sonnet-5-5", "name": "Claude Sonnet 5.5", "price": [2, 10], "replaces": ["claude-sonnet-5"]},
         {"id": "claude-haiku-4-5-20251001", "name": "Claude Haiku 4.5", "price": [1, 5]}
       ]
     },
@@ -28,7 +28,6 @@
       "default": "gemini-3.1-pro-preview",
       "models": [
         {"id": "gemini-3.8-flash", "name": "Gemini 3.8 Flash"},
-        {"id": "gemini-3.8-live", "name": "Gemini 3.8 Live", "note": "Modelo da Live API (voz/tempo real); pode não responder no chat de texto."},
         {"id": "gemini-3.1-pro-preview", "name": "Gemini 3.1 Pro (preview)"}
       ]
     }

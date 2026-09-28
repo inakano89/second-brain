@@ -19,7 +19,7 @@ var watchIDRe = map[string]*regexp.Regexp{
 var (
 	watchSnapshotRe = regexp.MustCompile(`-(\d{8}|\d{4}-\d{2}-\d{2}|\d{2}-\d{4}|\d{3,4}|v\d+)$`)
 	watchVersionRe  = regexp.MustCompile(`^\d+(\.\d+)?$`)
-	watchSkip       = []string{"embed", "tts", "audio", "realtime", "transcribe", "image", "search", "moderation", "computer-use", "robotics", "native", "system-card", "-and-"}
+	watchSkip       = []string{"embed", "tts", "audio", "realtime", "transcribe", "image", "search", "moderation", "computer-use", "robotics", "native", "live", "system-card", "-and-"}
 )
 
 // ExtractModelIDs returns the distinct model ids of provider mentioned in page.

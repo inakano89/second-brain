@@ -51,7 +51,7 @@ var Schema = []Field{
 
 	// Models, per-task routing and council — managed on the /models page.
 	{Key: "LLM_MODELS", Label: "Catálogo de modelos", Group: "Modelos", Hidden: true, Help: "provedor:modelo separados por vírgula",
-		Default: "anthropic:claude-fable-5-1,anthropic:claude-opus-5-5,anthropic:claude-sonnet-5,anthropic:claude-haiku-4-5-20251001,openai:gpt-6-astra,openai:gpt-6-sol,openai:gpt-6-luna,gemini:gemini-3.8-flash,gemini:gemini-3.8-live,gemini:gemini-3.1-pro-preview,ollama:llama3.1"},
+		Default: "anthropic:claude-fable-5-1,anthropic:claude-opus-5-5,anthropic:claude-sonnet-5-5,anthropic:claude-haiku-4-5-20251001,openai:gpt-6-astra,openai:gpt-6-sol,openai:gpt-6-luna,gemini:gemini-3.8-flash,gemini:gemini-3.1-pro-preview,ollama:llama3.1"},
 	{Key: "DEFAULT_LLM_PROVIDER", Label: "Provedor padrão global", Group: "Modelos", Hidden: true, Default: "auto"},
 	{Key: "ANTHROPIC_MODEL", Label: "Modelo padrão Claude", Group: "Modelos", Hidden: true, Default: "claude-opus-5-5"},
 	{Key: "OPENAI_MODEL", Label: "Modelo padrão GPT", Group: "Modelos", Hidden: true, Default: "gpt-6-astra"},

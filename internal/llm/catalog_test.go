@@ -78,6 +78,7 @@ func TestPlanCatalogFromLegacy(t *testing.T) {
 		"LLM_ROUTE_RSS":       "gemini:gemini-2.5-pro",
 		"LLM_ROUTE_CHAT":      "council",
 		"LLM_ROUTE_ENRICH":    "anthropic:claude-haiku-4-5", // cheap model: must go to its successor, not to Opus
+		"LLM_ROUTE_EMAIL":     "anthropic:claude-sonnet-5",  // declared successor (replaces)
 		"LLM_COUNCIL_MEMBERS": "anthropic:claude-opus-5,anthropic,openai,gemini:gemini-2.5-pro",
 		"LLM_COUNCIL_JUDGE":   "anthropic:claude-opus-5",
 	}
@@ -96,13 +97,13 @@ func TestPlanCatalogFromLegacy(t *testing.T) {
 	if c["LLM_ROUTE_RSS"] != "gemini" || c["LLM_COUNCIL_JUDGE"] != "anthropic" || c["LLM_COUNCIL_MEMBERS"] != "anthropic,openai,gemini" {
 		t.Fatalf("routes/council not detached: %v", c)
 	}
-	if c["LLM_ROUTE_ENRICH"] != "anthropic:claude-haiku-4-5-20251001" {
-		t.Fatalf("successor not used: %q", c["LLM_ROUTE_ENRICH"])
+	if c["LLM_ROUTE_ENRICH"] != "anthropic:claude-haiku-4-5-20251001" || c["LLM_ROUTE_EMAIL"] != "anthropic:claude-sonnet-5-5" {
+		t.Fatalf("successor not used: %q / %q", c["LLM_ROUTE_ENRICH"], c["LLM_ROUTE_EMAIL"])
 	}
 	if _, ok := c["LLM_ROUTE_CHAT"]; ok {
 		t.Fatal("untouched route rewritten")
 	}
-	if len(plan.Removed) != 6 || len(plan.Summary()) == 0 {
+	if len(plan.Removed) != 7 || len(plan.Summary()) == 0 {
 		t.Fatalf("removed = %v", plan.Removed)
 	}
 }

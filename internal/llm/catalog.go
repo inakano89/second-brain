@@ -19,6 +19,9 @@ type CatalogModel struct {
 	Name  string    `json:"name,omitempty"`
 	Price []float64 `json:"price,omitempty"` // USD per 1M tokens: [input, output]
 	Note  string    `json:"note,omitempty"`
+	// Replaces lists older ids of the same provider this model succeeds; installs
+	// move defaults, routes and council seats from them to this model.
+	Replaces []string `json:"replaces,omitempty"`
 }
 
 // CatalogProvider lists a provider's curated models and its recommended default.
@@ -73,6 +76,11 @@ func ParseCuratedCatalog(b []byte) (*CuratedCatalog, error) {
 			seen[m.ID] = true
 			if len(m.Price) != 0 && (len(m.Price) != 2 || m.Price[0] < 0 || m.Price[1] < 0) {
 				return nil, fmt.Errorf("catálogo: preço inválido em %q", m.ID)
+			}
+			for _, r := range m.Replaces {
+				if !catalogIDRe.MatchString(r) {
+					return nil, fmt.Errorf("catálogo: replaces inválido em %q", m.ID)
+				}
 			}
 		}
 		if !seen[cp.Default] {
@@ -134,6 +142,19 @@ func (c *CuratedCatalog) DefaultFor(provider string) string {
 	return c.Providers[provider].Default
 }
 
+// successors maps "provider:old" → "provider:new" from the replaces lists.
+func (c *CuratedCatalog) successors() map[string]string {
+	out := map[string]string{}
+	for p, cp := range c.Providers {
+		for _, m := range cp.Models {
+			for _, r := range m.Replaces {
+				out[p+":"+r] = p + ":" + m.ID
+			}
+		}
+	}
+	return out
+}
+
 func (c *CuratedCatalog) prices() map[string]Price {
 	out := map[string]Price{}
 	for _, cp := range c.Providers {
@@ -183,8 +204,10 @@ func PlanCatalog(get func(string) string, prev, next *CuratedCatalog) CatalogPla
 	for _, s := range prev.Specs() {
 		prevHas[s] = true
 	}
-	// Removed models are replaced by a dated successor when the catalogue has one
-	// (claude-haiku-4-5 → claude-haiku-4-5-20251001), else by the provider default.
+	// Removed models go to their declared successor ("replaces"), else to a dated
+	// successor (claude-haiku-4-5 → claude-haiku-4-5-20251001), else to the
+	// provider default.
+	successor := next.successors()
 	removed := map[string]bool{}
 	repl := map[string]string{}
 	for s := range prevHas {
@@ -192,6 +215,10 @@ func PlanCatalog(get func(string) string, prev, next *CuratedCatalog) CatalogPla
 			removed[s] = true
 			p, _, _ := strings.Cut(s, ":")
 			repl[s] = p
+			if n, ok := successor[s]; ok {
+				repl[s] = n
+				continue
+			}
 			for _, n := range next.Specs() {
 				if suffix, ok := strings.CutPrefix(n, s+"-"); ok && datedSuffixRe.MatchString(suffix) {
 					repl[s] = n
