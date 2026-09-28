@@ -149,6 +149,36 @@ func TestEndToEnd(t *testing.T) {
 	if len(n.Tags) == 0 || n.Summary == "" {
 		t.Fatalf("enrichment missing: %+v", n)
 	}
+	// Overview (orbit view): summary API and drill-down list.
+	page := e.do("GET", "/", nil, nil)
+	e.expect(page, 200, "orbit.js", `data-view="network"`, "--c: var(--t-note)")
+	if strings.Contains(page.Body.String(), "ZgotmplZ") {
+		t.Fatal("type colour sanitized in template")
+	}
+	rec = e.do("GET", "/api/overview", nil, nil)
+	e.expect(rec, 200)
+	var ov struct {
+		Total int `json:"total"`
+		Types []struct {
+			Key, Color string
+			Count      int
+		}
+		Topics []struct {
+			Key   string
+			Count int
+		}
+		Sources []struct {
+			Key     string
+			Count   int
+			Sources []string
+		}
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &ov); err != nil || ov.Total < 2 || len(ov.Types) != len(database.NodeTypes) || len(ov.Sources) == 0 {
+		t.Fatalf("overview = %s (%v)", rec.Body.String(), err)
+	}
+	e.expect(e.do("GET", "/overview/nodes?types=note&label=Notas&count=1", nil, nil), 200, "Notas", "Projeto Atlas", `data-network="types=note"`)
+	e.expect(e.do("GET", "/overview/nodes?source=web,api&label=Web&icon=%F0%9F%96%A5", nil, nil), 200, "Maria Souza", "Projeto Atlas")
+
 	links, _ := e.db.Neighbors(ctx, 1)
 	if len(links) == 0 {
 		t.Fatal("wiki link not created")

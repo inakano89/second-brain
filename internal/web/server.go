@@ -117,6 +117,8 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /{$}", s.auth(s.graphPage))
 	mux.HandleFunc("GET /api/graph", s.auth(s.apiGraph))
+	mux.HandleFunc("GET /api/overview", s.auth(s.apiOverview))
+	mux.HandleFunc("GET /overview/nodes", s.auth(s.overviewNodes))
 	mux.HandleFunc("GET /search", s.auth(s.searchPartial))
 	mux.HandleFunc("GET /api/search", s.auth(s.apiSearch))
 	mux.HandleFunc("POST /nodes", s.auth(s.createNode))

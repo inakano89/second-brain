@@ -139,3 +139,27 @@
   {{if .Warnings}}<details><summary>Avisos ({{len .Warnings}})</summary><ul class="small">{{range .Warnings}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
 </div>
 {{end}}
+
+{{define "overview_nodes"}}
+<div class="ov-list">
+  <div class="ov-head">
+    {{if .Icon}}<span class="ov-icon" aria-hidden="true">{{.Icon}}</span>{{else if .Color}}<span class="dot" style="--c: {{.Color}}"></span>{{end}}
+    <h3>{{.Title}}</h3>
+  </div>
+  <p class="muted small">{{if .Count}}{{.Count}} no total · {{end}}{{len .Nodes}} mais recentes</p>
+  <p><button type="button" class="btn small" data-network="{{.Query}}">🕸 Ver na rede</button></p>
+  <ul class="results">
+  {{range .Nodes}}
+    <li>
+      <a href="#" data-focus="{{.ID}}" hx-get="/nodes/{{.ID}}" hx-target="#detail" hx-swap="innerHTML">
+        <span class="badge" style="--c: {{typeColor .Type}}">{{typeLabel .Type}}</span>
+        <strong>{{.Title}}</strong>
+      </a>
+      <small class="muted">{{fmtTime .UpdatedAt}}{{if .Tags}} · {{join .Tags ", "}}{{end}}</small>
+    </li>
+  {{else}}
+    <li class="empty">Nada aqui ainda.</li>
+  {{end}}
+  </ul>
+</div>
+{{end}}

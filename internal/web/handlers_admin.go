@@ -3,6 +3,7 @@ package web
 import (
 	"context"
 	"fmt"
+	"html/template"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -88,7 +89,7 @@ func (s *Server) dashboardPage(w http.ResponseWriter, r *http.Request) {
 	}
 	counts, _ := s.DB.CountByType(ctx)
 	for _, t := range database.NodeTypes {
-		v.Counts = append(v.Counts, typeInfo{Type: t, Label: typeLabels[t], Color: typeColors[t], Count: counts[t]})
+		v.Counts = append(v.Counts, typeInfo{Type: t, Label: typeLabels[t], Color: template.CSS(typeColors[t]), Count: counts[t]})
 		v.Nodes += counts[t]
 	}
 	v.Edges, _ = s.DB.EdgeCount(ctx)

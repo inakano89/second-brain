@@ -55,7 +55,7 @@
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
-| **Painéis** | Mindmap interativo (canvas, sem dependências), chat streaming com seletor de modelo, painel de custos por provedor, audit log, editor do `.env` e exportação para **Obsidian**. |
+| **Painéis** | Mapa com **Visão geral** em órbitas (tipos, temas, rotinas e fontes) e **Rede** detalhada (canvas, sem dependências), chat streaming com seletor de modelo, painel de custos por provedor, audit log, editor do `.env` e exportação para **Obsidian**. |
 
 ---
 
@@ -266,7 +266,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 
 | Página | Recursos |
 |---|---|
-| **Mindmap** (`/`) | Grafo force-directed em canvas (JS puro, embutido): zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas e reprocessamento por IA. Captura rápida. |
+| **Mindmap** (`/`) | Duas visões. **Visão geral** (padrão, SVG): o cérebro no centro e anéis concêntricos com rotinas (situação de cada uma), tipos de conteúdo, temas mais frequentes e fontes (Telegram, Gmail, Drive, Takeout…), com tamanho proporcional à quantidade; as ligações aparecem só ao passar o mouse, e o clique lista os itens no painel lateral (`/api/overview`, `/overview/nodes`). **Rede**: grafo force-directed em canvas (JS puro, embutido), carregado só quando aberto: zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos; o botão “Ver na rede” abre a rede já filtrada. Cores dos tipos em paleta segura para daltonismo, com tons próprios para os temas claro e escuro. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas e reprocessamento por IA. Captura rápida. |
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
 | **Painel** (`/dashboard`) | Custos e tokens por provedor/modelo (7/30/90 dias), gráfico diário, estatísticas do grafo, status das integrações, fila offline (com reprocessamento), rotinas com execução manual, métricas de saúde e último briefing. |
 | **Importar** (`/import`) | Envio de um ou vários arquivos, detecção automática do formato, progresso ao vivo e relatório (novos, atualizados, sem mudança, falhas, conexões). Tabela com o passo a passo de exportação de cada app. |

@@ -7,6 +7,9 @@
   var tip = document.getElementById("g-tip");
   var statusEl = document.getElementById("g-status");
   var form = document.getElementById("search-form");
+  var net = document.getElementById("network"); // hidden while the overview is shown
+  var started = false, pending = null;
+  function shown() { return !net || !net.hidden; }
 
   var nodes = [], edges = [], byId = new Map(), adj = new Map();
   var colors = {}, highlight = new Set(), hiddenTypes = new Set();
@@ -36,7 +39,9 @@
     return fetch("/api/graph?" + qs.toString(), { credentials: "same-origin" })
       .then(function (r) { if (!r.ok) throw new Error("HTTP " + r.status); return r.json(); })
       .then(function (data) {
-        colors = data.colors || colors;
+        var raw = data.colors || {};
+        colors = {};
+        Object.keys(raw).forEach(function (t) { colors[t] = css("--t-" + t) || raw[t]; });
         var old = byId;
         byId = new Map();
         adj = new Map();
@@ -305,12 +310,16 @@
       form.addEventListener(evName, function (ev) {
         if (evName === "submit") ev.preventDefault();
         clearTimeout(debounce);
-        debounce = setTimeout(function () { load(paramsFromForm()); }, 450);
+        debounce = setTimeout(function () {
+          var p = paramsFromForm();
+          if (started && shown()) load(p); else pending = p;
+        }, 450);
       });
     });
   }
 
   document.addEventListener("sb:focus", function (ev) {
+    if (!started || !shown()) return;
     var id = ev.detail.id, n = byId.get(id);
     if (n) {
       selected = n;
@@ -325,17 +334,35 @@
     }
   });
 
-  document.body.addEventListener("graph-refresh", function () { load(lastParams); });
+  document.body.addEventListener("graph-refresh", function () { if (started) load(lastParams); });
+
+  function start(params) {
+    started = true;
+    resize();
+    return load(params).then(function () {
+      if (params.focus) {
+        var n = byId.get(Number(params.focus));
+        if (n) openNode(n);
+      }
+    });
+  }
+
+  // The network loads lazily: only when its tab is shown (see orbit.js).
+  document.addEventListener("sb:view", function (ev) {
+    if (ev.detail !== "network") return;
+    var p = pending;
+    pending = null;
+    if (!started) start(p || init);
+    else { resize(); if (p) load(p); }
+  });
+  document.addEventListener("sb:graph-load", function (ev) {
+    pending = ev.detail || {};
+    if (form) form.reset();
+  });
 
   window.addEventListener("resize", resize);
-  resize();
   var init = {};
   if (canvas.dataset.q) init.q = canvas.dataset.q;
   if (canvas.dataset.focus) init.focus = canvas.dataset.focus;
-  load(init).then(function () {
-    if (init.focus) {
-      var n = byId.get(Number(init.focus));
-      if (n) openNode(n);
-    }
-  });
+  if (shown()) start(init);
 })();
