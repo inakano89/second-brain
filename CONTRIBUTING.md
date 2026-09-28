@@ -20,7 +20,7 @@ Obrigado pelo interesse! Issues e pull requests são bem-vindos.
 
 ## Releases (mantenedores)
 
-1. `git tag vX.Y.Z && git push origin vX.Y.Z`.
+1. `git tag vX.Y.Z && git push origin vX.Y.Z`, ou pela web em **Releases → Draft a new release** com uma tag nova. Tags com hífen (`v1.2.0-rc1`) viram pré-release; as demais são marcadas como estáveis e *latest*, o que o instalador e o auto-update exigem.
 2. O workflow **Release** testa, compila os binários, gera `SHA256SUMS`, assina (`SHA256SUMS.sig`, se `UPDATE_SIGNING_KEY` estiver configurada), publica a release e a imagem multi-arch no GHCR.
 3. Instâncias com atualização automática instalam a nova versão no próximo `CRON_UPDATE`.
 
