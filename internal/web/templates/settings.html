@@ -11,6 +11,7 @@
     <a href="#updates">Atualizações</a>
     <a href="#actions">Agent actions</a>
     <a href="#backup">Backup &amp; export</a>
+    <a href="/import">Importar dados →</a>
     <a href="#password">Senha</a>
   </nav>
 
@@ -141,8 +142,9 @@
       <div class="row">
         <form method="post" action="/backup/now"><button class="btn primary">Backup agora</button></form>
         <a class="btn" href="/export/obsidian">⬇ Exportar vault Obsidian (.zip)</a>
+        <a class="btn" href="/import">⬆ Importar dados</a>
       </div>
-      <p class="muted">Snapshots (VACUUM INTO) cifrados com AES-256-GCM (chave derivada via Argon2id). Restaurar: <code>second-brain -decrypt arquivo.db.enc -out brain.db</code></p>
+      <p class="muted">O vault exportado pode ser reimportado em <a href="/import">Importar</a> (conexões preservadas). Snapshots (VACUUM INTO) cifrados com AES-256-GCM (chave derivada via Argon2id). Restaurar: <code>second-brain -decrypt arquivo.db.enc -out brain.db</code></p>
       {{if .Backups}}
       <table class="tbl compact">
         <thead><tr><th>Arquivo</th><th>Data</th><th class="r">Tamanho</th></tr></thead>

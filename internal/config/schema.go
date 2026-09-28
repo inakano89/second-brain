@@ -32,6 +32,7 @@ var Schema = []Field{
 	{Key: "WATCHER_ACTION", Label: "Após processar", Group: "Geral", Default: "archive", Kind: "select", Options: []string{"archive", "delete"}},
 	{Key: "QUEUE_WORKERS", Label: "Workers da fila", Group: "Geral", Default: "3", Kind: "number"},
 	{Key: "LOG_RETENTION_DAYS", Label: "Retenção de logs (dias)", Group: "Geral", Default: "90", Kind: "number"},
+	{Key: "IMPORT_MAX_MB", Label: "Limite de importação (MB)", Group: "Geral", Default: "200", Kind: "number", Help: "Tamanho máximo por envio na página Importar e em /api/import."},
 
 	{Key: "ADMIN_USER", Label: "Usuário", Group: "Segurança"},
 	{Key: "ADMIN_PASSWORD_HASH", Group: "Segurança", Hidden: true, Secret: true},

@@ -7,12 +7,14 @@ import (
 	"encoding/json"
 	"io"
 	"log/slog"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/config"
@@ -273,5 +275,90 @@ func TestEndToEnd(t *testing.T) {
 	e.expect(e.form("/nodes/2/delete", url.Values{}), 200, "removido")
 	if r := e.do("POST", "/nodes", strings.NewReader("title=x"), map[string]string{"Origin": "https://evil.example", "Content-Type": "application/x-www-form-urlencoded"}); r.Code != 403 {
 		t.Fatalf("csrf not blocked: %d", r.Code)
+	}
+}
+
+func (e *env) completeSetup() {
+	e.t.Helper()
+	rec := e.form("/setup", url.Values{"brain_name": {"Teste"}, "username": {"admin"}, "password": {"senha-forte-1"}, "password2": {"senha-forte-1"}, "http_port": {"8080"}, "timezone": {"America/Sao_Paulo"}})
+	e.expect(rec, 200, "Tudo pronto")
+	for _, c := range rec.Result().Cookies() {
+		if c.Name == sessionCookie {
+			e.cookie = c
+		}
+	}
+}
+
+func multipartBody(t *testing.T, fields map[string]string, files map[string]string) (io.Reader, string) {
+	var buf bytes.Buffer
+	mw := multipart.NewWriter(&buf)
+	for k, v := range fields {
+		mw.WriteField(k, v)
+	}
+	for name, body := range files {
+		fw, err := mw.CreateFormFile("file", name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		io.WriteString(fw, body)
+	}
+	mw.Close()
+	return &buf, mw.FormDataContentType()
+}
+
+func TestImport(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	token := e.cfg.Get("API_TOKEN")
+
+	e.expect(e.do("GET", "/import", nil, nil), 200, "Importar dados", "Evernote", "Google Keep", "My Clippings.txt", `name="llm"`, `enctype="multipart/form-data"`)
+	e.expect(e.do("GET", "/settings", nil, nil), 200, `href="/import"`)
+	e.expect(e.do("GET", "/help", nil, nil), 200, `id="import"`, "My Clippings.txt")
+
+	body, ct := multipartBody(t, map[string]string{"format": "auto", "tags": "migracao"}, map[string]string{
+		"contatos.vcf": "BEGIN:VCARD\nFN:Ana Lima\nEMAIL:ana@exemplo.com\nEND:VCARD\n",
+		"notas.csv":    "titulo;conteudo\nPrimeira;texto um\nSegunda;texto dois\n",
+	})
+	rec := e.do("POST", "/import", body, map[string]string{"Content-Type": ct})
+	loc := rec.Header().Get("Location")
+	if rec.Code != 303 || !strings.Contains(loc, "flash=") || !strings.Contains(loc, "#job-") {
+		t.Fatalf("upload: %d %s %s", rec.Code, loc, rec.Body.String())
+	}
+	id := loc[strings.Index(loc, "#job-")+5:]
+	var frag string
+	for i := 0; i < 200; i++ {
+		rec = e.do("GET", "/import/jobs/"+id, nil, nil)
+		e.expect(rec, 200)
+		if frag = rec.Body.String(); !strings.Contains(frag, "hx-trigger") {
+			break
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	if !strings.Contains(frag, "concluída") || !strings.Contains(frag, "<b>3</b><span>novos</span>") {
+		t.Fatalf("job fragment: %s", frag)
+	}
+	e.expect(e.do("GET", "/import", nil, nil), 200, "Importações recentes", "contatos.vcf")
+	e.expect(e.do("GET", "/import/jobs/nope", nil, nil), 404)
+
+	// REST: raw body with ?filename=, token auth, synchronous JSON report.
+	anon := *e
+	anon.cookie = nil
+	rec = anon.do("POST", "/api/import?filename=favoritos.html&tags=web", strings.NewReader(`<!DOCTYPE NETSCAPE-Bookmark-file-1><DL><DT><A HREF="https://go.dev/">Go</A></DL>`),
+		map[string]string{"Authorization": "Bearer " + token, "Content-Type": "text/html"})
+	e.expect(rec, 200, `"state":"done"`, `"created":1`, `"bookmarks":1`)
+	e.expect(anon.do("POST", "/api/import?filename=x.csv", strings.NewReader("a"), map[string]string{"Authorization": "Bearer nope"}), 401)
+	e.expect(anon.do("POST", "/api/import", strings.NewReader("a"), map[string]string{"Authorization": "Bearer " + token}), 400, "filename")
+	e.expect(anon.do("POST", "/api/import?filename=x.bin", strings.NewReader("\x00\x01"), map[string]string{"Authorization": "Bearer " + token}), 422, "reconhecido")
+	body, ct = multipartBody(t, map[string]string{"llm": "true"}, map[string]string{"a.md": "# Nota A\ncorpo"})
+	e.expect(anon.do("POST", "/api/import", body, map[string]string{"Authorization": "Bearer " + token, "Content-Type": ct}), 200, `"created":1`)
+
+	people, _ := e.db.ListNodes(context.Background(), database.NodeFilter{Types: []string{database.TypePerson}, Source: "import:vcard"})
+	if len(people) != 1 || people[0].Title != "Ana Lima" || !strings.Contains(strings.Join(people[0].Tags, ","), "migracao") {
+		t.Fatalf("imported contact: %+v", people)
+	}
+	e.cfg.Update(map[string]string{"IMPORT_MAX_MB": "1"})
+	body, ct = multipartBody(t, nil, map[string]string{"grande.md": strings.Repeat("x", 3<<20)})
+	if r := e.do("POST", "/import", body, map[string]string{"Content-Type": ct}); !strings.Contains(r.Header().Get("Location"), "IMPORT_MAX_MB") {
+		t.Fatalf("oversized upload accepted: %d %s", r.Code, r.Header().Get("Location"))
 	}
 }

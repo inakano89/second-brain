@@ -18,6 +18,7 @@ import (
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/importer"
 	"github.com/inakano89/second-brain/internal/integrations/google"
 	"github.com/inakano89/second-brain/internal/integrations/zepp"
 	"github.com/inakano89/second-brain/internal/llm"
@@ -50,6 +51,7 @@ type Deps struct {
 	Zepp     *zepp.Client
 	Telegram *telegram.Service
 	Updater  *updater.Updater
+	Importer *importer.Importer // created by New when nil
 	Hooks    Hooks
 	Log      *slog.Logger
 	Version  string
@@ -65,10 +67,13 @@ type Server struct {
 	static  http.Handler
 }
 
-var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help"}
+var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import"}
 
 // New parses templates and builds the server.
 func New(d Deps) (*Server, error) {
+	if d.Importer == nil {
+		d.Importer = importer.New(d.Cfg, d.Agent, d.Log)
+	}
 	s := &Server{Deps: d, log: d.Log.With("component", "web"), pages: map[string]*template.Template{}, limiter: newLoginLimiter()}
 	funcs := s.funcs()
 	for _, p := range pageNames {
@@ -150,6 +155,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /settings/telegram-test", s.auth(s.telegramTest))
 	mux.HandleFunc("POST /settings/api-token", s.auth(s.rotateToken))
 	mux.HandleFunc("GET /export/obsidian", s.auth(s.exportObsidian))
+	mux.HandleFunc("GET /import", s.auth(s.importPage))
+	mux.HandleFunc("POST /import", s.auth(s.importUpload))
+	mux.HandleFunc("GET /import/jobs/{id}", s.auth(s.importJob))
 	mux.HandleFunc("POST /backup/now", s.auth(s.backupNow))
 	mux.HandleFunc("GET /backups/{file}", s.auth(s.backupDownload))
 
@@ -165,6 +173,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /api/clip", s.cors(s.tokenOrSession(s.apiClip)))
 	mux.HandleFunc("POST /api/health/webhook", s.tokenOrSession(s.apiHealthWebhook))
 	mux.HandleFunc("POST /api/nodes", s.tokenOrSession(s.apiCreateNode))
+	mux.HandleFunc("POST /api/import", s.tokenOrSession(s.apiImport))
 
 	return s.recoverer(s.securityHeaders(s.setupGate(s.csrf(mux))))
 }

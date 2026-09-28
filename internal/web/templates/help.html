@@ -16,6 +16,7 @@
     <a href="#rss">📰 RSS</a>
     <a href="#clipper">✂️ Web Clipper</a>
     <a href="#inbox">📂 Pasta inbox</a>
+    <a href="#import">📥 Importar de outros apps</a>
     <a href="#backup">🔐 Backup</a>
     <a href="#install">🖥️ Instalação</a>
     <a href="#docker">🐳 Docker na VPS</a>
@@ -161,6 +162,25 @@
     <section class="card" id="inbox">
       <h2>📂 Pasta inbox</h2>
       <p>Arquivos colocados na pasta <code>inbox</code> (ao lado do <code>.env</code>) são lidos automaticamente: PDFs, fotos, áudios, <code>.md</code>, <code>.txt</code>. Depois são movidos para <code>inbox/.archive</code>. Dica: sincronize essa pasta com Syncthing/Dropbox para “jogar” arquivos do celular.</p>
+    </section>
+
+    <section class="card" id="import">
+      <h2>📥 Importar de outros apps</h2>
+      <p>Traga o que você já tem em outros aplicativos: abra <b>Importar</b> no menu, escolha o arquivo exportado e clique em <b>Importar</b>. O formato é reconhecido sozinho, e importar de novo o mesmo arquivo não duplica nada.</p>
+      <ul>
+        <li><b>Obsidian / Logseq</b>: compacte a pasta do vault em <code>.zip</code> (botão direito → Compactar/Enviar para → Pasta compactada) e envie o <code>.zip</code>.</li>
+        <li><b>Notion</b>: Settings → <i>Export all workspace content</i> → formato <b>Markdown &amp; CSV</b>. Envie o <code>.zip</code> baixado, sem descompactar.</li>
+        <li><b>Evernote</b>: selecione as notas (ou clique com o botão direito no caderno) → <b>Exportar</b> → formato <b>ENEX</b>.</li>
+        <li><b>Google Keep</b>: acesse <a href="https://takeout.google.com" target="_blank" rel="noopener">takeout.google.com</a>, clique em <i>Desmarcar tudo</i>, marque só <b>Keep</b> e exporte. Envie o <code>.zip</code>.</li>
+        <li><b>Favoritos do navegador</b>: Chrome/Edge: Ctrl+Shift+O → ⋮ → <i>Exportar favoritos</i>. Firefox: Ctrl+Shift+O → <i>Importar e fazer backup</i> → <i>Exportar para HTML</i>. Marque “baixar o texto de cada página” para ler os artigos depois.</li>
+        <li><b>Planilhas (Excel, Google Sheets)</b>: <i>Arquivo → Salvar como → CSV</i>. Nomeie as colunas como <code>título</code>, <code>conteúdo</code>, <code>tags</code>, <code>prazo</code>… (linhas com prazo viram tarefas). Exportações CSV do <b>Todoist</b>, <b>Readwise</b>, <b>Goodreads</b> e <b>Pocket</b> também funcionam.</li>
+        <li><b>Kindle</b>: ligue o Kindle no computador pelo cabo USB e envie o arquivo <code>documents/My Clippings.txt</code>. Cada livro vira um artigo com seus destaques.</li>
+        <li><b>Contatos</b>: <a href="https://contacts.google.com" target="_blank" rel="noopener">contacts.google.com</a> → <i>Exportar</i> → <b>vCard</b>. No iPhone: iCloud.com → Contatos → ⚙️ → <i>Exportar vCard</i>.</li>
+        <li><b>Agenda</b>: Google Agenda → ⚙️ Configurações → <i>Importar e exportar</i> → <b>Exportar</b> (baixa um <code>.zip</code> com os <code>.ics</code>). Outlook: <i>Salvar calendário</i>.</li>
+        <li><b>Feeds (Feedly, Inoreader)</b>: exporte o <b>OPML</b>; os feeds entram direto na lista de RSS.</li>
+      </ul>
+      <p class="hint">💰 A caixa “Analisar cada item com IA” faz resumo e tags por inteligência artificial, mas custa ~1 chamada por item. Para importar milhares de notas, deixe desmarcada: a busca, as tags e as conexões funcionam mesmo assim. Depois, use “Reprocessar” só nas notas que quiser.</p>
+      <p class="muted">Arquivo muito grande? O limite é <code>IMPORT_MAX_MB</code> (200 MB por padrão, em Configurações → Geral). Se o servidor fica atrás do nginx, aumente <code>client_max_body_size</code>. Ou copie o arquivo para o servidor e rode <code>second-brain -env .env -import arquivo.zip</code>.</p>
     </section>
 
     <section class="card" id="backup">

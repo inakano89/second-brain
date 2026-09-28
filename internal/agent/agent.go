@@ -30,6 +30,9 @@ const (
 	TaskReembed   = "node.reembed"
 )
 
+// MetaNoLLM marks nodes whose enrichment must use offline heuristics only (bulk imports).
+const MetaNoLLM = "no_llm"
+
 // Agent orchestrates knowledge processing.
 type Agent struct {
 	cfg     *config.Config
@@ -241,7 +244,7 @@ func nodeText(n *database.Node, limit int) string {
 }
 
 func (a *Agent) analyze(ctx context.Context, n *database.Node) (enrichResult, error) {
-	if !a.llm.Enabled() || n.Type == database.TypeHealth || n.Type == database.TypePerson {
+	if noLLM, _ := n.Meta[MetaNoLLM].(bool); noLLM || !a.llm.Enabled() || n.Type == database.TypeHealth || n.Type == database.TypePerson {
 		return heuristicAnalysis(n), nil
 	}
 	var res enrichResult

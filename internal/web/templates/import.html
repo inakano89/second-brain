@@ -1,0 +1,47 @@
+{{define "content"}}
+{{with .Data}}
+<div class="import">
+  <section class="card">
+    <h2>📥 Importar dados</h2>
+    <p class="muted">Traga notas, favoritos, contatos, agenda e destaques de outros apps. O formato é detectado automaticamente e arquivos <code>.zip</code> são percorridos por inteiro. Reimportar o mesmo arquivo atualiza os itens em vez de duplicar. <a href="/help#import">❓ Passo a passo por aplicativo</a></p>
+    <form method="post" action="/import" enctype="multipart/form-data">
+      <label>Arquivos <input type="file" name="file" multiple required accept="{{.Accept}}"></label>
+      <div class="row">
+        <label>Formato
+          <select name="format">
+            <option value="auto">Detectar automaticamente</option>
+            {{range .Formats}}{{if .Select}}<option value="{{.ID}}">{{.Name}}</option>{{end}}{{end}}
+          </select>
+        </label>
+        <label>Tags extras <input name="tags" placeholder="ex.: evernote, arquivo-2024"></label>
+      </div>
+      <label class="check"><input type="checkbox" name="llm" value="true"> Analisar cada item com IA (resumo, tags e pessoas citadas)</label>
+      <small class="muted">{{if .LLM}}Desmarcado: análise offline, sem custo (tags, links e busca semântica continuam funcionando). Marcado: ~1 chamada de LLM por item — cuidado em importações grandes.{{else}}Nenhum provedor de IA configurado: será usada a análise offline.{{end}}</small>
+      <label class="check"><input type="checkbox" name="fetch" value="true"> Favoritos: baixar o texto de cada página (em segundo plano)</label>
+      <p><button class="btn primary">Importar</button></p>
+      <small class="muted">Limite: {{.MaxMB}} MB por envio (<code>IMPORT_MAX_MB</code>). Arquivos maiores: use <code>second-brain -import arquivo.zip</code> no servidor.</small>
+    </form>
+  </section>
+
+  {{if .Jobs}}
+  <section class="card">
+    <h2>Importações recentes</h2>
+    {{range .Jobs}}{{template "import_job" .}}{{end}}
+  </section>
+  {{end}}
+
+  <section class="card">
+    <h2>Fontes suportadas</h2>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Fonte</th><th>Arquivo</th><th>Como exportar</th><th>Vira</th></tr></thead>
+      <tbody>
+      {{range .Formats}}<tr><td><b>{{.Name}}</b></td><td class="nowrap"><code>{{.Files}}</code></td><td>{{.HowTo}}</td><td class="muted">{{.Result}}</td></tr>{{end}}
+      </tbody>
+    </table></div>
+    <h3>API</h3>
+    <pre>curl -X POST "{{.Base}}/api/import?llm=false&amp;tags=migracao" \
+  -H "Authorization: Bearer $TOKEN" -F "file=@Evernote.enex" -F "file=@contatos.vcf"</pre>
+  </section>
+</div>
+{{end}}
+{{end}}

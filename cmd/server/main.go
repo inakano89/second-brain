@@ -25,6 +25,7 @@ import (
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/importer"
 	"github.com/inakano89/second-brain/internal/integrations/google"
 	"github.com/inakano89/second-brain/internal/integrations/rss"
 	"github.com/inakano89/second-brain/internal/integrations/zepp"
@@ -53,6 +54,10 @@ func main() {
 	updateNow := flag.Bool("update", false, "verifica e instala a última release do GitHub e sai")
 	healthcheck := flag.Bool("healthcheck", false, "verifica se o servidor local responde (exit 0/1) — usado pelo Docker")
 	resetPassword := flag.Bool("reset-password", false, "define uma nova senha de administrador e sai")
+	importPath := flag.String("import", "", "importa um arquivo (Obsidian/Notion .zip, .enex, .csv, .vcf, .ics, ...) e sai; arquivos extras após as flags")
+	importLLM := flag.Bool("import-llm", false, "com -import: analisa cada item com IA (custo de 1 chamada por item)")
+	importFetch := flag.Bool("import-fetch", false, "com -import: baixa o texto das páginas dos favoritos")
+	importTags := flag.String("import-tags", "", "com -import: tags extras separadas por vírgula")
 	flag.Parse()
 
 	if *showVersion {
@@ -84,7 +89,7 @@ func main() {
 	}
 
 	exe := updater.Executable()
-	if !*updateNow {
+	if !*updateNow && *importPath == "" {
 		// Container: prefer a newer binary installed by the auto-updater in the data volume.
 		if p := updater.PreferOverlay(cfg, version, exe); p != "" {
 			if err := updater.Relaunch(p, updater.FallbackEnv+"="+exe); err != nil {
@@ -115,6 +120,13 @@ func main() {
 		_ = db.RecordUsage(ctx, database.UsageRecord{Provider: provider, Model: model, Purpose: purpose, InputTokens: u.InputTokens, OutputTokens: u.OutputTokens, CostUSD: cost})
 	})
 	ag := agent.New(cfg, db, llmMgr, log)
+	if *importPath != "" {
+		code := runImportCLI(cfg, ag, log, append([]string{*importPath}, flag.Args()...),
+			importer.Options{LLM: *importLLM, Fetch: *importFetch, Tags: strings.Split(*importTags, ",")})
+		logHandler.Close()
+		db.Close()
+		os.Exit(code)
+	}
 	gc := google.New(cfg, db, log)
 	ag.SetCalendar(gc)
 	gsync := google.NewSyncer(gc, ag)
@@ -245,6 +257,44 @@ func runResetPassword(cfg *config.Config) {
 		fatal("reset-password", err)
 	}
 	fmt.Printf("Senha do usuário %q alterada.\n", cfg.Get("ADMIN_USER"))
+}
+
+func runImportCLI(cfg *config.Config, ag *agent.Agent, log *slog.Logger, paths []string, opt importer.Options) int {
+	var files []importer.File
+	for _, p := range paths {
+		if _, err := os.Stat(p); err != nil {
+			fmt.Fprintln(os.Stderr, "import:", err)
+			return 1
+		}
+		files = append(files, importer.File{Path: p, Name: filepath.Base(p)})
+	}
+	im := importer.New(cfg, ag, log)
+	opt.MaxBytes = max(im.MaxBytes(), 2<<30)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+	rep := im.Run(ctx, files, opt)
+	status := "concluída"
+	if rep.State == importer.StateFailed {
+		status = "falhou"
+	}
+	fmt.Printf("Importação %s: %d novos, %d atualizados, %d sem mudança, %d falhas, %d conexões, %d feeds RSS, %d arquivos ignorados.\n",
+		status, rep.Created, rep.Updated, rep.Skipped, rep.Failed, rep.Links, rep.Feeds, rep.Ignored)
+	if f := rep.FormatList(); f != "" {
+		fmt.Println("Formatos:", f)
+	}
+	for _, e := range rep.Errors {
+		fmt.Fprintln(os.Stderr, "erro:", e)
+	}
+	for _, w := range rep.Warnings {
+		fmt.Fprintln(os.Stderr, "aviso:", w)
+	}
+	if rep.Queued > 0 {
+		fmt.Printf("%d itens na fila de enriquecimento — processados pelo servidor em execução (ou no próximo início).\n", rep.Queued)
+	}
+	if rep.State == importer.StateFailed {
+		return 1
+	}
+	return 0
 }
 
 func runUpdateCLI(upd *updater.Updater) {
