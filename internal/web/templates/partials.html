@@ -47,7 +47,7 @@
     <button class="btn small" hx-get="/nodes/{{.ID}}/edit" hx-target="#detail">✎ Editar</button>
     <button class="btn small" hx-post="/nodes/{{.ID}}/enrich" hx-target="#detail">✨ Reprocessar IA</button>
     <button class="btn small" data-focus="{{.ID}}">◎ Focar no grafo</button>
-    <button class="btn small danger" hx-post="/nodes/{{.ID}}/delete" hx-target="#detail" hx-confirm="Remover “{{.Title}}” e suas conexões?">🗑</button>
+    <button class="btn small danger" hx-post="/nodes/{{.ID}}/delete" hx-target="#detail" hx-confirm="Mover “{{.Title}}” para a lixeira? Dá para desfazer por 30 dias." title="Apagar (vai para a lixeira)">🗑</button>
   </div>
 </article>
 {{end}}
@@ -131,10 +131,12 @@
     <div><b>{{.Created}}</b><span>novos</span></div>
     <div><b>{{.Updated}}</b><span>atualizados</span></div>
     <div><b>{{.Skipped}}</b><span>sem mudança</span></div>
+    {{if .Deleted}}<div><b>{{.Deleted}}</b><span>apagados antes</span></div>{{end}}
     <div><b>{{.Failed}}</b><span>falhas</span></div>
     <div><b>{{.Links}}</b><span>conexões</span></div>
   </div>
   <small class="muted">{{.Queued}} na fila de enriquecimento{{if .Feeds}} · {{.Feeds}} feed(s) adicionados ao RSS{{end}}{{if .Ignored}} · {{.Ignored}} arquivo(s) ignorado(s) (anexos, índices){{end}}</small>
+  {{if and (not .Running) (or .Created .Updated)}}<p class="small"><a href="/content?batch={{.ID}}">🗂 Revisar ou apagar os itens deste envio</a></p>{{end}}
   {{if .Errors}}<details open><summary>Erros ({{len .Errors}})</summary><ul class="small">{{range .Errors}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
   {{if .Warnings}}<details><summary>Avisos ({{len .Warnings}})</summary><ul class="small">{{range .Warnings}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
 </div>
@@ -161,5 +163,48 @@
     <li class="empty">Nada aqui ainda.</li>
   {{end}}
   </ul>
+</div>
+{{end}}
+
+{{define "content_rows"}}
+<div id="content-rows" hx-disinherit="*" hx-get="/content/rows" hx-include="#filters" hx-vals='{"offset":"{{.Query.Offset}}"}' hx-trigger="graph-refresh from:body" hx-swap="outerHTML" data-total="{{.Total}}">
+  {{if .Flash}}<div class="flash ok small">{{.Flash}}{{if .Undo}} <button type="button" class="btn small" hx-post="/content/undo" hx-vals='{"undo":"{{.Undo}}"}' hx-include="#filters" hx-target="#content-rows" hx-swap="outerHTML">↺ Desfazer</button>{{end}}</div>{{end}}
+  {{if .Error}}<div class="flash err small">{{.Error}}</div>{{end}}
+  <div class="select-all" id="select-all" hidden>
+    <span data-when="page">Os {{len .Nodes}} itens desta página estão selecionados.{{if gt .Total (len .Nodes)}} <button type="button" class="btn small" data-select-all>Selecionar todos os {{.Total}} resultados do filtro</button>{{if gt .Total .BulkMax}} <small class="muted">(no máximo {{.BulkMax}} por ação)</small>{{end}}{{end}}</span>
+    <span data-when="all" hidden>Todos os {{.Total}} resultados do filtro estão selecionados. <button type="button" class="btn small" data-clear-sel>Limpar seleção</button></span>
+  </div>
+  <div class="tbl-wrap"><table class="tbl content-tbl">
+    <thead><tr><th class="ck"><input type="checkbox" data-check-page aria-label="Selecionar todos desta página"></th><th>Título</th><th>Tipo</th><th class="c-source">Origem</th><th class="c-tags">Tags</th><th class="c-date">Criado</th></tr></thead>
+    <tbody>
+    {{range .Nodes}}
+    <tr data-id="{{.ID}}">
+      <td class="ck"><input type="checkbox" value="{{.ID}}" data-row aria-label="Selecionar “{{.Title}}”"></td>
+      <td class="title"><a href="/?focus={{.ID}}" hx-get="/nodes/{{.ID}}" hx-target="#detail" data-open="{{.ID}}">{{if and (eq .Type "task") (eq .Status "done")}}<span class="done-mark">✓</span> {{end}}{{.Title}}</a>
+        {{with .Summary}}<small>{{truncate . 140}}</small>{{else}}{{with .Content}}<small>{{truncate . 140}}</small>{{end}}{{end}}</td>
+      <td><span class="badge" style="--c: {{typeColor .Type}}">{{typeLabel .Type}}</span></td>
+      <td class="c-source small muted">{{sourceLabel .Source}}</td>
+      <td class="c-tags tagcell">{{range .Tags}}#{{.}} {{end}}</td>
+      <td class="c-date nowrap small">{{fmtTime .CreatedAt}}</td>
+    </tr>
+    {{else}}
+    <tr><td colspan="6" class="empty">{{if .Query.Active}}Nada encontrado com esses filtros.{{else}}Nenhum item ainda. Envie algo pelo Telegram, pela web ou <a href="/import">importe arquivos</a>.{{end}}</td></tr>
+    {{end}}
+    </tbody>
+  </table></div>
+  <div class="pager">
+    <span class="muted small">{{if .Total}}{{.First}}–{{.Last}} de {{.Total}}{{end}}</span>
+    <span>
+      {{if .HasPrev}}<button type="button" class="btn small" hx-get="/content/rows" hx-include="#filters" hx-vals='{"offset":"{{.Prev}}"}' hx-target="#content-rows" hx-swap="outerHTML">← Anteriores</button>{{end}}
+      {{if .HasNext}}<button type="button" class="btn small" hx-get="/content/rows" hx-include="#filters" hx-vals='{"offset":"{{.Next}}"}' hx-target="#content-rows" hx-swap="outerHTML">Próximos →</button>{{end}}
+    </span>
+  </div>
+</div>
+{{end}}
+
+{{define "node_trashed"}}
+<div class="empty">
+  <p>“{{.Title}}” foi para a <a href="/content/trash">lixeira</a> (30 dias) e não volta nas sincronizações.</p>
+  <button type="button" class="btn small" hx-post="/nodes/restore" hx-vals='{"batch":"{{.Batch}}","id":"{{.ID}}"}' hx-target="#detail">↺ Desfazer</button>
 </div>
 {{end}}

@@ -68,6 +68,7 @@ type Report struct {
 	Created  int            `json:"created"`
 	Updated  int            `json:"updated"`
 	Skipped  int            `json:"skipped"`
+	Deleted  int            `json:"deleted"` // deleted before by the user ("não trazer de volta")
 	Failed   int            `json:"failed"`
 	Ignored  int            `json:"ignored"`
 	Links    int            `json:"links"`
@@ -309,6 +310,7 @@ const (
 	outCreated = iota + 1
 	outUpdated
 	outSkipped
+	outDeleted
 )
 
 // ingest stores items (goroutine pool), resolves links, then queues enrichment so
@@ -329,6 +331,12 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 		j.update(func(r *Report) { r.Feeds = n })
 	}
 
+	rep := j.Report()
+	stamp := map[string]any{ // lets the Conteúdo page list and undo this import
+		"import_batch": rep.ID,
+		"import_name":  extract.Truncate(strings.Join(rep.Files, ", "), 120),
+		"import_at":    rep.Started.UTC().Format(database.TimeLayout),
+	}
 	results := make([]result, len(items))
 	var done atomic.Int64
 	g, gctx := errgroup.WithContext(ctx)
@@ -339,7 +347,7 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 			if gctx.Err() != nil {
 				return gctx.Err()
 			}
-			id, outcome, err := im.ingestOne(gctx, it, opt)
+			id, outcome, err := im.ingestOne(gctx, it, opt, stamp)
 			n := done.Add(1)
 			j.update(func(r *Report) {
 				r.Done = int(n)
@@ -353,6 +361,8 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 					r.Created++
 				case outcome == outUpdated:
 					r.Updated++
+				case outcome == outDeleted:
+					r.Deleted++
 				default:
 					r.Skipped++
 				}
@@ -427,10 +437,13 @@ func (it *Item) normalize() {
 	}
 }
 
-func (im *Importer) ingestOne(ctx context.Context, it *Item, opt Options) (int64, int, error) {
+func (im *Importer) ingestOne(ctx context.Context, it *Item, opt Options, stamp map[string]any) (int64, int, error) {
 	it.normalize()
 	it.Tags = append(it.Tags, opt.Tags...)
 	it.Meta[agent.MetaNoLLM] = !opt.LLM
+	for k, v := range stamp {
+		it.Meta[k] = v
+	}
 	source := SourcePrefix + it.Format
 	ex, err := im.db.GetNodeBySource(ctx, source, it.Ref)
 	switch {
@@ -450,6 +463,9 @@ func (im *Importer) ingestOne(ctx context.Context, it *Item, opt Options) (int64
 		Type: it.Type, Title: it.Title, Content: it.Content, Summary: it.Summary, Source: source, SourceRef: it.Ref,
 		Status: it.Status, Tags: it.Tags, Meta: it.Meta, DueAt: it.DueAt, CreatedAt: it.CreatedAt,
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return 0, outDeleted, nil
+	}
 	if err != nil {
 		return 0, 0, err
 	}

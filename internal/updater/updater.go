@@ -49,6 +49,7 @@ type Status struct {
 	Notes       string    `json:"notes"`
 	URL         string    `json:"url"`
 	Error       string    `json:"error"`
+	Pending     string    `json:"pending,omitempty"` // release found, files still being uploaded
 	Installing  bool      `json:"installing"`
 	Supported   bool      `json:"supported"`
 	Reason      string    `json:"reason"`
@@ -101,6 +102,24 @@ type Updater struct {
 	mu         sync.Mutex
 	status     Status
 	installing atomic.Bool
+	retry      *time.Timer // pending release: next install attempt
+}
+
+// pendingWindow is how long after publication missing files mean "still uploading"
+// (a release published from the web UI exists before the workflow attaches the binaries).
+const pendingWindow = 3 * time.Hour
+
+// retryDelay spaces install attempts while a release is still receiving its files.
+var retryDelay = 10 * time.Minute
+
+// pendingError reports a new release whose files are not attached yet.
+type pendingError struct {
+	tag, missing string
+}
+
+func (e *pendingError) Error() string {
+	return fmt.Sprintf("a %s acabou de ser publicada e ainda está recebendo os arquivos (%s); nova tentativa automática em %d min",
+		e.tag, e.missing, int(retryDelay.Minutes()))
 }
 
 // New creates an updater. pubKey is a base64 ed25519 public key; when set,
@@ -453,6 +472,13 @@ func (u *Updater) Install(ctx context.Context) error {
 	}
 	defer u.installing.Store(false)
 	err := u.install(ctx)
+	var pe *pendingError
+	if errors.As(err, &pe) {
+		u.log.Info("release ainda sem os arquivos; nova tentativa agendada", "release", pe.tag, "missing", pe.missing, "in", retryDelay)
+		u.setStatus(func(s *Status) { s.Error, s.Pending = "", pe.Error() })
+		u.scheduleRetry()
+		return nil
+	}
 	if err != nil {
 		u.log.Error("atualização falhou", "err", err)
 		u.setStatus(func(s *Status) { s.Error = "instalação: " + err.Error() })
@@ -460,7 +486,27 @@ func (u *Updater) Install(ctx context.Context) error {
 	return err
 }
 
+// scheduleRetry tries the installation again later (one pending attempt at a time).
+func (u *Updater) scheduleRetry() {
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	if u.retry != nil {
+		return
+	}
+	u.retry = time.AfterFunc(retryDelay, func() {
+		u.mu.Lock()
+		u.retry = nil
+		u.mu.Unlock()
+		ctx, cancel := context.WithTimeout(context.Background(), 15*time.Minute)
+		defer cancel()
+		if err := u.Install(ctx); err != nil {
+			u.log.Warn("nova tentativa de atualização falhou", "err", err)
+		}
+	})
+}
+
 func (u *Updater) install(ctx context.Context) error {
+	u.setStatus(func(s *Status) { s.Pending = "" })
 	rel, err := u.latest(ctx)
 	if err != nil {
 		return err
@@ -470,6 +516,21 @@ func (u *Updater) install(ctx context.Context) error {
 	}
 	name := AssetName()
 	assetURL, size, ok := rel.asset(name)
+	_, _, sumsOK := rel.asset("SHA256SUMS")
+	_, _, sigOK := rel.asset("SHA256SUMS.sig")
+	var missing []string
+	if !ok {
+		missing = append(missing, name)
+	}
+	if !sumsOK {
+		missing = append(missing, "SHA256SUMS")
+	}
+	if u.pubKey != nil && !sigOK {
+		missing = append(missing, "SHA256SUMS.sig")
+	}
+	if len(missing) > 0 && time.Since(rel.PublishedAt) < pendingWindow {
+		return &pendingError{tag: rel.TagName, missing: strings.Join(missing, ", ")}
+	}
 	if !ok {
 		return fmt.Errorf("release %s não contém %s", rel.TagName, name)
 	}

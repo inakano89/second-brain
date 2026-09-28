@@ -148,6 +148,7 @@
         <dt>Última verificação</dt><dd>{{fmtTime .CheckedAt}}</dd>
         <dt>Verificação</dt><dd>SHA-256{{if .Signed}} + assinatura ed25519{{end}} · asset <code>{{.Asset}}</code></dd>
         {{if not .Supported}}<dt>Auto-instalação</dt><dd class="warn">{{.Reason}}</dd>{{end}}
+        {{if .Pending}}<dt>Aguardando</dt><dd>⏳ {{.Pending}}</dd>{{end}}
         {{if .Error}}<dt>Erro</dt><dd class="warn">{{.Error}}</dd>{{end}}
         {{if .Installing}}<dt>Status</dt><dd><span class="pill run">instalando…</span></dd>{{end}}
       </dl>

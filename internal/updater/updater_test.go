@@ -17,7 +17,9 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/database"
@@ -141,5 +143,88 @@ func TestInstallFromMockGitHubWithSignature(t *testing.T) {
 	u3.inCtr = func() bool { return false }
 	if u3.newer("v1.1.0") {
 		t.Fatal("skipped version offered again")
+	}
+}
+
+// A release published from the web UI exists a few seconds before the workflow
+// attaches its files: the updater must wait and retry instead of failing.
+func TestInstallWaitsForReleaseFiles(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("uses a shell script as fake binary")
+	}
+	dir := t.TempDir()
+	exe := filepath.Join(dir, "second-brain")
+	os.WriteFile(exe, []byte("#!/bin/sh\necho second-brain v1.0.0\n"), 0o755)
+	newBin := []byte("#!/bin/sh\necho second-brain v1.1.0\n")
+	sum := sha256.Sum256(newBin)
+	sums := []byte(fmt.Sprintf("%s  %s\n", hex.EncodeToString(sum[:]), AssetName()))
+
+	var mu sync.Mutex
+	attached, published := false, time.Now().UTC()
+	var srv *httptest.Server
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		ready, pub := attached, published
+		mu.Unlock()
+		switch r.URL.Path {
+		case "/repos/o/r/releases/latest":
+			assets := []map[string]any{}
+			if ready {
+				assets = append(assets, map[string]any{"name": AssetName(), "browser_download_url": srv.URL + "/dl/bin", "size": len(newBin)},
+					map[string]any{"name": "SHA256SUMS", "browser_download_url": srv.URL + "/dl/sums"})
+			}
+			json.NewEncoder(w).Encode(map[string]any{"tag_name": "v1.1.0", "published_at": pub.Format(time.RFC3339), "assets": assets})
+		case "/dl/bin":
+			w.Write(newBin)
+		case "/dl/sums":
+			w.Write(sums)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("UPDATE_REPO=o/r\nDATA_DIR=./data\n"), 0o600)
+	cfg, _ := config.Load(filepath.Join(dir, ".env"))
+	db, err := database.Open(filepath.Join(dir, "data", "brain.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	old := retryDelay
+	retryDelay = 50 * time.Millisecond
+	defer func() { retryDelay = old }()
+	u := New(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), "v1.0.0", "", exe)
+	u.apiBase, u.inCtr = srv.URL, func() bool { return false }
+	restarted := make(chan struct{}, 1)
+	u.RequestRestart = func() { restarted <- struct{}{} }
+
+	if err := u.Install(context.Background()); err != nil {
+		t.Fatalf("pending release must not fail: %v", err)
+	}
+	if st := u.Status(); st.Pending == "" || st.Error != "" || !strings.Contains(st.Pending, "v1.1.0") {
+		t.Fatalf("status = %+v", st)
+	}
+	mu.Lock()
+	attached = true
+	mu.Unlock()
+	select {
+	case <-restarted:
+	case <-time.After(5 * time.Second):
+		t.Fatal("retry did not install the release once its files were attached")
+	}
+	if got, _ := os.ReadFile(exe); string(got) != string(newBin) || u.Status().Pending != "" {
+		t.Fatalf("binary not swapped or pending not cleared: %+v", u.Status())
+	}
+
+	// Files still missing hours after publication is a real error.
+	os.WriteFile(exe, []byte("#!/bin/sh\necho second-brain v1.0.0\n"), 0o755)
+	mu.Lock()
+	attached, published = false, time.Now().Add(-5*time.Hour)
+	mu.Unlock()
+	u2 := New(cfg, db, slog.New(slog.NewTextHandler(io.Discard, nil)), "v1.0.0", "", exe)
+	u2.apiBase, u2.inCtr = srv.URL, func() bool { return false }
+	if err := u2.Install(context.Background()); err == nil || !strings.Contains(err.Error(), "não contém") {
+		t.Fatalf("old release without files: %v", err)
 	}
 }

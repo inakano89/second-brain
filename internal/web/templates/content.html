@@ -1,0 +1,204 @@
+{{define "head"}}<script src="/static/content.js" defer></script>{{end}}
+{{define "content"}}
+{{with .Data}}
+<div class="content">
+  <nav class="content-tabs" aria-label="Seções">
+    <a href="/content" class="{{if eq .Tab "items"}}on{{end}}">🗂 Itens</a>
+    <a href="/content/sends" class="{{if eq .Tab "sends"}}on{{end}}">📥 Envios</a>
+    <a href="/content/trash" class="{{if eq .Tab "trash"}}on{{end}}">🗑 Lixeira{{if .Trash}}<span class="count">{{.Trash}}</span>{{end}}</a>
+    <a href="/help#content" class="muted small">❓ Como usar</a>
+  </nav>
+
+{{if eq .Tab "items"}}
+  <section class="card">
+    <form id="filters" class="content-filters" action="/content" method="get" role="search"
+      hx-get="/content/rows" hx-target="#content-rows" hx-swap="outerHTML" hx-trigger="change, input changed delay:350ms from:#f-q, submit">
+      <input type="search" id="f-q" name="q" value="{{.Rows.Query.Q}}" placeholder="Buscar no título e no texto…" aria-label="Buscar">
+      <select name="type" aria-label="Tipo">
+        <option value="">Todos os tipos</option>
+        {{range .Types}}<option value="{{.}}" {{if eq . $.Data.Rows.Query.Type}}selected{{end}}>{{typeLabel .}}</option>{{end}}
+      </select>
+      <select name="source" aria-label="Origem">
+        <option value="">Todas as origens</option>
+        {{range .Sources}}<option value="{{.Value}}" {{if eq .Value $.Data.Rows.Query.Source}}selected{{end}}>{{.Label}} ({{.Count}})</option>{{end}}
+      </select>
+      <input name="tag" value="{{.Rows.Query.Tag}}" placeholder="#tag" aria-label="Tag">
+      <select name="status" aria-label="Situação da tarefa">
+        <option value="">Tarefas: todas</option>
+        <option value="open" {{if eq .Rows.Query.Status "open"}}selected{{end}}>Abertas</option>
+        <option value="done" {{if eq .Rows.Query.Status "done"}}selected{{end}}>Concluídas</option>
+      </select>
+      <span class="dates"><input type="date" name="from" value="{{.Rows.Query.From}}" aria-label="Criados desde"> – <input type="date" name="to" value="{{.Rows.Query.To}}" aria-label="Criados até"></span>
+      <select name="order" aria-label="Ordem">
+        <option value="">Mais recentes</option>
+        <option value="oldest" {{if eq .Rows.Query.Order "oldest"}}selected{{end}}>Mais antigos</option>
+        <option value="updated" {{if eq .Rows.Query.Order "updated"}}selected{{end}}>Editados por último</option>
+        <option value="title" {{if eq .Rows.Query.Order "title"}}selected{{end}}>Título (A–Z)</option>
+      </select>
+      <input type="hidden" name="special" value="{{.Rows.Query.Special}}">
+      <input type="hidden" name="batch" value="{{.Rows.Query.Batch}}">
+      <noscript><button class="btn small">Filtrar</button></noscript>
+    </form>
+    <div class="quick">
+      <span class="muted small">Faxina:</span>
+      {{range .Specials}}<button type="button" class="chip{{if eq .Value $.Data.Rows.Query.Special}} on{{end}}" data-special="{{.Value}}" aria-pressed="{{if eq .Value $.Data.Rows.Query.Special}}true{{else}}false{{end}}">{{.Label}} <small>{{.Count}}</small></button>{{end}}
+      {{if .Rows.Query.Batch}}<button type="button" class="chip on" data-clear-batch>📥 {{.BatchLabel}} ✕</button>{{end}}
+      <a class="small" href="/content">Limpar filtros</a>
+      <span class="muted small total">{{.Total}} itens no cérebro</span>
+    </div>
+  </section>
+
+  <div class="content-layout">
+    <form id="bulk" hx-disinherit="*" hx-post="/content/bulk" hx-target="#content-rows" hx-swap="outerHTML" hx-include="#filters">
+      <div class="bulkbar" id="bulkbar" hidden>
+        <span class="sel"><span id="sel-count">0</span> selecionado(s)</span>
+        <span class="grp">
+          <button class="btn small danger" name="action" value="trash">🗑 Apagar</button>
+          <label class="check" title="Integrações e reimportações não trazem estes itens de volta"><input type="checkbox" name="forget" value="1" checked> Não trazer de volta</label>
+        </span>
+        <button type="button" class="btn small more-toggle" data-more aria-expanded="false">Mais ações ▾</button>
+        <span class="bulk-more">
+          <span class="grp"><input name="set_tag" placeholder="tag" aria-label="Tag para adicionar ou remover (várias: separe por vírgula)"><button class="btn small" name="action" value="tag_add">+ Tag</button><button class="btn small" name="action" value="tag_remove">− Tag</button></span>
+          <span class="grp">
+            <select name="to_type" aria-label="Novo tipo"><option value="">Mudar tipo…</option>{{range .Types}}<option value="{{.}}">{{typeLabel .}}</option>{{end}}</select>
+            <button class="btn small" name="action" value="retype">Aplicar</button>
+          </span>
+          <span class="grp"><button class="btn small" name="action" value="done">✓ Concluir</button><button class="btn small" name="action" value="reopen">↺ Reabrir</button></span>
+          <button class="btn small" name="action" value="enrich" data-confirm="Reprocessar com IA faz 1 chamada ao provedor por item (pode gerar custo). Continuar?">✨ Reprocessar IA</button>
+          <button type="button" class="btn small" data-export>⬇ Exportar</button>
+        </span>
+        <button type="button" class="btn small" data-clear-sel>Limpar seleção</button>
+        <input type="hidden" name="all" id="sel-all" value="">
+        <span id="sel-ids"></span>
+      </div>
+      {{template "content_rows" .Rows}}
+    </form>
+    <aside id="detail" class="card content-detail" aria-live="polite">
+      <p class="empty">Clique em um item para ler, editar, apagar ou ver as conexões.</p>
+    </aside>
+  </div>
+{{end}}
+
+{{if eq .Tab "sends"}}
+  <section class="card">
+    <h2>📥 Importações</h2>
+    <p class="muted">Cada importação feita em <a href="/import">Importar</a> fica agrupada aqui. Apague um envio inteiro de uma vez — os itens vão para a lixeira por 30 dias.</p>
+    {{if .Batches}}
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Arquivo</th><th>Tipo</th><th class="r">Itens</th><th>Quando</th><th></th></tr></thead>
+      <tbody>
+      {{range .Batches}}
+      <tr>
+        <td><b>{{if .Name}}{{.Name}}{{else}}envio {{.Batch}}{{end}}</b></td>
+        <td class="muted">{{sourceLabel .Source}}</td>
+        <td class="r">{{.Count}}</td>
+        <td class="nowrap">{{fmtTime .At}}</td>
+        <td class="nowrap">
+          <a class="btn small" href="/content?batch={{.Batch}}">Ver itens</a>
+          <form method="post" action="/content/sends/trash" class="inline">
+            <input type="hidden" name="batch" value="{{.Batch}}"><input type="hidden" name="forget" value="1">
+            <button class="btn small danger" data-confirm="Mover os {{.Count}} itens deste envio para a lixeira? Eles não voltam se você importar o arquivo de novo.">🗑 Apagar envio</button>
+          </form>
+        </td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{else}}<p class="empty">Nenhuma importação com itens (importações anteriores à versão 0.4 aparecem por origem, abaixo).</p>{{end}}
+  </section>
+  <section class="card">
+    <h2>Por origem</h2>
+    <p class="muted">Tudo o que entrou por cada canal ou integração.</p>
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Origem</th><th class="r">Itens</th><th></th></tr></thead>
+      <tbody>
+      {{range .Sources}}
+      <tr>
+        <td>{{.Label}} <small class="muted mono">{{.Value}}</small></td>
+        <td class="r">{{.Count}}</td>
+        <td class="nowrap">
+          <a class="btn small" href="/content?source={{urlquery .Value}}">Ver itens</a>
+          <form method="post" action="/content/sends/trash" class="inline">
+            <input type="hidden" name="source" value="{{.Value}}"><input type="hidden" name="forget" value="1">
+            <button class="btn small danger" data-confirm="Mover os {{.Count}} itens de “{{.Label}}” para a lixeira? A integração não traz de volta o que você apagou.">🗑 Apagar tudo</button>
+          </form>
+        </td>
+      </tr>
+      {{else}}<tr><td colspan="3" class="empty">Cérebro vazio.</td></tr>{{end}}
+      </tbody>
+    </table></div>
+  </section>
+{{end}}
+
+{{if eq .Tab "trash"}}
+  <section class="card">
+    <div class="card-head">
+      <h2>🗑 Lixeira</h2>
+      {{if .Trash}}<form method="post" action="/content/trash/action" class="inline">
+        <input type="hidden" name="action" value="empty">
+        <button class="btn small danger" data-confirm="Apagar definitivamente os {{.Trash}} itens da lixeira? Não dá para desfazer.">Esvaziar lixeira</button>
+      </form>{{end}}
+    </div>
+    <p class="muted">Itens apagados ficam aqui por {{.Retainer}} dias e depois são removidos de vez pela manutenção diária. Restaurar devolve o item com as conexões.</p>
+    {{if .Batches}}
+    <h3>Apagados por lote</h3>
+    <ul class="plain trash-batches">
+      {{range .Batches}}
+      <li>
+        <span><b>{{.Count}}</b> {{if eq .Count 1}}item{{else}}itens{{end}} · {{fmtTime .DeletedAt}} · <span class="muted">{{truncate .Title 60}}{{if gt .Count 1}} e outros{{end}}</span></span>
+        <span>
+          <a class="btn small" href="/content/trash?batch={{.Batch}}">Ver</a>
+          <form method="post" action="/content/trash/action"><input type="hidden" name="batch" value="{{.Batch}}"><button class="btn small primary" name="action" value="restore">↺ Restaurar lote</button></form>
+          <form method="post" action="/content/trash/action"><input type="hidden" name="batch" value="{{.Batch}}"><button class="btn small danger" name="action" value="purge" data-confirm="Apagar definitivamente estes {{.Count}} itens?">Apagar de vez</button></form>
+        </span>
+      </li>
+      {{end}}
+    </ul>
+    {{end}}
+  </section>
+  <section class="card">
+    <form method="get" action="/content/trash" class="content-filters">
+      <input type="search" name="q" value="{{.Q}}" placeholder="Buscar pelo título na lixeira…" aria-label="Buscar na lixeira">
+      {{if .Batch}}<input type="hidden" name="batch" value="{{.Batch}}"><a class="chip on" href="/content/trash">lote {{.Batch}} ✕</a>{{end}}
+      <button class="btn small">Buscar</button>
+    </form>
+    <form method="post" action="/content/trash/action" id="trash-form">
+      <div class="tbl-wrap"><table class="tbl content-tbl">
+        <thead><tr><th class="ck"><input type="checkbox" data-check-all aria-label="Selecionar todos da página"></th><th>Título</th><th>Tipo</th><th class="c-source">Origem</th><th class="c-date">Apagado em</th></tr></thead>
+        <tbody>
+        {{range .Items}}
+        <tr>
+          <td class="ck"><input type="checkbox" name="id" value="{{.ID}}" aria-label="Selecionar {{.Title}}"></td>
+          <td class="title">{{.Title}}</td>
+          <td><span class="badge" style="--c: {{typeColor .Type}}">{{typeLabel .Type}}</span></td>
+          <td class="c-source small muted">{{sourceLabel .Source}}</td>
+          <td class="c-date nowrap small">{{fmtTime .DeletedAt}}</td>
+        </tr>
+        {{else}}<tr><td colspan="5" class="empty">Lixeira vazia.</td></tr>{{end}}
+        </tbody>
+      </table></div>
+      {{if .Items}}
+      <div class="pager">
+        <span class="grp">
+          <button class="btn small primary" name="action" value="restore">↺ Restaurar selecionados</button>
+          <button class="btn small danger" name="action" value="purge" data-confirm="Apagar definitivamente os itens selecionados?">Apagar de vez</button>
+        </span>
+        <span class="muted small">{{.Total}} na lixeira{{if .Q}} com “{{.Q}}”{{end}}
+          {{if .HasPrev}}<a class="btn small" href="/content/trash?q={{urlquery .Q}}&amp;batch={{.Batch}}&amp;offset={{.Prev}}">← Anteriores</a>{{end}}
+          {{if .HasNext}}<a class="btn small" href="/content/trash?q={{urlquery .Q}}&amp;batch={{.Batch}}&amp;offset={{.Next}}">Próximos →</a>{{end}}
+        </span>
+      </div>
+      {{end}}
+    </form>
+  </section>
+  <section class="card">
+    <h2>🚫 Não trazer de volta</h2>
+    <p class="muted">{{if .Blocked}}{{.Blocked}} item(ns) apagado(s) com a opção “Não trazer de volta” são ignorados pelas integrações (Google, RSS, Zepp…) e pelas reimportações — mesmo depois de sair da lixeira. Reenviar pelo Telegram, pela web ou pela pasta inbox traz o item de volta.{{else}}Nenhum item bloqueado. Ao apagar com “Não trazer de volta”, as integrações e reimportações deixam de trazer o item de novo.{{end}}</p>
+    {{if .Blocked}}<form method="post" action="/content/trash/action">
+      <button class="btn small" name="action" value="unblock" data-confirm="Permitir que os {{.Blocked}} itens apagados voltem nas próximas sincronizações e importações?">Permitir que voltem</button>
+    </form>{{end}}
+  </section>
+{{end}}
+</div>
+{{end}}
+{{end}}

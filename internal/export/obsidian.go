@@ -54,15 +54,37 @@ type edgeRef struct {
 	out   bool
 }
 
-// Obsidian streams a zip vault into w. Markdown rendering runs on a goroutine pool;
-// a single writer goroutine serializes zip entries in id order.
+// Obsidian streams a zip vault with every node into w.
 func Obsidian(ctx context.Context, db *database.DB, w io.Writer, loc *time.Location) error {
+	return ObsidianNodes(ctx, db, w, loc, nil)
+}
+
+// ObsidianNodes streams a zip vault with the given nodes (all when ids is nil); links to
+// nodes outside the set are left out. Markdown rendering runs on a goroutine pool;
+// a single writer goroutine serializes zip entries in id order.
+func ObsidianNodes(ctx context.Context, db *database.DB, w io.Writer, loc *time.Location, ids []int64) error {
 	var nodes []database.Node
-	if err := db.IterateNodes(ctx, func(n *database.Node) error {
-		nodes = append(nodes, *n)
-		return nil
-	}); err != nil {
-		return err
+	var in map[int64]bool
+	if ids == nil {
+		if err := db.IterateNodes(ctx, func(n *database.Node) error {
+			nodes = append(nodes, *n)
+			return nil
+		}); err != nil {
+			return err
+		}
+	} else {
+		in = make(map[int64]bool, len(ids))
+		for start := 0; start < len(ids); start += 500 {
+			part, err := db.GetNodes(ctx, ids[start:min(len(ids), start+500)])
+			if err != nil {
+				return err
+			}
+			nodes = append(nodes, part...)
+		}
+		sort.Slice(nodes, func(i, j int) bool { return nodes[i].ID < nodes[j].ID })
+		for _, n := range nodes {
+			in[n.ID] = true
+		}
 	}
 	// Unique file names per node.
 	names := make(map[int64]string, len(nodes))
@@ -87,6 +109,9 @@ func Obsidian(ctx context.Context, db *database.DB, w io.Writer, loc *time.Locat
 		if err := rows.Scan(&s, &t, &rel); err != nil {
 			rows.Close()
 			return err
+		}
+		if in != nil && (!in[s] || !in[t]) {
+			continue
 		}
 		edges[s] = append(edges[s], edgeRef{t, rel, true})
 		edges[t] = append(edges[t], edgeRef{s, rel, false})

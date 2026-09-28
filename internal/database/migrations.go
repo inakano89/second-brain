@@ -138,4 +138,26 @@ CREATE TABLE seen_items (
 	PRIMARY KEY (ns, key)
 );
 `,
+	// 2 — trash (deleted nodes kept 30 days) and items the user deleted (not re-imported)
+	`
+CREATE TABLE trash (
+	id         INTEGER PRIMARY KEY,
+	type       TEXT NOT NULL,
+	title      TEXT NOT NULL,
+	source     TEXT NOT NULL DEFAULT '',
+	node       TEXT NOT NULL,
+	edges      TEXT NOT NULL DEFAULT '[]',
+	batch      TEXT NOT NULL DEFAULT '',
+	deleted_at TEXT NOT NULL
+);
+CREATE INDEX idx_trash_deleted ON trash(deleted_at);
+CREATE INDEX idx_trash_batch ON trash(batch);
+
+CREATE TABLE deleted_refs (
+	source     TEXT NOT NULL,
+	source_ref TEXT NOT NULL,
+	deleted_at TEXT NOT NULL,
+	PRIMARY KEY (source, source_ref)
+);
+`,
 }

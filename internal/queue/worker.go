@@ -157,7 +157,7 @@ func (w *Worker) execute(ctx context.Context, t *database.Task) {
 		return h(tctx, t.Payload)
 	}()
 	cancel()
-	if err == nil {
+	if err == nil || errors.Is(err, database.ErrDeleted) { // deleted by the user: nothing left to do
 		_ = w.db.CompleteTask(bg, t.ID)
 		w.log.Debug("tarefa concluída", "kind", t.Kind, "id", t.ID, "ms", time.Since(start).Milliseconds())
 		return

@@ -24,6 +24,7 @@
 - [Interface web](#interface-web)
 - [Canais de captura](#canais-de-captura)
 - [Importação de dados](#importação-de-dados)
+- [Gerenciar conteúdo](#gerenciar-conteúdo)
 - [Modelos de IA e Conselho](#modelos-de-ia-e-conselho)
 - [IA, grafo e agentes](#ia-grafo-e-agentes)
 - [Integrações](#integrações)
@@ -52,6 +53,7 @@
 | **Busca híbrida** | BM25 (FTS5) + similaridade vetorial executadas em paralelo e fundidas por *Reciprocal Rank Fusion*, com filtros de tipo, data e tag. |
 | **Captura multicanal** | Bot Telegram (texto, voz → transcrição, foto → OCR), bookmarklet/web clipper, pasta `inbox` (fsnotify), RSS, Gmail e newsletters, Google Agenda/Drive/Contatos/Tasks/YouTube. |
 | **Importação** | Obsidian, Logseq, Notion, Evernote, Google Keep, Joplin/Bear, favoritos do navegador/Pocket, CSV (Excel, Todoist, Readwise), JSON, Kindle, contatos (vCard), agenda (iCalendar), OPML e **Google Takeout** (histórico do YouTube, pesquisas, Chrome, Linha do tempo do Maps, lugares salvos, Play Store) — com detecção automática, `.zip` aninhados e reimportação sem duplicar. |
+| **Gerenciar conteúdo** | Página **Conteúdo** com filtros (texto, tipo, origem, tag, data, envio), seleção em massa (inclusive todos os resultados do filtro), apagar/etiquetar/mudar tipo/concluir/reprocessar/exportar em lote, faxina (duplicados, sem conteúdo, sem conexões), apagar uma importação inteira e **lixeira de 30 dias** com desfazer. Itens apagados não voltam nas sincronizações. |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
@@ -266,10 +268,11 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 
 | Página | Recursos |
 |---|---|
-| **Mindmap** (`/`) | Duas visões. **Visão geral** (padrão, SVG): o cérebro no centro e anéis concêntricos com rotinas (situação de cada uma), tipos de conteúdo, temas mais frequentes e fontes (Telegram, Gmail, Drive, Takeout…), com tamanho proporcional à quantidade; as ligações aparecem só ao passar o mouse, e o clique lista os itens no painel lateral (`/api/overview`, `/overview/nodes`). **Rede**: grafo force-directed em canvas (JS puro, embutido), carregado só quando aberto: zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos; o botão “Ver na rede” abre a rede já filtrada. Cores dos tipos em paleta segura para daltonismo, com tons próprios para os temas claro e escuro. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas e reprocessamento por IA. Captura rápida. |
+| **Mindmap** (`/`) | Duas visões. **Visão geral** (padrão, SVG): o cérebro no centro e anéis concêntricos com rotinas (situação de cada uma), tipos de conteúdo, temas mais frequentes e fontes (Telegram, Gmail, Drive, Takeout…), com tamanho proporcional à quantidade; as ligações aparecem só ao passar o mouse, e o clique lista os itens no painel lateral (`/api/overview`, `/overview/nodes`). **Rede**: grafo force-directed em canvas (JS puro, embutido), carregado só quando aberto: zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos; o botão “Ver na rede” abre a rede já filtrada. Cores dos tipos em paleta segura para daltonismo, com tons próprios para os temas claro e escuro. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas, reprocessamento por IA e exclusão (vai para a lixeira, com desfazer). Captura rápida. |
+| **Conteúdo** (`/content`) | Gerenciador de tudo o que entrou: lista filtrável e paginada, ações em massa, painel de leitura/edição, abas **Envios** e **Lixeira**. Veja [Gerenciar conteúdo](#gerenciar-conteúdo). |
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
 | **Painel** (`/dashboard`) | Custos e tokens por provedor/modelo (7/30/90 dias), gráfico diário, estatísticas do grafo, status das integrações, fila offline (com reprocessamento), rotinas com execução manual, métricas de saúde e último briefing. |
-| **Importar** (`/import`) | Envio de um ou vários arquivos, detecção automática do formato, progresso ao vivo e relatório (novos, atualizados, sem mudança, falhas, conexões). Tabela com o passo a passo de exportação de cada app. |
+| **Importar** (`/import`) | Envio de um ou vários arquivos, detecção automática do formato, progresso ao vivo e relatório (novos, atualizados, sem mudança, apagados antes, falhas, conexões), com link para revisar o envio no Conteúdo. Tabela com o passo a passo de exportação de cada app. |
 | **Audit log** (`/logs`) | Execuções, erros de sync, ações do agente e logins, filtráveis por nível/componente/texto. |
 | **Configurações** (`/settings`) | Liga/desliga de atualizações automáticas, verificação/instalação manual, editor completo do `.env` (segredos mascarados), conexão Google, bookmarklet e API token, editor de ações do agente, backup manual, download de backups, exportação Obsidian e troca de senha. |
 
@@ -329,11 +332,28 @@ Página **Importar** (`/import`), `POST /api/import` ou `second-brain -import ar
 
 Como funciona:
 
-- **Sem duplicar**: cada item recebe uma chave estável (`source=import:<formato>`, `source_ref` = caminho no vault, UID, URL ou hash). Reimportar atualiza o que mudou e pula o resto.
+- **Sem duplicar**: cada item recebe uma chave estável (`source=import:<formato>`, `source_ref` = caminho no vault, UID, URL ou hash). Reimportar atualiza o que mudou e pula o resto — inclusive o que você [apagou](#gerenciar-conteúdo) com “Não trazer de volta” (contado como “apagados antes”).
+- **Lotes**: cada importação grava `import_batch`, `import_name` e `import_at` no `meta` dos itens, o que permite listar, revisar e apagar um envio inteiro em **Conteúdo → Envios**.
 - **Conexões**: `[[links]]` são resolvidos pelo nome do arquivo, `aliases` ou título dentro da própria importação; o vault exportado pelo Second Brain volta com as conexões tipadas da seção “Conexões”.
 - **Custo controlado**: por padrão o enriquecimento usa a análise offline (tags, resumo heurístico, embeddings e auto-links). Marque **Analisar com IA** (ou `llm=true`, `-import-llm`) para resumo/entidades por LLM — ~1 chamada por item. O botão “Reprocessar” de um nó sempre usa a IA.
 - **Paralelismo**: arquivos e entradas do `.zip` são lidos em goroutines (1 por CPU); a gravação usa 4 workers; o enriquecimento segue pela fila offline.
 - **Limites**: `IMPORT_MAX_MB` (padrão 200 MB por envio). Atrás de nginx, ajuste `client_max_body_size`. Para arquivos maiores use `-import` no servidor. Anexos (imagens, PDFs) dentro de exports são ignorados — use a pasta `inbox` para eles.
+
+---
+
+## Gerenciar conteúdo
+
+Página **Conteúdo** (`/content`), no menu. Serve para revisar, corrigir e limpar o que foi enviado — por exemplo, apagar centenas de favoritos importados de uma vez.
+
+- **Filtros**: busca no título e no texto (todas as palavras, prefixo, sem acentos, via FTS5), tipo, origem (canal/integração/formato de importação), tag, situação da tarefa, período de criação, ordem (recentes, antigos, editados, título). O endereço da página acompanha os filtros, então dá para salvar a busca nos favoritos.
+- **Faxina**: atalhos para **Duplicados** (mesmo tipo e título, lado a lado), **Sem conteúdo** e **Sem conexões**, com a contagem de cada um.
+- **Seleção**: caixa por linha, clique na linha, <kbd>Shift</kbd>+clique para intervalos, “selecionar a página” e **“selecionar todos os N resultados do filtro”** (até 20 000 por ação). A seleção sobrevive à paginação e é zerada quando o filtro muda.
+- **Ações em massa** (barra fixa no topo): **Apagar** (com **Não trazer de volta** marcado por padrão), **+ Tag / − Tag** (várias separadas por vírgula), **Mudar tipo**, **Concluir / Reabrir** tarefas, **Reprocessar IA** (até 1 000 por vez; pede confirmação por causa do custo) e **Exportar** a seleção como vault Obsidian (`.zip`, só com as conexões internas). Cada ação roda numa transação por bloco de 400 itens.
+- **Painel lateral**: clique no título para ler, editar, apagar ou ver as conexões sem sair da lista; clicar numa tag do painel filtra a lista por ela.
+- **Envios** (`/content/sends`): importações agrupadas por arquivo (com data e quantidade) e totais por origem, cada um com **Ver itens** e **Apagar envio/tudo**.
+- **Lixeira** (`/content/trash`): tudo o que foi apagado — pela página Conteúdo, pelo painel do mapa ou por envio — fica **30 dias** restaurável, por item ou por lote (a nota volta com as mesmas conexões; os embeddings são refeitos pela fila). **Desfazer** aparece logo após apagar. A rotina `maintenance` remove de vez os itens com mais de 30 dias e os arquivos de mídia deles; também dá para **apagar de vez** ou **esvaziar** manualmente.
+
+**Não trazer de volta**: ao apagar com a opção marcada, a chave de origem do item (`source` + `source_ref`, ou o nome para pessoas criadas automaticamente a partir de menções) vai para a tabela `deleted_refs`. A partir daí `agent.Ingest` recusa o item com `database.ErrDeleted` para integrações e importações (Gmail, Agenda, Drive, Contatos, Tasks, YouTube, RSS, Zepp, rotinas, tarefas extraídas pela IA, reimportações e Takeout do Drive), que o tratam como “pular”; a fila marca a tarefa como concluída. Canais em que você envia algo à mão (Telegram, voz, web, API, Web Clipper e pasta `inbox`) levantam o bloqueio e trazem o item de volta. O bloqueio continua depois que o item sai da lixeira; **Lixeira → Permitir que voltem** limpa todos. Restaurar um item também remove o bloqueio dele.
 
 ---
 
@@ -462,7 +482,7 @@ Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nome
 | `morning` | `CRON_MORNING` | `0 7 * * *` | Briefing matinal: sono/recuperação + agenda + tarefas atrasadas/do dia → Telegram e painel |
 | `evening` | `CRON_EVENING` | `0 21 * * *` | Balanço do dia: concluídas, capturas, erros, custo |
 | `weekly` | `CRON_WEEKLY` | `0 18 * * 0` | Weekly review: nós órfãos, links quebrados, pendências paradas; re-linka órfãos e reindexa embeddings |
-| `maintenance` | `CRON_MAINTENANCE` | `30 3 * * *` | Purga de temporários de voz/imagem, tarefas e logs antigos; `incremental_vacuum`, `optimize`, FTS optimize, checkpoint WAL (VACUUM completo aos domingos) |
+| `maintenance` | `CRON_MAINTENANCE` | `30 3 * * *` | Purga de temporários de voz/imagem, tarefas e logs antigos e itens com mais de 30 dias na lixeira; `incremental_vacuum`, `optimize`, FTS optimize, checkpoint WAL (VACUUM completo aos domingos) |
 | `backup` | `CRON_BACKUP` | `0 4 * * *` | Snapshot cifrado para os destinos configurados |
 | `rss` / `gmail` / `calendar` / `zepp` | `CRON_*` | 30 / 15 / 30 min / 4 h | Enfileiram sincronizações (com retry offline) |
 | `update` | `CRON_UPDATE` | `40 4 * * *` | Verifica releases no GitHub e instala se `AUTO_UPDATE_ENABLED=true` (senão só notifica) |
@@ -494,7 +514,7 @@ O servidor acompanha as [releases do GitHub](https://github.com/inakano89/second
 Fluxo de cada atualização (`CRON_UPDATE`, padrão diário às 04:40, após o backup):
 
 1. Consulta `GET /repos/{UPDATE_REPO}/releases/latest` (ou a pré-release mais nova com `UPDATE_CHANNEL=prerelease`).
-2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-arm64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`.
+2. Baixa o binário da plataforma (`second-brain-linux-amd64`, `-linux-arm64`, `-linux-armv7` ou `-windows-amd64.exe`) e o `SHA256SUMS`. Se a release acabou de ser publicada (por exemplo, pelo site do GitHub) e o workflow ainda está anexando os arquivos, a instalação aguarda e tenta de novo a cada 10 minutos, por até 3 horas; a tela de Atualizações mostra “Aguardando”.
 3. Confere o **SHA-256**; se o binário foi compilado com `UPDATE_PUBLIC_KEY`, exige também `SHA256SUMS.sig` com **assinatura ed25519** válida.
 4. Executa `binário-novo -version` como teste de sanidade.
 5. Salva um snapshot do banco em `data/backups/pre-update-<versão>.db`.

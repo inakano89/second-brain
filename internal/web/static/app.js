@@ -35,6 +35,12 @@
     }
   });
 
+  // The top bar is sticky: expose its height for sticky toolbars and anchor offsets.
+  var topbar = document.querySelector(".topbar");
+  function measure() { if (topbar) document.documentElement.style.setProperty("--topbar-h", topbar.offsetHeight + "px"); }
+  measure();
+  window.addEventListener("resize", measure);
+
   // Copy-on-click for tokens.
   document.addEventListener("dblclick", function (e) {
     var c = e.target.closest(".copy");

@@ -80,6 +80,7 @@ func (s *Server) funcs() template.FuncMap {
 		},
 		"levelClass":  func(l string) string { return "lvl-" + strings.ToLower(l) },
 		"importState": func(st string) string { return importStates[st] },
+		"sourceLabel": sourceLabel,
 	}
 }
 

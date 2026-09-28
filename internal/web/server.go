@@ -70,7 +70,7 @@ type Server struct {
 	static  http.Handler
 }
 
-var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import"}
+var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import", "content"}
 
 // New parses templates and builds the server.
 func New(d Deps) (*Server, error) {
@@ -126,6 +126,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /nodes/{id}/edit", s.auth(s.nodeEdit))
 	mux.HandleFunc("POST /nodes/{id}", s.auth(s.nodeUpdate))
 	mux.HandleFunc("POST /nodes/{id}/delete", s.auth(s.nodeDelete))
+	mux.HandleFunc("POST /nodes/restore", s.auth(s.nodeRestore))
 	mux.HandleFunc("POST /nodes/{id}/toggle", s.auth(s.nodeToggle))
 	mux.HandleFunc("POST /nodes/{id}/enrich", s.auth(s.nodeEnrich))
 	mux.HandleFunc("GET /media/{file}", s.auth(s.media))
@@ -161,6 +162,15 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /settings/telegram-test", s.auth(s.telegramTest))
 	mux.HandleFunc("POST /settings/api-token", s.auth(s.rotateToken))
 	mux.HandleFunc("GET /export/obsidian", s.auth(s.exportObsidian))
+	mux.HandleFunc("GET /content", s.auth(s.contentPage))
+	mux.HandleFunc("GET /content/rows", s.auth(s.contentRowsPartial))
+	mux.HandleFunc("POST /content/bulk", s.auth(s.contentBulk))
+	mux.HandleFunc("POST /content/undo", s.auth(s.contentUndo))
+	mux.HandleFunc("POST /content/export", s.auth(s.contentExport))
+	mux.HandleFunc("GET /content/sends", s.auth(s.contentSends))
+	mux.HandleFunc("POST /content/sends/trash", s.auth(s.contentSendTrash))
+	mux.HandleFunc("GET /content/trash", s.auth(s.contentTrash))
+	mux.HandleFunc("POST /content/trash/action", s.auth(s.contentTrashAction))
 	mux.HandleFunc("GET /import", s.auth(s.importPage))
 	mux.HandleFunc("POST /import", s.auth(s.importUpload))
 	mux.HandleFunc("GET /import/jobs/{id}", s.auth(s.importJob))

@@ -101,6 +101,9 @@ func (d *Deps) saveInsight(ctx context.Context, title, ref, content string, tags
 	if err == nil {
 		_ = d.DB.KVSet(ctx, "routine.latest."+strings.SplitN(ref, ":", 2)[0], fmt.Sprint(n.ID))
 	}
+	if errors.Is(err, database.ErrDeleted) { // the user deleted today's note: keep it deleted
+		return nil, nil
+	}
 	return n, err
 }
 
@@ -386,10 +389,14 @@ func (d *Deps) Maintenance(ctx context.Context) error {
 	tasks, _ := d.DB.PurgeTasks(ctx, time.Now().AddDate(0, 0, -7))
 	logs, _ := d.DB.PurgeLogs(ctx, time.Now().AddDate(0, 0, -d.Cfg.GetInt("LOG_RETENTION_DAYS", 90)))
 	_ = d.DB.PurgeSeen(ctx, time.Now().AddDate(0, 0, -120))
+	trash := 0
+	if d.Agent != nil {
+		trash, _ = d.Agent.PurgeTrash(ctx, nil, time.Now().Add(-database.TrashRetention))
+	}
 	full := time.Now().In(d.Cfg.Location()).Weekday() == time.Sunday
 	if err := d.DB.Maintenance(ctx, full); err != nil {
 		return err
 	}
-	d.Log.Info("manutenção concluída", "temp_files", purged, "tasks", tasks, "logs", logs, "vacuum_full", full, "db_mb", float64(d.DB.Size())/1e6)
+	d.Log.Info("manutenção concluída", "temp_files", purged, "tasks", tasks, "logs", logs, "trash", trash, "vacuum_full", full, "db_mb", float64(d.DB.Size())/1e6)
 	return nil
 }

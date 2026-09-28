@@ -19,6 +19,7 @@
     <a href="#map">🗺️ Mapa</a>
     <a href="#inbox">📂 Pasta inbox</a>
     <a href="#import">📥 Importar de outros apps</a>
+    <a href="#content">🗂 Conteúdo: editar e apagar</a>
     <a href="#backup">🔐 Backup</a>
     <a href="#install">🖥️ Instalação</a>
     <a href="#docker">🐳 Docker na VPS</a>
@@ -218,7 +219,22 @@
         <li><b>Feeds (Feedly, Inoreader)</b>: exporte o <b>OPML</b>; os feeds entram direto na lista de RSS.</li>
       </ul>
       <p class="hint">💰 A caixa “Analisar cada item com IA” faz resumo e tags por inteligência artificial, mas custa ~1 chamada por item. Para importar milhares de notas, deixe desmarcada: a busca, as tags e as conexões funcionam mesmo assim. Depois, use “Reprocessar” só nas notas que quiser.</p>
+      <p>Importou algo por engano? Em <a href="#content">Conteúdo → Envios</a> você apaga a importação inteira de uma vez (e desfaz, se precisar).</p>
       <p class="muted">Arquivo muito grande? O limite é <code>IMPORT_MAX_MB</code> (200 MB por padrão, em Configurações → Geral). Se o servidor fica atrás do nginx, aumente <code>client_max_body_size</code>. Ou copie o arquivo para o servidor e rode <code>second-brain -env .env -import arquivo.zip</code>.</p>
+    </section>
+
+    <section class="card" id="content">
+      <h2>🗂 Conteúdo: editar e apagar</h2>
+      <p>No menu <b>Conteúdo</b> ficam, em lista, todas as notas, tarefas, favoritos, e-mails e demais itens que entraram no seu cérebro. É o lugar para arrumar tudo de uma vez, em vez de apagar um por um.</p>
+      <ol class="steps">
+        <li><b>Filtre</b>: digite parte do título ou do texto, ou escolha o tipo, a origem (por exemplo “Importação: Favoritos”, “Gmail”), uma tag ou um período.</li>
+        <li><b>Selecione</b>: marque a caixinha dos itens (ou clique na linha). Para marcar vários seguidos, clique no primeiro e, segurando <kbd>Shift</kbd>, no último. A caixinha do cabeçalho marca a página inteira e, em seguida, aparece o botão <b>Selecionar todos os resultados</b> para pegar tudo o que o filtro encontrou.</li>
+        <li><b>Escolha a ação</b> na barra que fica presa no topo: <b>Apagar</b>, <b>+ Tag</b>/<b>− Tag</b>, <b>Mudar tipo</b>, <b>Concluir</b>/<b>Reabrir</b> tarefas, <b>Reprocessar IA</b> ou <b>Exportar</b> (baixa um <code>.zip</code> que abre no Obsidian). No celular, as ações extras ficam em <b>Mais ações</b>.</li>
+      </ol>
+      <p>Clique no título de um item para ler, editar ou apagar no painel ao lado, sem sair da lista. Os botões de <b>Faxina</b> mostram itens <b>duplicados</b>, <b>sem conteúdo</b> e <b>sem conexões</b> — bons candidatos para limpar.</p>
+      <p><b>Envios</b> mostra cada importação (por exemplo, o arquivo de favoritos) e cada origem com a quantidade de itens: dá para ver ou apagar tudo de uma vez.</p>
+      <p><b>Lixeira</b>: nada some na hora. O que você apaga fica 30 dias na lixeira e pode ser restaurado com as conexões (logo depois de apagar aparece o botão <b>Desfazer</b>). Depois de 30 dias é removido de vez automaticamente.</p>
+      <p class="hint">🚫 <b>Não trazer de volta</b> (já vem marcado): impede que o Google, o RSS, o Zepp ou uma nova importação do mesmo arquivo tragam de novo o que você apagou. Se você mesmo reenviar pelo Telegram, pela web ou pela pasta inbox, o item volta. Mudou de ideia? <b>Lixeira → Permitir que voltem</b>.</p>
     </section>
 
     <section class="card" id="backup">

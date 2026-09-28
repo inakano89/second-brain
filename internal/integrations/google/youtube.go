@@ -99,7 +99,10 @@ func (s *Syncer) syncLikes(ctx context.Context) (int, error) {
 				Type: database.TypeArticle, Title: it.Snippet.Title, Content: content, Tags: []string{"youtube", "curtido"},
 				Source: "youtube", SourceRef: ref, Enrich: true,
 				Meta: map[string]any{"link": link, "channel": it.Snippet.ChannelTitle, "enriched": true},
-			}); err != nil {
+			}); errors.Is(err, database.ErrDeleted) {
+				known++
+				continue
+			} else if err != nil {
 				ferr = err
 				return false
 			}
@@ -182,6 +185,9 @@ func (s *Syncer) upsertSummary(ctx context.Context, source, ref, title, body str
 		Type: database.TypeNote, Title: title, Content: body, Summary: extract.FirstLine(body), Tags: tags,
 		Source: source, SourceRef: ref, Meta: map[string]any{"hash": hash, "enriched": true}, Enrich: true,
 	})
+	if errors.Is(err, database.ErrDeleted) {
+		return 0, nil
+	}
 	if err != nil {
 		return 0, err
 	}
