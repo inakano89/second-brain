@@ -1,0 +1,95 @@
+{{define "content"}}
+<div class="setup">
+{{with .Data}}
+{{if .Done}}
+  <section class="card">
+    <h1>✅ Tudo pronto!</h1>
+    <p>A configuração foi salva no arquivo <code>.env</code>. Guarde as informações abaixo em local seguro:</p>
+    <dl class="kv">
+      <dt>API token (web clipper / webhooks)</dt><dd><code class="copy">{{.APIToken}}</code></dd>
+      {{if .Generated}}<dt>Chave mestre de backup (gerada)</dt><dd><code class="copy">{{.BackupKey}}</code><br><small class="warn">Sem esta chave os backups cifrados não podem ser restaurados.</small></dd>{{end}}
+    </dl>
+    <p><a class="btn primary" href="{{.AppURL}}">Abrir o Second Brain →</a></p>
+  </section>
+{{else}}
+  <form method="post" action="/setup" class="card wizard" autocomplete="off">
+    <h1>🧠 Primeiro acesso</h1>
+    <p class="muted">Configure seu Second Brain. Apenas identificação e senha são obrigatórias — o resto pode ser ajustado depois em Configurações.</p>
+
+    <fieldset>
+      <legend>1 · Identificação</legend>
+      <label>Nome do cérebro <input name="brain_name" value="{{or (index .Values "brain_name") "Second Brain"}}"></label>
+      <label>Usuário * <input name="username" value="{{index .Values "username"}}" required autocomplete="username"></label>
+      <div class="row">
+        <label>Senha mestre * <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+        <label>Confirmar senha * <input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+      </div>
+      <small class="muted">Armazenada como hash Argon2id.</small>
+    </fieldset>
+
+    <fieldset>
+      <legend>2 · Servidor</legend>
+      <div class="row">
+        <label>Porta HTTP <input type="number" name="http_port" min="1" max="65535" value="{{or (index .Values "http_port") "8080"}}"></label>
+        <label>Timezone
+          <input name="timezone" list="tzs" value="{{or (index .Values "timezone") "America/Sao_Paulo"}}">
+          <datalist id="tzs">{{range .Timezones}}<option value="{{.}}">{{end}}</datalist>
+        </label>
+      </div>
+      <label>URL pública (opcional) <input name="public_url" value="{{index .Values "public_url"}}" placeholder="https://brain.seudominio.com"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>3 · Provedores LLM</legend>
+      <label>Provedor padrão
+        <select name="default_provider">
+          {{$d := index .Values "default_provider"}}
+          {{range $p := (split "auto,anthropic,openai,gemini,ollama")}}<option value="{{$p}}" {{if eq $p $d}}selected{{end}}>{{$p}}</option>{{end}}
+        </select>
+      </label>
+      <label>OpenAI API key <input type="password" name="openai_key" placeholder="sk-..."></label>
+      <label>Anthropic Claude API key <input type="password" name="anthropic_key" placeholder="sk-ant-..."></label>
+      <label>Google Gemini API key <input type="password" name="gemini_key" placeholder="AIza..."></label>
+      <div class="row">
+        <label>LLM local (Ollama/llama.cpp, OpenAI-compatible) <input name="ollama_url" value="{{index .Values "ollama_url"}}" placeholder="http://localhost:11434/v1"></label>
+        <label>Modelo local <input name="ollama_model" value="{{or (index .Values "ollama_model") "llama3.1"}}"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>4 · Telegram</legend>
+      <label>Token do bot (@BotFather) <input type="password" name="telegram_token"></label>
+      <label>IDs autorizados (vírgula) <input name="telegram_ids" value="{{index .Values "telegram_ids"}}" placeholder="123456789"></label>
+      <small class="muted">Envie /start ao bot para descobrir seu ID; mensagens de IDs fora da lista são ignoradas.</small>
+    </fieldset>
+
+    <fieldset>
+      <legend>5 · Google Workspace (Calendar + Gmail)</legend>
+      <label>OAuth Client ID <input name="google_client_id" value="{{index .Values "google_client_id"}}"></label>
+      <label>OAuth Client Secret <input type="password" name="google_client_secret"></label>
+      <small class="muted">Após o setup, clique em “Conectar Google” em Configurações. Redirect URI: <code>&lt;URL pública&gt;/google/callback</code>.</small>
+    </fieldset>
+
+    <fieldset>
+      <legend>6 · Zepp Health / Amazfit</legend>
+      <div class="row">
+        <label>E-mail <input name="zepp_email" value="{{index .Values "zepp_email"}}"></label>
+        <label>Senha <input type="password" name="zepp_password"></label>
+      </div>
+      <div class="row">
+        <label>ou App token <input type="password" name="zepp_app_token"></label>
+        <label>User ID <input name="zepp_user_id" value="{{index .Values "zepp_user_id"}}"></label>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>7 · Backup cifrado</legend>
+      <label>Chave mestre AES-GCM <input type="password" name="backup_key" placeholder="vazio = gerar automaticamente"></label>
+    </fieldset>
+
+    <button class="btn primary big">Concluir configuração</button>
+  </form>
+{{end}}
+{{end}}
+</div>
+{{end}}

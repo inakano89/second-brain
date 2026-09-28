@@ -1,0 +1,116 @@
+{{define "content"}}
+{{with .Data}}
+<div class="settings">
+  <nav class="toc card">
+    <b>Seções</b>
+    <a href="#env">Variáveis (.env)</a>
+    <a href="#google">Google</a>
+    <a href="#clipper">Web Clipper &amp; API</a>
+    <a href="#actions">Agent actions</a>
+    <a href="#backup">Backup &amp; export</a>
+    <a href="#password">Senha</a>
+  </nav>
+
+  <div class="settings-main">
+    <section class="card" id="env">
+      <h2>⚙️ Editor do .env</h2>
+      <p class="muted">Arquivo: <code>{{.EnvPath}}</code>. Campos secretos em branco mantêm o valor atual; digite <code>!clear</code> para apagar. Alterações são aplicadas imediatamente (serviços reiniciados).</p>
+      <form method="post" action="/settings/env" class="env-form">
+        {{range .Groups}}
+        <fieldset>
+          <legend>{{.Name}}</legend>
+          {{range .Fields}}
+          <label class="env-field">
+            <span>{{or .Label .Key}} <code class="key">{{.Key}}</code>{{if eq .Source "env"}} <em class="muted">(via ambiente)</em>{{end}}</span>
+            {{if eq .Kind "bool"}}
+              <input type="checkbox" name="{{.Key}}" value="true" {{if eq .Value "true"}}checked{{end}}>
+            {{else if eq .Kind "select"}}
+              <select name="{{.Key}}">{{$v := .Value}}{{range .Options}}<option value="{{.}}" {{if eq . $v}}selected{{end}}>{{.}}</option>{{end}}</select>
+            {{else if eq .Kind "textarea"}}
+              <textarea name="{{.Key}}" rows="3">{{.Value}}</textarea>
+            {{else if .Secret}}
+              <input type="password" name="{{.Key}}" autocomplete="off" placeholder="{{if .IsSet}}•••••••• (definido){{else}}não definido{{end}}">
+            {{else}}
+              <input name="{{.Key}}" value="{{.Value}}" {{if eq .Kind "number"}}inputmode="numeric"{{end}} placeholder="{{.Default}}">
+            {{end}}
+            {{if .Help}}<small class="muted">{{.Help}}</small>{{end}}
+          </label>
+          {{end}}
+        </fieldset>
+        {{end}}
+        <fieldset>
+          <legend>Variáveis adicionais</legend>
+          <textarea name="__extra" rows="4" placeholder="CHAVE=valor (uma por linha)">{{.Extra}}</textarea>
+        </fieldset>
+        <button class="btn primary">Salvar e aplicar</button>
+      </form>
+    </section>
+
+    <section class="card" id="google">
+      <h2>📅 Google Calendar &amp; Gmail</h2>
+      {{if not .GoogleCfg}}
+        <p class="muted">Defina <code>GOOGLE_CLIENT_ID</code> e <code>GOOGLE_CLIENT_SECRET</code> (Google Cloud Console → OAuth client “Web application”).</p>
+      {{else if .GoogleOK}}
+        <p>✅ Conectado.</p>
+        <form method="post" action="/google/disconnect"><button class="btn danger small">Desconectar</button></form>
+      {{else}}
+        <p><a class="btn primary" href="/google/connect">Conectar Google</a></p>
+      {{end}}
+      <p class="muted">Redirect URI autorizado: <code class="copy">{{.RedirectURL}}</code><br>Escopos: calendar.events, gmail.readonly.</p>
+    </section>
+
+    <section class="card" id="clipper">
+      <h2>✂️ Web Clipper &amp; API</h2>
+      <p>Arraste para a barra de favoritos: <a class="btn bookmarklet" href="{{safeURL .Bookmarklet}}">🧠 Salvar no Brain</a></p>
+      <p class="muted">Selecione um trecho (opcional) e clique no favorito. Sem seleção, a página inteira é extraída (Readability) e resumida.</p>
+      <dl class="kv">
+        <dt>API token</dt><dd><code class="copy">{{.APIToken}}</code>
+          <form method="post" action="/settings/api-token" class="inline"><button class="btn small" data-confirm="Gerar novo token? O bookmarklet atual deixará de funcionar.">Rotacionar</button></form></dd>
+        <dt>Clip (REST)</dt><dd><pre>curl -X POST {{.PublicURL}}/api/clip \
+  -H "Authorization: Bearer $TOKEN" -H "Content-Type: application/json" \
+  -d '{"url":"https://exemplo.com/artigo","title":"Título","html":"&lt;p&gt;trecho&lt;/p&gt;"}'</pre></dd>
+        <dt>Criar nó</dt><dd><pre>curl -X POST {{.PublicURL}}/api/nodes -H "Authorization: Bearer $TOKEN" \
+  -d '{"type":"task","title":"Renovar CNH","due":"2026-10-30"}'</pre></dd>
+        <dt>Webhook de saúde</dt><dd><pre>curl -X POST {{.PublicURL}}/api/health/webhook -H "Authorization: Bearer $TOKEN" \
+  -d '{"date":"2026-09-28","source":"gadgetbridge","metrics":{"sleep_minutes":452,"deep_sleep_minutes":95,"sleep_score":84,"resting_hr":54,"steps":10234,"recovery_score":78}}'</pre></dd>
+      </dl>
+      {{if .TelegramOK}}<form method="post" action="/settings/telegram-test"><button class="btn small">Enviar teste no Telegram</button></form>{{end}}
+    </section>
+
+    <section class="card" id="actions">
+      <h2>🤖 Agent actions (function calling)</h2>
+      <p class="muted">Whitelist de ações que o assistente pode executar (<code>ACTIONS_ENABLED=true</code>). Tipos: <code>webhook</code>, <code>mqtt</code>, <code>command</code> (executado sem shell). <code>{{"{{input}}"}}</code> é substituído pelo parâmetro do modelo. Arquivo: <code>{{.ActionsPath}}</code></p>
+      <form method="post" action="/settings/actions">
+        <textarea name="actions" rows="12" class="mono">{{.ActionsRaw}}</textarea>
+        <button class="btn primary">Salvar ações</button>
+      </form>
+    </section>
+
+    <section class="card" id="backup">
+      <h2>🔐 Backup &amp; Export</h2>
+      <div class="row">
+        <form method="post" action="/backup/now"><button class="btn primary">Backup agora</button></form>
+        <a class="btn" href="/export/obsidian">⬇ Exportar vault Obsidian (.zip)</a>
+      </div>
+      <p class="muted">Snapshots (VACUUM INTO) cifrados com AES-256-GCM (chave derivada via Argon2id). Restaurar: <code>second-brain -decrypt arquivo.db.enc -out brain.db</code></p>
+      {{if .Backups}}
+      <table class="tbl compact">
+        <thead><tr><th>Arquivo</th><th>Data</th><th class="r">Tamanho</th></tr></thead>
+        <tbody>{{range .Backups}}<tr><td><a href="/backups/{{.Name}}">{{.Name}}</a></td><td>{{.Date}}</td><td class="r">{{.Size}}</td></tr>{{end}}</tbody>
+      </table>
+      {{else}}<p class="muted">Nenhum backup local ainda.</p>{{end}}
+    </section>
+
+    <section class="card" id="password">
+      <h2>🔑 Alterar senha</h2>
+      <form method="post" action="/settings/password" class="narrow">
+        <label>Senha atual <input type="password" name="current" required autocomplete="current-password"></label>
+        <label>Nova senha <input type="password" name="password" minlength="8" required autocomplete="new-password"></label>
+        <label>Confirmar <input type="password" name="password2" minlength="8" required autocomplete="new-password"></label>
+        <button class="btn">Alterar</button>
+      </form>
+    </section>
+  </div>
+</div>
+{{end}}
+{{end}}

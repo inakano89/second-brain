@@ -1,0 +1,9 @@
+{{define "content"}}
+<form method="post" action="/login" class="card login">
+  <h1>🧠 {{.Brain}}</h1>
+  <input type="hidden" name="next" value="{{.Data.Next}}">
+  <label>Usuário <input name="username" autocomplete="username" required autofocus></label>
+  <label>Senha <input type="password" name="password" autocomplete="current-password" required></label>
+  <button class="btn primary big">Entrar</button>
+</form>
+{{end}}

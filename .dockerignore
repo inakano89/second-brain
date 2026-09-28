@@ -1,0 +1,7 @@
+.git
+dist
+data
+inbox
+.env
+*.db
+*.db-*

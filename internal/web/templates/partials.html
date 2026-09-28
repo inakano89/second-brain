@@ -1,0 +1,111 @@
+{{define "search_results"}}
+{{if .Err}}<div class="flash err">{{.Err}}</div>{{end}}
+{{if not .Results}}<div class="empty">{{if .Q}}Nada encontrado para “{{.Q}}”.{{else}}Nenhum nó ainda — capture algo!{{end}}</div>{{end}}
+<ul class="results">
+{{range .Results}}
+  <li>
+    <a href="#" data-focus="{{.Node.ID}}" hx-get="/nodes/{{.Node.ID}}" hx-target="#detail" hx-swap="innerHTML">
+      <span class="badge" style="--c: {{typeColor .Node.Type}}">{{typeLabel .Node.Type}}</span>
+      <strong>{{.Node.Title}}</strong>
+      {{if eq .Via "hybrid"}}<span class="via" title="FTS5 + semântica">◆</span>{{else if eq .Via "vector"}}<span class="via" title="semântica">◇</span>{{end}}
+    </a>
+    <p class="snippet">{{.Snippet}}</p>
+    <small class="muted">#{{.Node.ID}} · {{fmtTime .Node.CreatedAt}}{{if .Node.Tags}} · {{join .Node.Tags ", "}}{{end}}</small>
+  </li>
+{{end}}
+</ul>
+{{end}}
+
+{{define "node_detail"}}
+{{with .Node}}
+<article class="node" data-node-id="{{.ID}}">
+  {{if $.Flash}}<div class="flash ok small">{{$.Flash}}</div>{{end}}
+  <div class="node-head">
+    <span class="badge" style="--c: {{typeColor .Type}}">{{typeLabel .Type}}</span>
+    <small class="muted">#{{.ID}} · {{.Source}}</small>
+  </div>
+  <h2>{{if and (eq .Type "task") (eq .Status "done")}}<s>{{.Title}}</s>{{else}}{{.Title}}{{end}}</h2>
+  <div class="meta muted">
+    Criado {{fmtTime .CreatedAt}} · atualizado {{since .UpdatedAt}}
+    {{if .DueAt}}<br>📅 {{fmtDate .DueAt}}{{end}}
+    {{if .Meta.url}}<br>🔗 <a href="{{.Meta.url}}" target="_blank" rel="noopener noreferrer">{{truncate (print .Meta.url) 60}}</a>{{end}}
+    {{if .Meta.link}}<br>🔗 <a href="{{.Meta.link}}" target="_blank" rel="noopener noreferrer">abrir origem</a>{{end}}
+  </div>
+  {{if .Tags}}<div class="tags">{{range .Tags}}<a class="tag" href="/?q=%23{{.}}" hx-get="/search?tag={{urlquery .}}" hx-target="#results">#{{.}}</a>{{end}}</div>{{end}}
+  {{if .Summary}}<p class="summary">{{.Summary}}</p>{{end}}
+  {{if $.Image}}<a href="{{$.Image}}" target="_blank"><img class="node-img" src="{{$.Image}}" alt="{{.Title}}"></a>{{end}}
+  {{if $.File}}<p><a class="btn small" href="{{$.File}}" target="_blank">📄 Arquivo original</a></p>{{end}}
+  <div class="md-body">{{markdown .Content}}</div>
+  <div class="actions">
+    {{if eq .Type "task"}}
+      {{if eq .Status "done"}}
+      <button class="btn small" hx-post="/nodes/{{.ID}}/toggle" hx-vals='{"status":"open"}' hx-target="#detail">↺ Reabrir</button>
+      {{else}}
+      <button class="btn small primary" hx-post="/nodes/{{.ID}}/toggle" hx-vals='{"status":"done"}' hx-target="#detail">✓ Concluir</button>
+      {{end}}
+    {{end}}
+    <button class="btn small" hx-get="/nodes/{{.ID}}/edit" hx-target="#detail">✎ Editar</button>
+    <button class="btn small" hx-post="/nodes/{{.ID}}/enrich" hx-target="#detail">✨ Reprocessar IA</button>
+    <button class="btn small" data-focus="{{.ID}}">◎ Focar no grafo</button>
+    <button class="btn small danger" hx-post="/nodes/{{.ID}}/delete" hx-target="#detail" hx-confirm="Remover “{{.Title}}” e suas conexões?">🗑</button>
+  </div>
+</article>
+{{end}}
+{{if .Links}}
+<section class="links">
+  <h3>Conexões ({{len .Links}})</h3>
+  <ul>
+  {{range .Links}}
+    <li>
+      <span class="rel">{{if .Outgoing}}→{{else}}←{{end}} {{.Relation}}</span>
+      <a href="#" data-focus="{{.Node.ID}}" hx-get="/nodes/{{.Node.ID}}" hx-target="#detail">
+        <span class="dot" style="--c: {{typeColor .Node.Type}}"></span>{{.Node.Title}}
+      </a>
+      {{if lt .Weight 1.0}}<small class="muted">{{printf "%.2f" .Weight}}</small>{{end}}
+    </li>
+  {{end}}
+  </ul>
+</section>
+{{end}}
+{{end}}
+
+{{define "node_edit"}}
+{{with .Node}}
+<form class="node-edit" hx-post="/nodes/{{.ID}}" hx-target="#detail">
+  <h2>Editar #{{.ID}}</h2>
+  <label>Tipo
+    <select name="type">{{range $.Types}}<option value="{{.}}" {{if eq . $.Node.Type}}selected{{end}}>{{typeLabel .}}</option>{{end}}</select>
+  </label>
+  <label>Título <input name="title" value="{{.Title}}" required></label>
+  <label>Resumo <textarea name="summary" rows="2">{{.Summary}}</textarea></label>
+  <label>Conteúdo (Markdown, use [[Título]] para linkar) <textarea name="content" rows="12">{{.Content}}</textarea></label>
+  <label>Tags <input name="tags" value="{{join .Tags ", "}}"></label>
+  <label>Prazo/data <input type="datetime-local" name="due" value="{{inputDate .DueAt}}"></label>
+  {{if eq .Type "task"}}
+  <label>Status <select name="status"><option value="open" {{if eq .Status "open"}}selected{{end}}>Aberta</option><option value="done" {{if eq .Status "done"}}selected{{end}}>Concluída</option></select></label>
+  {{end}}
+  <div class="actions">
+    <button class="btn primary">Salvar</button>
+    <button type="button" class="btn" hx-get="/nodes/{{.ID}}" hx-target="#detail">Cancelar</button>
+  </div>
+</form>
+{{end}}
+{{end}}
+
+{{define "log_rows"}}
+{{range .Entries}}
+<tr class="{{levelClass .Level}}">
+  <td class="nowrap">{{fmtTime .TS}}</td>
+  <td><span class="lvl">{{.Level}}</span></td>
+  <td>{{.Component}}</td>
+  <td>{{.Message}}{{if .Meta}}<code class="meta">{{truncate .Meta 400}}</code>{{end}}</td>
+</tr>
+{{end}}
+{{if .More}}
+<tr id="more-logs">
+  <td colspan="4" class="center">
+    <button class="btn small" hx-get="/logs/rows?before={{.Last}}&level={{.Filter.Level}}&component={{.Filter.Component}}&q={{urlquery .Filter.Query}}" hx-target="#more-logs" hx-swap="outerHTML">Carregar mais</button>
+  </td>
+</tr>
+{{end}}
+{{end}}

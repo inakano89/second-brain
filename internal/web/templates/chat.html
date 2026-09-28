@@ -1,0 +1,34 @@
+{{define "head"}}<script src="/static/chat.js" defer></script>{{end}}
+{{define "content"}}
+<div class="chat-layout">
+  <div class="chat-head">
+    <label>Modelo
+      <select id="provider" name="provider">
+        <option value="">Padrão (auto)</option>
+        {{range .Data.Providers}}
+        <option value="{{.Name}}" {{if .Default}}selected{{end}}>{{.Name}} · {{.Model}}</option>
+        {{end}}
+        <option value="__custom">Outro modelo…</option>
+      </select>
+    </label>
+    <input id="custom-model" placeholder="provedor:modelo (ex: anthropic:claude-sonnet-5)" hidden>
+    <form method="post" action="/chat/reset"><button class="btn small">🧹 Nova conversa</button></form>
+  </div>
+  {{if not .Data.Enabled}}<div class="flash err">Nenhum provedor LLM configurado. Adicione uma chave em Configurações.</div>{{end}}
+  <div id="messages" class="messages">
+    {{range .Data.History}}
+    <div class="msg {{.Role}}"><div class="bubble">{{if eq .Role "assistant"}}{{markdown .Content}}{{else}}{{.Content}}{{end}}</div></div>
+    {{else}}
+    <div class="msg assistant intro"><div class="bubble">
+      <p>Olá! Pergunte qualquer coisa sobre suas notas, peça para criar tarefas, eventos ou resumos. Contexto relevante do seu grafo é injetado automaticamente.</p>
+    </div></div>
+    {{end}}
+  </div>
+  <form id="chat-form" class="chat-input">
+    <textarea id="chat-text" name="message" rows="2" placeholder="Mensagem… (Enter envia, Shift+Enter quebra linha)"></textarea>
+    <label class="attach" title="Anexar imagem, PDF ou texto">📎<input type="file" id="chat-file" name="file" hidden></label>
+    <button class="btn primary" id="chat-send">Enviar</button>
+  </form>
+  <div id="chat-file-name" class="muted small"></div>
+</div>
+{{end}}

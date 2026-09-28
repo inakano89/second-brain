@@ -1,0 +1,26 @@
+[
+  {
+    "name": "luz_sala",
+    "description": "Liga ou desliga a luz da sala. input: ON ou OFF",
+    "type": "mqtt",
+    "topic": "casa/sala/luz/set",
+    "payload": "{{input}}"
+  },
+  {
+    "name": "webhook_n8n",
+    "description": "Dispara o fluxo n8n de automação residencial com uma mensagem",
+    "type": "webhook",
+    "method": "POST",
+    "url": "https://n8n.exemplo.com/webhook/brain",
+    "headers": { "X-Token": "troque-me" },
+    "body": "{\"message\": \"{{input}}\"}"
+  },
+  {
+    "name": "ping_roteador",
+    "description": "Verifica se o roteador responde (ping)",
+    "type": "command",
+    "command": "ping",
+    "args": ["-c", "3", "192.168.1.1"],
+    "timeout_sec": 15
+  }
+]

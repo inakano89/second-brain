@@ -1,0 +1,15 @@
+services:
+  second-brain:
+    image: ghcr.io/inakano89/second-brain:latest
+    # build: .
+    container_name: second-brain
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - brain-data:/data            # .env, data/brain.db, backups, media
+      # Pasta inbox no host (opcional): sudo chown -R 65532:65532 ./inbox
+      # - ./inbox:/data/inbox
+
+volumes:
+  brain-data:

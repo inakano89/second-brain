@@ -1,0 +1,100 @@
+{{define "content"}}
+{{with .Data}}
+<div class="dash">
+  <section class="card span2">
+    <div class="card-head">
+      <h2>💰 Consumo de LLM ({{.Days}} dias)</h2>
+      <div class="seg">
+        <a href="/dashboard?days=7" class="{{if eq .Days 7}}on{{end}}">7d</a>
+        <a href="/dashboard?days=30" class="{{if eq .Days 30}}on{{end}}">30d</a>
+        <a href="/dashboard?days=90" class="{{if eq .Days 90}}on{{end}}">90d</a>
+      </div>
+    </div>
+    <div class="stats">
+      <div><b>{{usd .UsageTotal}}</b><span>custo estimado</span></div>
+      <div><b>{{num .TokensIn}}</b><span>tokens entrada</span></div>
+      <div><b>{{num .TokensOut}}</b><span>tokens saída</span></div>
+    </div>
+    <div class="bars" aria-label="Custo diário (14 dias)">
+      {{range .Daily}}<div class="bar" title="{{.Day}}: {{usd .Cost}}"><i style="height: {{pct .Pct}}"></i><small>{{.Day}}</small></div>{{end}}
+    </div>
+    <table class="tbl">
+      <thead><tr><th>Provedor</th><th>Modelo</th><th class="r">Chamadas</th><th class="r">Entrada</th><th class="r">Saída</th><th class="r">Custo</th></tr></thead>
+      <tbody>
+      {{range .Usage}}<tr><td>{{.Provider}}</td><td><code>{{.Model}}</code></td><td class="r">{{.Calls}}</td><td class="r">{{num .InputTokens}}</td><td class="r">{{num .OutputTokens}}</td><td class="r">{{usd .CostUSD}}</td></tr>
+      {{else}}<tr><td colspan="6" class="muted center">Sem consumo no período.</td></tr>{{end}}
+      </tbody>
+    </table>
+    <small class="muted">Estimativas por tabela de preços configurável (LLM_PRICING).</small>
+  </section>
+
+  <section class="card">
+    <h2>🧠 Grafo</h2>
+    <div class="stats">
+      <div><b>{{.Nodes}}</b><span>nós</span></div>
+      <div><b>{{.Edges}}</b><span>arestas</span></div>
+      <div><b>{{.DBSize}}</b><span>SQLite</span></div>
+    </div>
+    <ul class="type-counts">
+      {{range .Counts}}<li><span class="dot" style="--c: {{.Color}}"></span>{{.Label}}<b>{{.Count}}</b></li>{{end}}
+    </ul>
+    <small class="muted">Vetores: {{range $m, $c := .Vectors}}{{$m}}={{$c}} {{end}}</small>
+  </section>
+
+  <section class="card">
+    <h2>🔌 Integrações</h2>
+    <ul class="integs">
+      {{range .Integs}}<li class="{{if .OK}}ok{{else}}off{{end}}"><span>{{.Name}}</span><small>{{.Status}}</small></li>{{end}}
+    </ul>
+  </section>
+
+  <section class="card">
+    <div class="card-head"><h2>📬 Fila offline</h2>
+      {{if .Failed}}<form method="post" action="/queue/retry"><button class="btn small">Reprocessar falhas</button></form>{{end}}
+    </div>
+    <div class="stats">
+      <div><b>{{index .Queue "pending"}}</b><span>pendentes</span></div>
+      <div><b>{{index .Queue "running"}}</b><span>executando</span></div>
+      <div><b>{{index .Queue "failed"}}</b><span>falhas</span></div>
+    </div>
+    {{if .Failed}}
+    <ul class="failed">{{range .Failed}}<li><code>{{.Kind}}</code> ×{{.Attempts}} <small class="muted">{{truncate .LastError 160}}</small></li>{{end}}</ul>
+    {{end}}
+  </section>
+
+  <section class="card span2">
+    <h2>⏰ Rotinas agendadas</h2>
+    <table class="tbl">
+      <thead><tr><th>Job</th><th>Cron</th><th>Próxima</th><th>Última</th><th>Status</th><th></th></tr></thead>
+      <tbody>
+      {{range .Jobs}}
+        <tr>
+          <td><b>{{.Name}}</b></td><td><code>{{.Spec}}</code></td><td>{{fmtTime .Next}}</td><td>{{since .LastRun}}</td>
+          <td>{{if .Running}}<span class="pill run">rodando</span>{{else if .LastErr}}<span class="pill err" title="{{.LastErr}}">erro</span>{{else if not .LastRun.IsZero}}<span class="pill ok">ok</span>{{end}}</td>
+          <td><form method="post" action="/jobs/{{.Name}}/run"><button class="btn small">▶</button></form></td>
+        </tr>
+      {{else}}<tr><td colspan="6" class="muted center">Agendador inativo.</td></tr>{{end}}
+      </tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>❤️ Saúde (7 dias)</h2>
+    {{if .Metrics}}
+    <table class="tbl compact">
+      <thead><tr><th>Data</th><th>Métrica</th><th class="r">Valor</th></tr></thead>
+      <tbody>{{range .Metrics}}<tr><td>{{.Date}}</td><td>{{.Kind}}</td><td class="r">{{metricVal .Kind .Value}} <small>{{.Unit}}</small></td></tr>{{end}}</tbody>
+    </table>
+    {{else}}<p class="muted">Sem métricas. Configure Zepp ou use o webhook de saúde.</p>{{end}}
+  </section>
+
+  <section class="card span3">
+    <h2>☀️ Último briefing</h2>
+    {{with .Briefing}}
+      <small class="muted">{{fmtTime .CreatedAt}}</small>
+      <div class="md-body">{{markdown .Content}}</div>
+    {{else}}<p class="muted">Nenhum briefing gerado ainda. Execute o job <b>morning</b>.</p>{{end}}
+  </section>
+</div>
+{{end}}
+{{end}}
