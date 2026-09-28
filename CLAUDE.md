@@ -49,6 +49,7 @@ Identificadores e comentários de código ficam em inglês.
 
 ## Git / GitHub
 
+- **Exceção à preferência global "não uso git"**: este é o único projeto do mantenedor versionado com Git e publicado no GitHub (público). Aqui, **sempre** faça commit (mensagens claras, em inglês) e push da branch de trabalho ao concluir uma alteração.
 - O mantenedor está começando com Git/GitHub. Quando uma ação envolver o GitHub, explique os comandos passo a passo.
 - Fluxo de trabalho: branch de feature → Pull Request → merge em `main`. Release é uma tag `vX.Y.Z` em `main`, que dispara o workflow **Release**.
 
