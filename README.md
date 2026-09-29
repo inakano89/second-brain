@@ -28,6 +28,7 @@
 - [Modelos de IA e Conselho](#modelos-de-ia-e-conselho)
 - [IA, grafo e agentes](#ia-grafo-e-agentes)
 - [Memória, tarefas de reuniões e faxina](#memória-tarefas-de-reuniões-e-faxina)
+- [Perfil pessoal](#perfil-pessoal)
 - [Integrações](#integrações)
 - [Rotinas agendadas](#rotinas-agendadas)
 - [Backup e restauração](#backup-e-restauração)
@@ -56,6 +57,7 @@
 | **Importação** | Obsidian, Logseq, Notion, Evernote, Google Keep, Joplin/Bear, favoritos do navegador/Pocket, CSV (Excel, Todoist, Readwise), JSON, Kindle, contatos (vCard), agenda (iCalendar), OPML e **Google Takeout** (histórico do YouTube, pesquisas, Chrome, Linha do tempo do Maps, lugares salvos, Play Store) — com detecção automática, `.zip` aninhados e reimportação sem duplicar. |
 | **Gerenciar conteúdo** | Página **Conteúdo** com filtros (texto, tipo, origem, tag, data, envio), seleção em massa (inclusive todos os resultados do filtro), apagar/etiquetar/mudar tipo/concluir/reprocessar/exportar em lote, filtros de faxina (duplicados, sem conteúdo, sem conexões), aba **Faxina** com as sugestões semanais, apagar uma importação inteira e **lixeira de 30 dias** com desfazer. Itens apagados não voltam nas sincronizações. |
 | **Camada de ação e memória** | Tarefas extraídas de atas, transcrições e notas de reunião duas vezes por dia (com lista do que surgiu, inclusive dos e-mails); memória diária de **decisões, aprendizados e prioridades** que o chat e o briefing consultam; **faxina semanal** que sugere duplicados para juntar, itens vazios, tarefas paradas e pessoas soltas para você aprovar. |
+| **Perfil pessoal** | Identidade, endereços, alergias, **medicações contínuas** (horários, estoque, receita), suplementos, dieta, histórico de saúde, **matrículas** com horários, cursos, assinaturas, hábitos, **datas importantes**, documentos, veículos, casa, pets e metas. Visão geral com o dia e os próximos 30 dias (inclui aniversários dos Contatos e eventos da agenda classificados), lembretes no Telegram (`/tomei`), itens sensíveis **cifrados** e fora das IAs na nuvem. |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
@@ -271,6 +273,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | Página | Recursos |
 |---|---|
 | **Mindmap** (`/`) | Duas visões. **Visão geral** (padrão, SVG): o cérebro no centro e anéis concêntricos com rotinas (situação de cada uma), tipos de conteúdo, temas mais frequentes e fontes (Telegram, Gmail, Drive, Takeout…), com tamanho proporcional à quantidade; as ligações aparecem só ao passar o mouse, e o clique lista os itens no painel lateral (`/api/overview`, `/overview/nodes`). **Rede**: grafo force-directed em canvas (JS puro, embutido), carregado só quando aberto: zoom, pan, arrastar nós, duplo clique expande vizinhos, legenda filtra tipos; o botão “Ver na rede” abre a rede já filtrada. Cores dos tipos em paleta segura para daltonismo, com tons próprios para os temas claro e escuro. Busca híbrida com filtros de tipo, data e tag. Painel de detalhes com Markdown, conexões, edição, conclusão de tarefas, reprocessamento por IA e exclusão (vai para a lixeira, com desfazer). Captura rápida. |
+| **Perfil** (`/profile`) | Visão geral (hoje, próximos 30 dias, resumo, privacidade) e abas Sobre mim, Saúde, Rotina, Datas, Casa e bens e Metas. Veja [Perfil pessoal](#perfil-pessoal). |
 | **Conteúdo** (`/content`) | Gerenciador de tudo o que entrou: lista filtrável e paginada, ações em massa, painel de leitura/edição, abas **Envios** e **Lixeira**. Veja [Gerenciar conteúdo](#gerenciar-conteúdo). |
 | **Chat** (`/chat`) | Streaming via SSE, seletor dinâmico de modelo (`provedor` ou `provedor:modelo`), anexos (imagem/PDF/texto), injeção automática de contexto do grafo e chamadas de ferramentas visíveis. |
 | **Painel** (`/dashboard`) | No topo: indicadores (capturas e concluídas na semana com variação, tarefas abertas e atrasadas, novas da IA em 24 h, faxina pendente, custo de IA), **briefing de hoje**, **A fazer** (atrasadas, de hoje e tarefas novas da IA com a origem, concluir ✓ ou descartar ✕), **prioridades atuais**, **decisões e aprendizados** recentes e capturas por dia (14 dias, com tooltip e tabela). Abaixo: custos e tokens por provedor/modelo (7/30/90 dias), estatísticas do grafo, integrações, fila offline, rotinas com execução manual e métricas de saúde. |
@@ -294,7 +297,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | 🎙️ Voz / áudio | Download do `.ogg` → transcrição (Whisper ou Gemini Audio) → nota categorizada (pode virar tarefa/insight) → grafo. |
 | 🖼️ Foto | Visão multimodal (Gemini / Claude / GPT-4o): OCR, descrição e tabelas em Markdown. |
 | 📄 Documento | PDF (texto local ou OCR multimodal para digitalizados), Markdown, TXT, HTML. |
-| Comandos | `/note`, `/task`, `/event` (linguagem natural → Google Calendar), `/search`, `/tasks`, `/done <id>`, `/brief`, `/model` (lista; `/model council` ativa o Conselho), `/reset`. |
+| Comandos | `/note`, `/task`, `/event` (linguagem natural → Google Calendar), `/search`, `/tasks`, `/done <id>`, `/brief`, `/hoje` (rotina do dia e próximas datas do Perfil), `/tomei <id>` (marca dose/hábito e desconta o estoque), `/model` (lista; `/model council` ativa o Conselho), `/reset`. |
 
 Mídia é processada pela fila offline: sem conexão com o LLM, o bot avisa e reprocessa automaticamente.
 
@@ -453,6 +456,31 @@ Defina ações permitidas em `actions.json` (veja [`actions.example.json`](actio
 
 ---
 
+## Perfil pessoal
+
+Registro estruturado da vida do usuário em `/profile` (pacote `internal/profile`, tabelas `profile_items` e `profile_log`). Cada item tem um tipo com campos próprios (`profile.Kinds`):
+
+| Aba | Tipos |
+|---|---|
+| Sobre mim | identidade (nascimento, tipo sanguíneo, documentos, plano de saúde), endereços com horário de permanência, contatos de emergência, alergias/restrições, preferências |
+| Saúde | medicação contínua (dose, horários, dias, estoque, unidades por dose, início/fim, validade da receita), suplemento, dieta (kcal, macros, nutricionista), condição, cirurgia, vacina, exame, profissional de saúde (última consulta + retorno a cada N meses) |
+| Rotina | matrícula (dias, horário de início/fim, mensalidade, dia de pagamento, renovação), curso, assinatura, hábito |
+| Datas | data importante (anual ou única, aviso com N dias), viagem |
+| Casa e bens | documento (validade), veículo (revisão, seguro, licenciamento), manutenção da casa (a cada N meses), conta fixa, pet, garantia/contrato |
+| Metas | prazo, progresso, próximo passo |
+
+**Visão geral**: rotina de hoje e de amanhã (doses, aulas e hábitos, com marcação) e alertas dos próximos 30 dias: campos de data com aviso (vencimentos, receitas, revisões, cirurgias, viagens), aniversários anuais (com idade), consultas e manutenções vencidas pelo intervalo, estoque para ≤ 10 dias, pagamentos mensais até 5 dias antes, **aniversários dos contatos** (`meta.birthday` das pessoas) e **eventos do Google Agenda** classificados por palavras-chave (cirurgia, consulta, exame, vacina, curso, viagem, aniversário, vencimento). Os dados do perfil, dos contatos e da agenda são lidos em paralelo.
+
+**Sugestões da agenda** (aba Datas): eventos do próximo ano classificados, um por título, viram item do tipo correspondente com um clique (`profile.imported` evita repetir; “Ignorar” também).
+
+**Lembretes** (`reminders`, `CRON_REMINDERS`, padrão `*/5 * * * *`, `REMINDERS_ENABLED`): envia no Telegram as doses e hábitos cujo horário chegou desde a última checagem (no máximo 2 h para trás) e as aulas `REMINDERS_CLASS_BEFORE` minutos antes. `/tomei <id>` marca o horário mais próximo e desconta `per_dose` do estoque. O balanço das 21h recebe o bloco “Amanhã e próximos 7 dias” e o briefing das 7h o bloco “Hoje na sua rotina”; esses blocos são montados sem IA e **não** são gravados na nota do relatório.
+
+**Privacidade**
+
+- Itens sensíveis (padrão para saúde, identidade, endereços, documentos e veículos; ajustável por item) têm título e dados cifrados com AES-256-GCM. A chave `VAULT_KEY` (64 hex) é criada no `.env` no primeiro uso; uma cópia fica no banco cifrada com `BACKUP_ENCRYPTION_KEY` (Argon2id), então um backup do banco pode ser lido com a chave de backup mesmo sem o `.env`. Chave errada → itens aparecem como bloqueados, sem perda.
+- Nas listas, os campos de itens sensíveis só aparecem após **👁 Mostrar**; cada exibição é registrada no audit log.
+- A IA lê o perfil pela ferramenta `personal_profile` do chat/Telegram conforme `PROFILE_AI_ACCESS`: `basic` (padrão) libera itens comuns e só entrega os sensíveis quando todas as rotas possíveis do chat e do Telegram são locais (Ollama); `full` libera tudo; `none` remove a ferramenta. Cada consulta é registrada no audit log.
+
 ## Integrações
 
 ### Google (Agenda, Gmail, Drive, Contatos, Tasks, YouTube)
@@ -514,11 +542,12 @@ Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nome
 | Job | Variável | Padrão | Descrição |
 |---|---|---|---|
 | `morning` | `CRON_MORNING` | `0 7 * * *` | Briefing matinal: sono/recuperação + agenda + tarefas atrasadas/do dia + prioridades da memória + tarefas novas da IA → Telegram e painel |
-| `evening` | `CRON_EVENING` | `0 21 * * *` | Balanço do dia: concluídas, capturas, erros, custo |
+| `evening` | `CRON_EVENING` | `0 21 * * *` | Balanço do dia: concluídas, capturas, erros, custo + bloco pessoal de amanhã e dos próximos 7 dias (Perfil) |
 | `weekly` | `CRON_WEEKLY` | `0 18 * * 0` | Weekly review: memória da semana, nós órfãos, links quebrados, pendências paradas, faxina pendente; re-linka órfãos e reindexa embeddings |
 | `actions` | `CRON_ACTIONS` | `0 12,18 * * *` | Cria tarefas a partir de reuniões novas e envia a lista de tarefas novas da IA (reuniões, notas, e-mails) |
 | `memory` | `CRON_MEMORY` | `30 22 * * *` | Decisões, aprendizados, prioridades atuais e retrato do dia |
 | `cleanup` | `CRON_CLEANUP` | `30 17 * * 0` | Faxina semanal: sugestões para aprovar em Conteúdo → Faxina (recuperada até 3 dias depois) |
+| `reminders` | `CRON_REMINDERS` | `*/5 * * * *` | Lembretes do Perfil no Telegram: doses, hábitos com horário e aulas |
 | `maintenance` | `CRON_MAINTENANCE` | `30 3 * * *` | Purga de temporários de voz/imagem, tarefas e logs antigos e itens com mais de 30 dias na lixeira; `incremental_vacuum`, `optimize`, FTS optimize, checkpoint WAL (VACUUM completo aos domingos) |
 | `backup` | `CRON_BACKUP` | `0 4 * * *` | Snapshot cifrado para os destinos configurados |
 | `rss` / `gmail` / `calendar` / `zepp` | `CRON_*` | 30 / 15 / 30 min / 4 h | Enfileiram sincronizações (com retry offline) |
@@ -624,6 +653,7 @@ Alterações feitas pelo editor web são aplicadas na hora: clientes LLM, açõe
 - Markdown renderizado com escape total de HTML; segredos nunca são reexibidos na UI.
 - Ações do agente limitadas a uma whitelist explícita, desativadas por padrão, sem shell.
 - Backups cifrados com autenticação (AES-GCM); a chave nunca sai do `.env`.
+- Itens sensíveis do Perfil cifrados no banco (AES-256-GCM, `VAULT_KEY`), ocultos até serem exibidos (com registro no audit log) e, por padrão, nunca enviados a modelos na nuvem.
 - Auto-update só instala binários que conferem com o `SHA256SUMS` (e com a assinatura ed25519 quando configurada), com rollback automático.
 
 Vulnerabilidades: veja [SECURITY.md](SECURITY.md) (relato privado via GitHub Security Advisories).

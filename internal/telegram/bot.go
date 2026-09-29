@@ -20,6 +20,7 @@ import (
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/llm"
+	"github.com/inakano89/second-brain/internal/profile"
 	"github.com/inakano89/second-brain/internal/queue"
 )
 
@@ -423,6 +424,8 @@ const helpText = `*Second Brain* — comandos:
 /tasks — tarefas abertas
 /done <id> — conclui tarefa
 /brief — gera briefing agora
+/hoje — sua rotina de hoje (doses, aulas, hábitos) e próximas datas
+/tomei <id> — marca dose ou hábito como feito (desconta o estoque)
 /model — escolhe o modelo (ou council para o Conselho)
 /reset — limpa o histórico da conversa
 Texto livre conversa com o assistente; áudio é transcrito; fotos/PDFs passam por OCR.`
@@ -510,6 +513,40 @@ func (s *Service) command(ctx context.Context, c *Client, m *Message) {
 		}
 		s.db.SetStatus(ctx, id, database.StatusDone)
 		reply("✅ Concluída: " + n.Title)
+	case "/hoje", "/today":
+		o, err := s.agent.ProfileOverview(ctx, time.Now(), 7)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		text := profile.Digest("📋 *Hoje*", o.Today, o.Within(7))
+		if text == "" {
+			text = "Nada na rotina de hoje. Cadastre medicações, matrículas e datas na página Perfil."
+		}
+		reply(text)
+	case "/tomei", "/feito":
+		id, err := strconv.ParseInt(strings.TrimPrefix(arg, "#"), 10, 64)
+		if err != nil {
+			reply("Uso: /tomei <id> (o número aparece nos lembretes e em /hoje)")
+			return
+		}
+		it, slot, changed, err := s.agent.Profile().CheckNow(ctx, id, time.Now().In(s.cfg.Location()))
+		if err != nil {
+			reply("Item não encontrado.")
+			return
+		}
+		if !changed {
+			reply("Já estava marcado: " + it.Title)
+			return
+		}
+		msg := "✔️ " + it.Title
+		if slot != "" {
+			msg += " (" + slot + ")"
+		}
+		if left, ok := profile.DaysLeft(it); ok && left <= 10 {
+			msg += fmt.Sprintf("\n⚠️ Estoque para ~%d dias.", int(left))
+		}
+		reply(msg)
 	case "/brief":
 		if s.Briefing == nil {
 			reply("Briefing indisponível.")

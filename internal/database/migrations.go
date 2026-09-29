@@ -176,4 +176,27 @@ CREATE TABLE cleanup_suggestions (
 CREATE UNIQUE INDEX idx_cleanup_fingerprint ON cleanup_suggestions(fingerprint);
 CREATE INDEX idx_cleanup_status ON cleanup_suggestions(status, kind);
 `,
+	// 4 — personal profile (identity, health, routine, dates, belongings) and check-ins
+	`
+CREATE TABLE profile_items (
+	id         INTEGER PRIMARY KEY AUTOINCREMENT,
+	kind       TEXT NOT NULL,
+	title      TEXT NOT NULL,
+	data       TEXT NOT NULL DEFAULT '',
+	sensitive  INTEGER NOT NULL DEFAULT 0,
+	archived   INTEGER NOT NULL DEFAULT 0,
+	created_at TEXT NOT NULL,
+	updated_at TEXT NOT NULL
+);
+CREATE INDEX idx_profile_kind ON profile_items(kind, archived);
+
+CREATE TABLE profile_log (
+	item_id INTEGER NOT NULL REFERENCES profile_items(id) ON DELETE CASCADE,
+	day     TEXT NOT NULL,
+	slot    TEXT NOT NULL DEFAULT '',
+	at      TEXT NOT NULL,
+	PRIMARY KEY (item_id, day, slot)
+);
+CREATE INDEX idx_profile_log_day ON profile_log(day);
+`,
 }

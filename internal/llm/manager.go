@@ -150,6 +150,21 @@ func (m *Manager) Configured(provider string) bool {
 	return ok
 }
 
+// IsLocal reports whether every model a request with this purpose may reach runs locally
+// (Ollama/llama.cpp), so private data never leaves the machine.
+func (m *Manager) IsLocal(purpose string) bool {
+	spec := m.routeSpec("", purpose)
+	if spec == SpecCouncil {
+		return false
+	}
+	for _, c := range m.candidates(spec) {
+		if name, _, _ := strings.Cut(c, ":"); name != "ollama" {
+			return false
+		}
+	}
+	return true
+}
+
 // Providers lists configured providers.
 func (m *Manager) Providers() []ProviderInfo {
 	m.mu.RLock()

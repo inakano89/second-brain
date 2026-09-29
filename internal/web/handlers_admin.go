@@ -316,7 +316,7 @@ func (s *Server) settingsEnv(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
-	for _, c := range []string{"CRON_MORNING", "CRON_EVENING", "CRON_WEEKLY", "CRON_MAINTENANCE", "CRON_BACKUP", "CRON_RSS", "CRON_GMAIL", "CRON_CALENDAR", "CRON_ZEPP", "CRON_UPDATE", "CRON_MODELS"} {
+	for _, c := range []string{"CRON_MORNING", "CRON_EVENING", "CRON_WEEKLY", "CRON_MAINTENANCE", "CRON_BACKUP", "CRON_RSS", "CRON_GMAIL", "CRON_CALENDAR", "CRON_ZEPP", "CRON_UPDATE", "CRON_MODELS", "CRON_REMINDERS"} {
 		if v := changes[c]; v != "" && v != "off" && v != "-" {
 			if _, err := scheduler.Parse(v); err != nil {
 				redirectFlash(w, r, "/settings", c+": "+err.Error(), true)

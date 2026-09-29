@@ -70,7 +70,7 @@ type Server struct {
 	static  http.Handler
 }
 
-var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import", "content"}
+var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import", "content", "profile"}
 
 // New parses templates and builds the server.
 func New(d Deps) (*Server, error) {
@@ -148,6 +148,16 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /telegram/authorize", s.auth(s.telegramAuthorize))
 	mux.HandleFunc("POST /telegram/revoke", s.auth(s.telegramRevoke))
 	mux.HandleFunc("POST /telegram/check", s.auth(s.telegramCheck))
+
+	mux.HandleFunc("GET /profile", s.auth(s.profilePage))
+	mux.HandleFunc("GET /profile/suggestions", s.auth(s.profileSuggestions))
+	mux.HandleFunc("POST /profile/items", s.auth(s.profileSave))
+	mux.HandleFunc("GET /profile/items/{id}", s.auth(s.profileItem))
+	mux.HandleFunc("POST /profile/items/{id}", s.auth(s.profileSave))
+	mux.HandleFunc("POST /profile/items/{id}/delete", s.auth(s.profileDelete))
+	mux.HandleFunc("POST /profile/check", s.auth(s.profileCheck))
+	mux.HandleFunc("POST /profile/import", s.auth(s.profileImport))
+	mux.HandleFunc("POST /profile/dismiss", s.auth(s.profileDismiss))
 
 	mux.HandleFunc("GET /dashboard", s.auth(s.dashboardPage))
 	mux.HandleFunc("POST /dashboard/tasks/{id}/{action}", s.auth(s.dashboardTask))

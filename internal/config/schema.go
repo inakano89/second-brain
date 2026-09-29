@@ -15,7 +15,7 @@ type Field struct {
 
 // Groups defines the display order of the editor sections.
 var Groups = []string{
-	"Geral", "Segurança", "LLM", "Telegram", "Google", "Zepp", "RSS", "Backup", "Automação", "Atualizações", "Agendamentos",
+	"Geral", "Segurança", "Perfil", "LLM", "Telegram", "Google", "Zepp", "RSS", "Backup", "Automação", "Atualizações", "Agendamentos",
 }
 
 // Schema is the catalogue of known configuration keys.
@@ -38,6 +38,13 @@ var Schema = []Field{
 	{Key: "ADMIN_PASSWORD_HASH", Group: "Segurança", Hidden: true, Secret: true},
 	{Key: "SESSION_SECRET", Group: "Segurança", Hidden: true, Secret: true},
 	{Key: "API_TOKEN", Label: "API token (clipper/webhooks)", Group: "Segurança", Secret: true},
+
+	{Key: "VAULT_KEY", Label: "Chave do cofre do Perfil", Group: "Perfil", Secret: true,
+		Help: "Cifra os itens sensíveis do Perfil (AES-256-GCM). Criada sozinha no primeiro uso. Guarde junto com a chave de backup: sem ela os itens sensíveis não podem ser lidos."},
+	{Key: "PROFILE_AI_ACCESS", Label: "O que a IA pode ler do Perfil", Group: "Perfil", Default: "basic", Kind: "select", Options: []string{"basic", "full", "none"},
+		Help: "basic = itens comuns sempre; itens sensíveis (saúde, documentos, endereços) só com modelo local. full = tudo, inclusive modelos na nuvem. none = a IA nunca lê o Perfil."},
+	{Key: "REMINDERS_ENABLED", Label: "Lembretes no Telegram", Group: "Perfil", Default: "true", Kind: "bool", Help: "Doses de medicação e suplementos, hábitos com horário e aulas."},
+	{Key: "REMINDERS_CLASS_BEFORE", Label: "Avisar aulas com antecedência (min)", Group: "Perfil", Default: "60", Kind: "number"},
 
 	{Key: "OPENAI_API_KEY", Label: "OpenAI API key", Group: "LLM", Secret: true, Help: "Guia: Ajuda → OpenAI"},
 	{Key: "OPENAI_BASE_URL", Label: "OpenAI base URL", Group: "LLM", Default: "https://api.openai.com/v1"},
@@ -137,6 +144,7 @@ var Schema = []Field{
 	{Key: "CRON_ACTIONS", Label: "Tarefas de reuniões e e-mails", Group: "Agendamentos", Default: "0 12,18 * * *", Help: "Cria tarefas a partir de atas, transcrições e notas de reunião novas e envia a lista do que surgiu (inclusive dos e-mails)."},
 	{Key: "CRON_MEMORY", Label: "Memória do dia", Group: "Agendamentos", Default: "30 22 * * *", Help: "Destila decisões, aprendizados e prioridades do que entrou no dia."},
 	{Key: "CRON_CLEANUP", Label: "Faxina semanal", Group: "Agendamentos", Default: "30 17 * * 0", Help: "Sugere duplicados para juntar, itens vazios, tarefas paradas e pessoas soltas; você aprova em Conteúdo → Faxina."},
+	{Key: "CRON_REMINDERS", Label: "Lembretes do Perfil", Group: "Agendamentos", Default: "*/5 * * * *", Help: "Frequência da checagem de lembretes (doses, hábitos, aulas)."},
 	{Key: "CRON_MAINTENANCE", Label: "Manutenção", Group: "Agendamentos", Default: "30 3 * * *"},
 	{Key: "CRON_BACKUP", Label: "Backup", Group: "Agendamentos", Default: "0 4 * * *"},
 	{Key: "CRON_RSS", Label: "RSS", Group: "Agendamentos", Default: "*/30 * * * *"},
