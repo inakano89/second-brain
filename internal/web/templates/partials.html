@@ -10,7 +10,7 @@
       {{if eq .Via "hybrid"}}<span class="via" title="FTS5 + semântica">◆</span>{{else if eq .Via "vector"}}<span class="via" title="semântica">◇</span>{{end}}
     </a>
     <p class="snippet">{{.Snippet}}</p>
-    <small class="muted">#{{.Node.ID}} · {{fmtTime .Node.CreatedAt}}{{if .Node.Tags}} · {{join .Node.Tags ", "}}{{end}}</small>
+    <small class="muted">#{{.Node.ID}} · {{nodeDate .Node}}{{if .Node.Tags}} · {{join .Node.Tags ", "}}{{end}}</small>
   </li>
 {{end}}
 </ul>
@@ -26,7 +26,7 @@
   </div>
   <h2>{{if and (eq .Type "task") (eq .Status "done")}}<s>{{.Title}}</s>{{else}}{{.Title}}{{end}}</h2>
   <div class="meta muted">
-    Criado {{fmtTime .CreatedAt}} · atualizado {{since .UpdatedAt}}
+    {{if isUnknownDate .}}Sem data original (a origem não informa){{else}}Data {{fmtTime .CreatedAt}}{{end}} · atualizado {{since .UpdatedAt}}{{with importedNote .}} · {{.}}{{end}}
     {{if .DueAt}}<br>📅 {{fmtDate .DueAt}}{{end}}
     {{if .Meta.url}}<br>🔗 <a href="{{.Meta.url}}" target="_blank" rel="noopener noreferrer">{{truncate (print .Meta.url) 60}}</a>{{end}}
     {{if .Meta.link}}<br>🔗 <a href="{{.Meta.link}}" target="_blank" rel="noopener noreferrer">abrir origem</a>{{end}}
@@ -175,9 +175,10 @@
     <span data-when="all" hidden>Todos os {{.Total}} resultados do filtro estão selecionados. <button type="button" class="btn small" data-clear-sel>Limpar seleção</button></span>
   </div>
   <div class="tbl-wrap"><table class="tbl content-tbl">
-    <thead><tr><th class="ck"><input type="checkbox" data-check-page aria-label="Selecionar todos desta página"></th><th>Título</th><th>Tipo</th><th class="c-source">Origem</th><th class="c-tags">Tags</th><th class="c-date">Criado</th></tr></thead>
+    <thead><tr><th class="ck"><input type="checkbox" data-check-page aria-label="Selecionar todos desta página"></th><th>Título</th><th>Tipo</th><th class="c-source">Origem</th><th class="c-tags">Tags</th><th class="c-date">Data</th></tr></thead>
     <tbody>
     {{range .Nodes}}
+    {{with index $.Heads .ID}}<tr class="month-row"><th colspan="6" scope="colgroup">{{.}}</th></tr>{{end}}
     <tr data-id="{{.ID}}">
       <td class="ck"><input type="checkbox" value="{{.ID}}" data-row aria-label="Selecionar “{{.Title}}”"></td>
       <td class="title"><a href="/?focus={{.ID}}" hx-get="/nodes/{{.ID}}" hx-target="#detail" data-open="{{.ID}}">{{if and (eq .Type "task") (eq .Status "done")}}<span class="done-mark">✓</span> {{end}}{{.Title}}</a>
@@ -185,7 +186,7 @@
       <td><span class="badge" style="--c: {{typeColor .Type}}">{{typeLabel .Type}}</span></td>
       <td class="c-source small muted">{{sourceLabel .Source}}</td>
       <td class="c-tags tagcell">{{range .Tags}}#{{.}} {{end}}</td>
-      <td class="c-date nowrap small">{{fmtTime .CreatedAt}}</td>
+      <td class="c-date nowrap small">{{nodeDate .}}{{with importedNote .}}<br><small class="muted">{{.}}</small>{{end}}</td>
     </tr>
     {{else}}
     <tr><td colspan="6" class="empty">{{if .Query.Active}}Nada encontrado com esses filtros.{{else}}Nenhum item ainda. Envie algo pelo Telegram, pela web ou <a href="/import">importe arquivos</a>.{{end}}</td></tr>

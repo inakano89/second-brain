@@ -23,6 +23,12 @@
         <option value="">Todas as origens</option>
         {{range .Sources}}<option value="{{.Value}}" {{if eq .Value $.Data.Rows.Query.Source}}selected{{end}}>{{.Label}} ({{.Count}})</option>{{end}}
       </select>
+      <select name="origin" aria-label="Quem criou">
+        <option value="">Todas as fontes de conteúdo</option>
+        <option value="imported" {{if eq .Rows.Query.Origin "imported"}}selected{{end}}>📥 Importados</option>
+        <option value="mine" {{if eq .Rows.Query.Origin "mine"}}selected{{end}}>✍️ Criados por mim</option>
+        <option value="auto" {{if eq .Rows.Query.Origin "auto"}}selected{{end}}>🤖 Automáticos (Gmail, RSS, IA…)</option>
+      </select>
       <input name="tag" value="{{.Rows.Query.Tag}}" placeholder="#tag" aria-label="Tag">
       <select name="status" aria-label="Situação da tarefa">
         <option value="">Tarefas: todas</option>
@@ -31,7 +37,8 @@
       </select>
       <span class="dates"><input type="date" name="from" value="{{.Rows.Query.From}}" aria-label="Criados desde"> – <input type="date" name="to" value="{{.Rows.Query.To}}" aria-label="Criados até"></span>
       <select name="order" aria-label="Ordem">
-        <option value="">Mais recentes</option>
+        <option value="">Por data (eventos: quando acontecem)</option>
+        <option value="created" {{if eq .Rows.Query.Order "created"}}selected{{end}}>Por data de criação</option>
         <option value="oldest" {{if eq .Rows.Query.Order "oldest"}}selected{{end}}>Mais antigos</option>
         <option value="updated" {{if eq .Rows.Query.Order "updated"}}selected{{end}}>Editados por último</option>
         <option value="title" {{if eq .Rows.Query.Order "title"}}selected{{end}}>Título (A–Z)</option>

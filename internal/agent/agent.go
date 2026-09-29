@@ -115,13 +115,22 @@ type IngestInput struct {
 	Meta      map[string]any
 	DueAt     *time.Time
 	CreatedAt time.Time
-	Enrich    bool
+	// DateUnknown marks content whose source carried no date: CreatedAt then only records when it
+	// came in, and reports, search and listings do not treat it as recent.
+	DateUnknown bool
+	Enrich      bool
 }
 
 // explicitSources are channels where the user sends content by hand: a deleted item sent
 // again comes back. Everything else (integrations, imports, the agent) returns
 // database.ErrDeleted for items the user deleted with "não trazer de volta".
-var explicitSources = map[string]bool{"telegram": true, "voice": true, "web": true, "api": true, "clip": true, "watcher": true}
+var explicitSources = func() map[string]bool {
+	m := map[string]bool{}
+	for _, s := range database.ManualSources {
+		m[s] = true
+	}
+	return m
+}()
 
 // Ingest stores a node (upserting by source ref) and optionally queues enrichment.
 func (a *Agent) Ingest(ctx context.Context, in IngestInput) (*database.Node, bool, error) {
@@ -147,6 +156,9 @@ func (a *Agent) Ingest(ctx context.Context, in IngestInput) (*database.Node, boo
 				return nil, false, err
 			}
 		}
+	}
+	if in.DateUnknown {
+		in.Meta[database.MetaDateUnknown] = true
 	}
 	n := &database.Node{
 		Type: in.Type, Title: extract.Truncate(strings.TrimSpace(in.Title), 200), Content: in.Content, Summary: in.Summary,

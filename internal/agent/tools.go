@@ -47,11 +47,13 @@ func integer(desc string) map[string]any {
 // Tools returns the function-calling catalogue available in the current configuration.
 func (a *Agent) Tools() []llm.Tool {
 	tools := []llm.Tool{
-		{Name: "search_brain", Description: "Busca híbrida (texto + semântica) nas notas, tarefas, pessoas, eventos, insights, artigos e métricas do Second Brain.",
+		{Name: "search_brain", Description: "Busca híbrida (texto + semântica) nas notas, tarefas, pessoas, eventos, insights, artigos e métricas do Second Brain. Conteúdo mais novo pesa mais; para perguntas sobre o passado (\"o que eu pensava em 2018?\") informe from/to. Chega também aos itens importados antigos que ficam fora do contexto automático.",
 			Parameters: obj(map[string]any{
 				"query": str("Termos ou pergunta"),
 				"type":  map[string]any{"type": "string", "description": "Filtro opcional de tipo", "enum": database.NodeTypes},
 				"limit": integer("Máximo de resultados (padrão 8)"),
+				"from":  str("Só itens criados a partir desta data (AAAA-MM-DD)"),
+				"to":    str("Só itens criados até esta data (AAAA-MM-DD, inclusive)"),
 			}, "query")},
 		{Name: "get_node", Description: "Lê o conteúdo completo de um nó e seus vizinhos no grafo.",
 			Parameters: obj(map[string]any{"id": integer("ID do nó")}, "id")},
@@ -161,6 +163,7 @@ func (a *Agent) Tools() []llm.Tool {
 				"input": str("Parâmetro opcional substituído em {{input}}"),
 			}, "name")})
 	}
+	tools = append(tools, a.extraTools()...)
 	for i := range tools {
 		if mutatingTools[tools[i].Name] {
 			requireUserRequested(&tools[i])
@@ -233,18 +236,27 @@ func jsonResult(v any) string {
 }
 
 type nodeBrief struct {
-	ID      int64    `json:"id"`
-	Type    string   `json:"type"`
-	Title   string   `json:"title"`
-	Summary string   `json:"summary,omitempty"`
-	Tags    []string `json:"tags,omitempty"`
-	Status  string   `json:"status,omitempty"`
-	Due     string   `json:"due,omitempty"`
-	Created string   `json:"created"`
+	ID       int64    `json:"id"`
+	Type     string   `json:"type"`
+	Title    string   `json:"title"`
+	Summary  string   `json:"summary,omitempty"`
+	Tags     []string `json:"tags,omitempty"`
+	Status   string   `json:"status,omitempty"`
+	Due      string   `json:"due,omitempty"`
+	Created  string   `json:"created"`
+	Imported string   `json:"imported,omitempty"` // when an importer brought it in, if that differs from its date
 }
 
 func brief(n *database.Node, loc *time.Location) nodeBrief {
 	b := nodeBrief{ID: n.ID, Type: n.Type, Title: n.Title, Summary: extract.Truncate(n.Summary, 300), Tags: n.Tags, Status: n.Status, Created: n.CreatedAt.In(loc).Format("2006-01-02 15:04")}
+	if n.DateUnknown() {
+		b.Created = "data desconhecida"
+	}
+	if at, ok := n.ImportedAt(); ok && n.Imported() {
+		if day := at.In(loc).Format("2006-01-02"); n.DateUnknown() || day != n.CreatedAt.In(loc).Format("2006-01-02") {
+			b.Imported = day
+		}
+	}
 	if n.DueAt != nil {
 		b.Due = n.DueAt.In(loc).Format("2006-01-02 15:04")
 	}
@@ -284,6 +296,13 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		f := database.NodeFilter{}
 		if t := args.str("type"); database.ValidType(t) {
 			f.Types = []string{t}
+		}
+		if t, err := time.ParseInLocation("2006-01-02", args.str("from"), loc); err == nil {
+			f.From = &t
+		}
+		if t, err := time.ParseInLocation("2006-01-02", args.str("to"), loc); err == nil {
+			end := t.AddDate(0, 0, 1)
+			f.To = &end
 		}
 		limit := int(args.int("limit"))
 		if limit <= 0 || limit > 25 {
@@ -442,6 +461,9 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 			return nil, err
 		}
 		return map[string]any{"output": out}, nil
+	}
+	if res, handled, err := a.execExtraTool(ctx, name, args); handled {
+		return res, err
 	}
 	return nil, fmt.Errorf("ferramenta desconhecida: %s", name)
 }

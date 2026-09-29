@@ -292,10 +292,20 @@ func (db *DB) LonelyAutoPersons(ctx context.Context, before time.Time, limit int
 
 // ---- merge and small helpers ----
 
-// MergeNodes folds others into keep: text that keep does not already contain is appended,
-// tags are united, missing meta keys copied and every link re-pointed to keep. The others
-// stay in place so the caller can move them to the trash (which keeps the merge undoable).
+// MergeNodes folds others into keep: text that keep does not already contain goes to a
+// "Versões anteriores" section, each entry dated with its own original date, so the main text stays
+// the one the caller chose to keep (the newest, see NewestFirst). Tags are united, missing meta keys
+// copied and every link re-pointed to keep. The others stay in place so the caller can move them
+// to the trash (which keeps the merge undoable).
 func (db *DB) MergeNodes(ctx context.Context, keep int64, others []int64) (*Node, error) {
+	return db.MergeNodesIn(ctx, keep, others, time.UTC)
+}
+
+// VersionsHeading titles the section that holds the text of merged, older items.
+const VersionsHeading = "## Versões anteriores"
+
+// MergeNodesIn is MergeNodes with dates shown in loc.
+func (db *DB) MergeNodesIn(ctx context.Context, keep int64, others []int64, loc *time.Location) (*Node, error) {
 	others = slices.DeleteFunc(slices.Clone(others), func(id int64) bool { return id == keep })
 	if len(others) == 0 {
 		return db.GetNode(ctx, keep)
@@ -322,10 +332,20 @@ func (db *DB) MergeNodes(ctx context.Context, keep int64, others []int64) (*Node
 	if k == nil {
 		return nil, ErrNotFound
 	}
+	NewestFirst(rest)
 	merged, _ := k.Meta["merged_from"].([]any)
 	for _, o := range rest {
 		if c := strings.TrimSpace(o.Content); c != "" && !strings.Contains(k.Content, c) {
-			k.Content = strings.TrimSpace(k.Content + fmt.Sprintf("\n\n---\n_Mesclado de “%s” (#%d)_\n\n", o.Title, o.ID) + c)
+			when := "data desconhecida"
+			if !o.DateUnknown() {
+				when = o.EffectiveAt().In(loc).Format("02/01/2006")
+			}
+			block := fmt.Sprintf("### %s · “%s” (#%d)\n\n%s", when, o.Title, o.ID, c)
+			if strings.Contains(k.Content, VersionsHeading) {
+				k.Content = strings.TrimSpace(k.Content) + "\n\n" + block
+			} else {
+				k.Content = strings.TrimSpace(k.Content + "\n\n---\n" + VersionsHeading + "\n\n" + block)
+			}
 		}
 		if k.Summary == "" {
 			k.Summary = o.Summary
@@ -335,6 +355,9 @@ func (db *DB) MergeNodes(ctx context.Context, keep int64, others []int64) (*Node
 		}
 		k.Tags = append(k.Tags, o.Tags...)
 		for key, v := range o.Meta {
+			if key == MetaDateUnknown {
+				continue // says something about that item's date, not the keeper's
+			}
 			if _, ok := k.Meta[key]; !ok {
 				k.Meta[key] = v
 			}
@@ -398,9 +421,12 @@ func (db *DB) ChatSince(ctx context.Context, since time.Time, limit int) ([]Chat
 }
 
 // ChangedSince lists nodes of the given types created or updated in [from, to), oldest first.
+// Imported items are left out: a bulk import (and the enrichment that follows it) touches
+// thousands of old notes that are not part of what happened in the period.
 func (db *DB) ChangedSince(ctx context.Context, types []string, from, to time.Time, limit int) ([]Node, error) {
 	f := NodeFilter{Types: types}
 	where, args := f.where("")
+	where += " AND source NOT LIKE 'import:%'"
 	args = append(args, fmtTime(from), fmtTime(to), limit)
 	return db.queryNodes(ctx, `SELECT `+nodeCols+` FROM nodes WHERE `+where+` AND updated_at >= ? AND updated_at < ? ORDER BY updated_at LIMIT ?`, args...)
 }
@@ -452,7 +478,7 @@ func (db *DB) DerivedOrigins(ctx context.Context, ids []int64) (map[int64]Node, 
 
 // CreatedPerDay counts nodes created per local day from from on (keys "2006-01-02").
 func (db *DB) CreatedPerDay(ctx context.Context, from time.Time, loc *time.Location) (map[string]int, error) {
-	rows, err := db.QueryContext(ctx, `SELECT created_at FROM nodes WHERE created_at >= ?`, fmtTime(from))
+	rows, err := db.QueryContext(ctx, `SELECT created_at FROM nodes WHERE created_at >= ? AND NOT `+dateUnknownSQL(plainCol), fmtTime(from))
 	if err != nil {
 		return nil, err
 	}

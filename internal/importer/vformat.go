@@ -171,11 +171,23 @@ func components(lines []string, kinds ...string) (blocks [][]prop, kindsOut []st
 
 var ignoredCategories = map[string]bool{"mycontacts": true, "* mycontacts": true, "starred": true, "* starred": true}
 
+// parseRev reads a vCard REV value (20180512T101010Z, 2018-05-12T10:10:10Z or 20180512).
+func parseRev(v string) time.Time {
+	v = strings.TrimSpace(v)
+	for _, l := range []string{"20060102T150405Z", "2006-01-02T15:04:05Z", "20060102T150405", "2006-01-02T15:04:05", time.RFC3339, "20060102", "2006-01-02"} {
+		if t, err := time.Parse(l, v); err == nil {
+			return t
+		}
+	}
+	return time.Time{}
+}
+
 func (p *parser) parseVCard(doc string) []Item {
 	cards, _, _ := components(unfold(doc), "VCARD")
 	var items []Item
 	for _, card := range cards {
 		var fn, uid, nick, title, bday, note string
+		var rev time.Time // REV: when the contact was last changed
 		var nameParts, emails, phones, orgs, addrs, urls, tags []string
 		for _, pr := range card {
 			v := pr.value
@@ -227,6 +239,8 @@ func (p *parser) parseVCard(doc string) []Item {
 				}
 			case "UID":
 				uid = strings.TrimSpace(v)
+			case "REV":
+				rev = parseRev(v)
 			}
 		}
 		name := firstNonEmpty(fn, joinNonEmpty(nameParts, " "), nick, strings.Join(emails, ""))
@@ -274,7 +288,7 @@ func (p *parser) parseVCard(doc string) []Item {
 		}
 		items = append(items, Item{
 			Format: FormatVCard, Ref: ref, Type: database.TypePerson, Title: name, Content: strings.TrimSpace(b.String()),
-			Tags: append(tags, "contato"), Meta: meta,
+			Tags: append(tags, "contato"), Meta: meta, CreatedAt: rev,
 		})
 	}
 	return items

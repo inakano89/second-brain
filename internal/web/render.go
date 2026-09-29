@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/llm"
 	"github.com/inakano89/second-brain/internal/profile"
@@ -99,9 +100,13 @@ func (s *Server) funcs() template.FuncMap {
 			}
 			return fmt.Sprintf("%.0f", v)
 		},
-		"levelClass":  func(l string) string { return "lvl-" + strings.ToLower(l) },
-		"importState": func(st string) string { return importStates[st] },
-		"sourceLabel": sourceLabel,
+		"levelClass":    func(l string) string { return "lvl-" + strings.ToLower(l) },
+		"importState":   func(st string) string { return importStates[st] },
+		"sourceLabel":   sourceLabel,
+		"nodeDate":      func(n database.Node) string { return nodeDate(n, s.Cfg.Location()) },
+		"importedNote":  func(n database.Node) string { return importedNote(n, s.Cfg.Location()) },
+		"originLabel":   func(o string) string { return originLabels[o] },
+		"isUnknownDate": func(n database.Node) bool { return n.DateUnknown() },
 	}
 }
 

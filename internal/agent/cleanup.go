@@ -66,8 +66,11 @@ func (a *Agent) SuggestCleanup(ctx context.Context) (map[string]int, error) {
 	var list []database.CleanupSuggestion
 	merged := map[int64]bool{}
 	for _, grp := range dups {
+		if ordered, err := a.db.OrderNewestFirst(ctx, grp); err == nil && len(ordered) == len(grp) {
+			grp = ordered // the keeper is the most recent copy
+		}
 		list = append(list, database.CleanupSuggestion{Kind: database.CleanupDuplicate, Action: database.ActionMerge, NodeIDs: grp,
-			Reason: fmt.Sprintf("%d cópias com o mesmo título e texto (ou o mesmo link). Juntar mantém a mais antiga com as conexões de todas.", len(grp))})
+			Reason: fmt.Sprintf("%d cópias com o mesmo título e texto (ou o mesmo link). Juntar mantém a mais nova com as conexões de todas.", len(grp))})
 		for _, id := range grp {
 			merged[id] = true
 		}
@@ -96,7 +99,7 @@ func (a *Agent) SuggestCleanup(ctx context.Context) (map[string]int, error) {
 	return a.db.ReplaceCleanupSuggestions(ctx, list)
 }
 
-// nearClusters groups very similar pairs of the same type (oldest node first).
+// nearClusters groups very similar pairs of the same type (most recent node first: it is the one kept).
 func (a *Agent) nearClusters(ctx context.Context, pairs []database.VectorPair, skip map[int64]bool) ([]database.CleanupSuggestion, error) {
 	if len(pairs) == 0 {
 		return nil, nil
@@ -153,19 +156,14 @@ func (a *Agent) nearClusters(ctx context.Context, pairs []database.VectorPair, s
 		if len(g) < 2 || len(g) > 6 {
 			continue
 		}
-		slices.SortFunc(g, func(x, y database.Node) int {
-			if c := x.CreatedAt.Compare(y.CreatedAt); c != 0 {
-				return c
-			}
-			return int(x.ID - y.ID)
-		})
+		database.NewestFirst(g)
 		score := 0.0
 		c := database.CleanupSuggestion{Kind: database.CleanupNearDuplicate, Action: database.ActionMerge}
 		for _, n := range g {
 			c.NodeIDs = append(c.NodeIDs, n.ID)
 			score = max(score, best[n.ID])
 		}
-		c.Reason = fmt.Sprintf("Textos quase iguais (%.0f%% parecidos). Confira e junte se forem o mesmo assunto.", score*100)
+		c.Reason = fmt.Sprintf("Textos quase iguais (%.0f%% parecidos). Juntar mantém o mais novo; o texto antigo vai para “Versões anteriores”.", score*100)
 		out = append(out, c)
 	}
 	slices.SortFunc(out, func(x, y database.CleanupSuggestion) int { return int(x.NodeIDs[0] - y.NodeIDs[0]) })
@@ -173,7 +171,7 @@ func (a *Agent) nearClusters(ctx context.Context, pairs []database.VectorPair, s
 }
 
 // ApplyCleanup carries out a suggestion. action "" uses the suggested one; "merge" keeps
-// the first node, "trash" moves to the trash (keeping the first node of a merge proposal),
+// the first node (the most recent one; the others become dated "Versões anteriores"), "trash" moves to the trash (keeping the first node of a merge proposal),
 // "done" completes tasks and "dismiss" hides the suggestion for good. Deletions use
 // "não trazer de volta", so integrations do not recreate what was cleaned.
 func (a *Agent) ApplyCleanup(ctx context.Context, id int64, action string) (string, error) {
@@ -209,7 +207,7 @@ func (a *Agent) ApplyCleanup(ctx context.Context, id int64, action string) (stri
 		if c.Action != database.ActionMerge || len(ids) < 2 {
 			return "", fmt.Errorf("não há o que juntar")
 		}
-		keep, err := a.db.MergeNodes(ctx, ids[0], ids[1:])
+		keep, err := a.db.MergeNodesIn(ctx, ids[0], ids[1:], a.cfg.Location())
 		if err != nil {
 			return "", err
 		}

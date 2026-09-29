@@ -47,6 +47,8 @@ var Schema = []Field{
 		Help: "Ligado: o chat e o Telegram podem criar e atualizar itens do Perfil (ex.: “cadastre minha Losartana 50 mg às 8h e 20h”). Nunca apagam nada nem mudam a marca “sensível”. Exige PROFILE_AI_ACCESS diferente de none."},
 	{Key: "PROFILE_ENCRYPT_ALL", Label: "Criptografar todos os itens do Perfil", Group: "Perfil", Default: "false", Kind: "bool",
 		Help: "Desligado: só os itens marcados como sensíveis são cifrados. Ligado: todos (matrículas, datas, metas…) ficam cifrados no banco. A marca “sensível” continua decidindo o que fica oculto na tela e o que a IA pode ler."},
+	{Key: "REVIEW_PER_DAY", Label: "Itens por dia na revisão espaçada", Group: "Geral", Default: "2", Kind: "number", Help: "0 desliga a revisão espaçada."},
+	{Key: "ON_THIS_DAY_YEARS", Label: "“Neste dia” no briefing (anos atrás)", Group: "Geral", Default: "1,3,5", Help: "O briefing das 7h mostra notas e eventos do mesmo dia de 1, 3 e 5 anos atrás. “off” desliga."},
 	{Key: "REMINDERS_ENABLED", Label: "Lembretes no Telegram", Group: "Perfil", Default: "true", Kind: "bool", Help: "Doses de medicação e suplementos, hábitos com horário e aulas."},
 	{Key: "REMINDERS_CLASS_BEFORE", Label: "Avisar aulas com antecedência (min)", Group: "Perfil", Default: "60", Kind: "number"},
 
@@ -87,6 +89,10 @@ var Schema = []Field{
 
 	{Key: "LLM_PRICING", Label: "Override de preços (JSON)", Group: "LLM", Kind: "textarea", Help: `{"modelo-prefixo":[entrada_usd_1M, saida_usd_1M]}`},
 	{Key: "AUTOLINK_THRESHOLD", Label: "Limiar de similaridade p/ auto-link", Group: "LLM", Help: "Vazio = automático (0.72 remoto / 0.45 local)"},
+	{Key: "SEARCH_RECENCY_HALFLIFE", Label: "Meia-vida do conteúdo na busca (dias)", Group: "LLM", Default: "365", Kind: "number",
+		Help: "Na busca e no chat, o conteúdo perde peso com a idade: a cada N dias de idade vale metade da diferença (nunca menos que 50% da relevância). Tarefas abertas, eventos futuros, pessoas e itens sem data não perdem peso. 0 desliga."},
+	{Key: "CHAT_ARCHIVE_YEARS", Label: "Arquivo: itens importados antigos fora do chat (anos)", Group: "LLM", Default: "0", Kind: "number",
+		Help: "Itens importados com mais de N anos deixam de entrar sozinhos no contexto do chat, mas continuam na busca e o chat os consulta quando você perguntar do passado (“o que eu pensava em 2018?”). 0 desliga."},
 
 	{Key: "TELEGRAM_BOT_TOKEN", Label: "Token do bot", Group: "Telegram", Secret: true},
 	{Key: "ALLOWED_TELEGRAM_USER_IDS", Label: "IDs autorizados", Group: "Telegram", Help: "Separados por vírgula"},
@@ -148,6 +154,9 @@ var Schema = []Field{
 	{Key: "CRON_ACTIONS", Label: "Tarefas de reuniões e e-mails", Group: "Agendamentos", Default: "0 12,18 * * *", Help: "Cria tarefas a partir de atas, transcrições e notas de reunião novas e envia a lista do que surgiu (inclusive dos e-mails)."},
 	{Key: "CRON_MEMORY", Label: "Memória do dia", Group: "Agendamentos", Default: "30 22 * * *", Help: "Destila decisões, aprendizados e prioridades do que entrou no dia."},
 	{Key: "CRON_CLEANUP", Label: "Faxina semanal", Group: "Agendamentos", Default: "30 17 * * 0", Help: "Sugere duplicados para juntar, itens vazios, tarefas paradas e pessoas soltas; você aprova em Conteúdo → Faxina."},
+	{Key: "CRON_REVIEW", Label: "Revisão espaçada", Group: "Agendamentos", Default: "30 8 * * *", Help: "Manda pelo Telegram destaques do Kindle, insights e aprendizados em intervalos crescentes (1, 3, 7, 14, 30… dias). Quantidade por dia em REVIEW_PER_DAY."},
+	{Key: "CRON_DIARY", Label: "Diário guiado", Group: "Agendamentos", Default: "30 21 * * *", Help: "À noite o bot faz 2 ou 3 perguntas no Telegram; responda uma por mensagem, por texto ou áudio. Vira a nota “Diário DD/MM/AAAA”. “off” desliga."},
+	{Key: "CRON_YEAR_REVIEW", Label: "Retrospectiva do ano", Group: "Agendamentos", Default: "0 9 2 1 *", Help: "Em 2 de janeiro resume o ano anterior: temas, pessoas, decisões, números e o que ficou pendente."},
 	{Key: "CRON_REMINDERS", Label: "Lembretes do Perfil", Group: "Agendamentos", Default: "*/5 * * * *", Help: "Frequência da checagem de lembretes (doses, hábitos, aulas)."},
 	{Key: "CRON_MAINTENANCE", Label: "Manutenção", Group: "Agendamentos", Default: "30 3 * * *"},
 	{Key: "CRON_BACKUP", Label: "Backup", Group: "Agendamentos", Default: "0 4 * * *"},

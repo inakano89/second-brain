@@ -333,10 +333,10 @@ func TestSuggestAndApplyCleanup(t *testing.T) {
 		return database.CleanupSuggestion{}
 	}
 	dup := find(database.CleanupDuplicate)
-	if dup.NodeIDs[0] != d1.ID {
+	if dup.NodeIDs[0] != d2.ID { // the most recent copy is the one kept
 		t.Fatalf("keeper = %v", dup.NodeIDs)
 	}
-	if near := find(database.CleanupNearDuplicate); len(near.NodeIDs) != 2 || near.NodeIDs[0] != n1.ID || near.NodeIDs[1] != n2.ID {
+	if near := find(database.CleanupNearDuplicate); len(near.NodeIDs) != 2 || near.NodeIDs[0] != n2.ID || near.NodeIDs[1] != n1.ID {
 		t.Fatalf("near = %+v", near)
 	}
 
@@ -344,10 +344,10 @@ func TestSuggestAndApplyCleanup(t *testing.T) {
 	if err != nil || !strings.Contains(msg, "juntados") {
 		t.Fatalf("merge = %q, %v", msg, err)
 	}
-	if _, err := db.GetNode(ctx, d2.ID); err != database.ErrNotFound {
+	if _, err := db.GetNode(ctx, d1.ID); err != database.ErrNotFound {
 		t.Fatal("copy not trashed")
 	}
-	if gone, _ := db.IsDeletedRef(ctx, "import:bookmarks", "2"); !gone {
+	if gone, _ := db.IsDeletedRef(ctx, "import:bookmarks", "1"); !gone {
 		t.Error("merged copy must not come back on re-import")
 	}
 	if msg, _ := a.ApplyCleanup(ctx, dup.ID, ""); !strings.Contains(msg, "já resolvida") {

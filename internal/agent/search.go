@@ -5,6 +5,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
@@ -108,8 +109,16 @@ func (a *Agent) Search(ctx context.Context, q string, f database.NodeFilter, lim
 			fused[n.ID] = &acc{node: n, score: s, vec: true}
 		}
 	}
+	// Newer content outranks equally relevant old content (a period filter or a question about
+	// the past turns this off).
+	now := time.Now()
+	halfLife := a.recencyHalfLife()
+	if f.From != nil || f.To != nil || wantsHistory(q, now) {
+		halfLife = 0
+	}
 	out := make([]SearchResult, 0, len(fused))
 	for _, x := range fused {
+		x.score *= recencyFactor(&x.node, now, halfLife)
 		via := "fts"
 		switch {
 		case x.fts && x.vec:

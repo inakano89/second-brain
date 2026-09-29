@@ -594,7 +594,7 @@ func TestCleanupTabAndDashboard(t *testing.T) {
 	rec = e.do("POST", fmt.Sprintf("/content/cleanup/%d", dup.ID), strings.NewReader("action=merge"),
 		map[string]string{"Content-Type": "application/x-www-form-urlencoded", "HX-Request": "true"})
 	e.expect(rec, 200, "juntados", fmt.Sprintf(`id="cl-%d"`, dup.ID))
-	if _, err := e.db.GetNode(ctx, b.ID); err != database.ErrNotFound {
+	if _, err := e.db.GetNode(ctx, a.ID); err != database.ErrNotFound { // the newest copy (b) is the one kept
 		t.Fatal("copy still there")
 	}
 	rec = e.form("/content/cleanup/apply-all", url.Values{"kind": {database.CleanupStaleTask}})
@@ -605,7 +605,7 @@ func TestCleanupTabAndDashboard(t *testing.T) {
 		t.Fatalf("task = %+v", n)
 	}
 	_ = task
-	_ = a
+	_ = b
 
 	// Dashboard: KPIs, to-do with AI tasks, memory, charts with a table view.
 	due := time.Now().AddDate(0, 0, -2)
@@ -679,4 +679,46 @@ func TestProfilePages(t *testing.T) {
 	}
 	e.expect(e.form("/profile/items", url.Values{"kind": {"bill"}, "title": {"Luz"}, "due_day": {"45"}}), 303)
 	e.expect(e.do("GET", "/profile/suggestions", nil, nil), 200)
+}
+
+func TestContentDatesGroupsAndOrigin(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	mk := func(in agent.IngestInput) *database.Node {
+		t.Helper()
+		n, _, err := e.ag.Ingest(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	d := func(y int, m time.Month) time.Time { return time.Date(y, m, 10, 12, 0, 0, 0, time.UTC) }
+	stamp := map[string]any{database.MetaImportAt: "2026-09-01T10:00:00.000000Z"}
+	mk(agent.IngestInput{Title: "Nota antiga importada", Content: "a", Source: "import:markdown", SourceRef: "a", CreatedAt: d(2015, time.March), Meta: stamp})
+	mk(agent.IngestInput{Title: "Item sem data", Content: "b", Source: "import:opml", SourceRef: "b", DateUnknown: true, Meta: map[string]any{database.MetaImportAt: "2026-09-01T10:00:00.000000Z"}})
+	mk(agent.IngestInput{Title: "Nota minha", Content: "c", Source: "web", CreatedAt: d(2026, time.September)})
+	ev := d(2031, time.January)
+	mk(agent.IngestInput{Type: database.TypeEvent, Title: "Viagem futura", Content: "d", Source: "calendar", SourceRef: "e", CreatedAt: d(2026, time.August), DueAt: &ev})
+
+	page := e.do("GET", "/content", nil, nil)
+	e.expect(page, 200, `name="origin"`, "Por data (eventos: quando acontecem)", `class="month-row"`, "2031 · janeiro", "2026 · setembro", "2015 · março", "Sem data",
+		"sem data", "importado em 01/09/2026")
+	body := page.Body.String()
+	pos := func(s string) int { return strings.Index(body, s) }
+	if !(pos("Viagem futura") < pos("Nota minha") && pos("Nota minha") < pos("Nota antiga importada") && pos("Nota antiga importada") < pos("Item sem data")) {
+		t.Fatalf("order wrong: event by its date first, undated last: %s", truncate(body))
+	}
+	created := e.do("GET", "/content/rows?order=created", nil, map[string]string{"HX-Request": "true"}).Body.String()
+	if strings.Contains(created, "2031 · janeiro") || !strings.Contains(created, "2026 · agosto") {
+		t.Fatalf("order=created must group by creation date: %s", truncate(created))
+	}
+	imp := e.do("GET", "/content/rows?origin=imported", nil, map[string]string{"HX-Request": "true"})
+	e.expect(imp, 200, "Nota antiga importada", "Item sem data", "1–2 de 2")
+	mine := e.do("GET", "/content/rows?origin=mine", nil, map[string]string{"HX-Request": "true"})
+	e.expect(mine, 200, "Nota minha", "1–1 de 1")
+	if u := mine.Header().Get("HX-Push-Url"); u != "/content?origin=mine" {
+		t.Errorf("push url = %q", u)
+	}
+	e.expect(e.do("GET", "/content/rows?origin=auto", nil, map[string]string{"HX-Request": "true"}), 200, "Viagem futura", "1–1 de 1")
 }

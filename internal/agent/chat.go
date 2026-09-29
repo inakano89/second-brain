@@ -42,20 +42,28 @@ type ChatResult struct {
 
 const maxToolRounds = 6
 
+// datesRule tells the model how to weigh information of different ages.
+const datesRule = `Datas: se duas informações do contexto entram em conflito, vale a mais recente (compare criado=/acontece=); cite a data quando a informação for antiga (idade=) ou vier de importação (importado=). data=desconhecida significa que a origem não tinha data: não presuma que é recente nem antiga.`
+
 func (a *Agent) systemPrompt(ctxNodes []SearchResult) string {
 	loc := a.cfg.Location()
+	nowT := time.Now()
 	var b strings.Builder
 	fmt.Fprintf(&b, `Você é o assistente pessoal do Second Brain "%s".
 Agora: %s (%s).
 Responda de forma direta e acionável, no idioma do usuário. Use o contexto recuperado quando relevante e cite notas como [[Título]].
 Use as ferramentas para buscar mais informações, criar ou editar notas/tarefas/pessoas/eventos ou executar ações quando o usuário pedir. Para editar, busque o nó antes (search_brain/get_node) e use update_node; nunca invente IDs.
-Você pode criar, editar e apagar (lixeira) notas, tarefas, pessoas, eventos, ligações e itens do Perfil, mas SÓ com autorização. Se a mensagem atual do usuário pede explicitamente a alteração ("adicione o telefone da Ana", "apague a nota X"), faça e envie user_requested=true. Se a alteração for ideia sua ou o pedido for ambíguo (qual pessoa? qual valor?), não altere: pergunte em uma frase o que mudaria e espere o "sim"; só então chame a ferramenta com user_requested=true. Nunca use user_requested=true por conta própria.`,
-		a.cfg.Get("BRAIN_NAME"), time.Now().In(loc).Format("Monday, 02/01/2006 15:04"), loc.String())
+Você pode criar, editar e apagar (lixeira) notas, tarefas, pessoas, eventos, ligações e itens do Perfil, mas SÓ com autorização. Se a mensagem atual do usuário pede explicitamente a alteração ("adicione o telefone da Ana", "apague a nota X"), faça e envie user_requested=true. Se a alteração for ideia sua ou o pedido for ambíguo (qual pessoa? qual valor?), não altere: pergunte em uma frase o que mudaria e espere o "sim"; só então chame a ferramenta com user_requested=true. Nunca use user_requested=true por conta própria.
+%s`,
+		a.cfg.Get("BRAIN_NAME"), nowT.In(loc).Format("Monday, 02/01/2006 15:04"), loc.String(), datesRule)
+	if years := a.cfg.GetInt("CHAT_ARCHIVE_YEARS", 0); years > 0 {
+		fmt.Fprintf(&b, "\nItens importados com mais de %d anos ficam fora do contexto automático. Se a pergunta for sobre o passado, use search_brain (com from/to) para consultá-los.", years)
+	}
 	if len(ctxNodes) > 0 {
 		b.WriteString("\n\n<contexto_recuperado>\n")
 		for _, r := range ctxNodes {
 			n := r.Node
-			fmt.Fprintf(&b, "[id=%d tipo=%s criado=%s", n.ID, n.Type, n.CreatedAt.In(loc).Format("2006-01-02"))
+			fmt.Fprintf(&b, "[id=%d tipo=%s %s", n.ID, n.Type, contextDates(&n, loc, nowT))
 			if n.Status != "" {
 				fmt.Fprintf(&b, " status=%s", n.Status)
 			}

@@ -76,7 +76,11 @@ type NodeFilter struct {
 	Special string // "dup" same type and title, "empty" no content, "orphan" no links (listings only)
 	Limit   int
 	Offset  int
-	Order   string // "created" (default), "oldest", "updated", "due", "title"
+	Order   string // "created" (default), "date", "oldest", "updated", "due", "title"
+
+	Origin         string     // OriginImported, OriginMine or OriginAuto
+	KnownDate      bool       // leave out items whose original date is unknown
+	HideOldImports *time.Time // leave out imported items with a known date before this (chat archive)
 }
 
 // ScoredNode pairs a node with a relevance score.
@@ -208,6 +212,8 @@ func (db *DB) UpsertBySource(ctx context.Context, n *Node) (created bool, err er
 	if err != nil {
 		return false, err
 	}
+	incoming, wasUnknown := n.CreatedAt, existing.DateUnknown()
+	dateFound := !incoming.IsZero() && !n.DateUnknown() && wasUnknown // a re-import finally brings the original date
 	n.ID, n.UID, n.CreatedAt = existing.ID, existing.UID, existing.CreatedAt
 	if n.Status == "" {
 		n.Status = existing.Status
@@ -222,8 +228,20 @@ func (db *DB) UpsertBySource(ctx context.Context, n *Node) (created bool, err er
 	for k, v := range n.Meta {
 		merged[k] = v
 	}
+	if wasUnknown && !dateFound {
+		merged[MetaDateUnknown] = true
+	} else {
+		delete(merged, MetaDateUnknown) // the stored date stays the original one
+	}
 	n.Meta = merged
-	return false, db.UpdateNode(ctx, n)
+	if err := db.UpdateNode(ctx, n); err != nil {
+		return false, err
+	}
+	if dateFound {
+		n.CreatedAt = incoming
+		return false, db.SetCreatedAt(ctx, n.ID, incoming)
+	}
+	return false, nil
 }
 
 // GetNode loads a node by id.
@@ -372,6 +390,21 @@ func (f NodeFilter) where(alias string) (string, []any) {
 		conds = append(conds, "json_extract(CASE WHEN json_valid("+col("meta")+") THEN "+col("meta")+" ELSE '{}' END, '$.import_batch') = ?")
 		args = append(args, f.Batch)
 	}
+	switch f.Origin {
+	case OriginImported:
+		conds = append(conds, col("source")+" LIKE 'import:%'")
+	case OriginMine:
+		conds = append(conds, manualSourcesSQL(col))
+	case OriginAuto:
+		conds = append(conds, col("source")+" NOT LIKE 'import:%' AND NOT "+manualSourcesSQL(col))
+	}
+	if f.KnownDate {
+		conds = append(conds, "NOT "+dateUnknownSQL(col))
+	}
+	if f.HideOldImports != nil {
+		conds = append(conds, "NOT ("+col("source")+" LIKE 'import:%' AND "+col("created_at")+" < ? AND NOT "+dateUnknownSQL(col)+")")
+		args = append(args, fmtTime(*f.HideOldImports))
+	}
 	switch f.Special {
 	case "dup":
 		conds = append(conds, "("+col("type")+", lower("+col("title")+")) IN (SELECT type, lower(title) FROM nodes GROUP BY type, lower(title) HAVING COUNT(*) > 1)")
@@ -386,18 +419,23 @@ func (f NodeFilter) where(alias string) (string, []any) {
 	return strings.Join(conds, " AND "), args
 }
 
+// order returns the ORDER BY clause. Items with an unknown original date always come last in
+// the date orders: their created_at is only the import moment.
 func (f NodeFilter) order() string {
+	unknown := dateUnknownSQL(plainCol) + " ASC, "
 	switch f.Order {
 	case "oldest":
-		return "created_at ASC, id ASC"
+		return unknown + "created_at ASC, id ASC"
 	case "updated":
 		return "updated_at DESC"
 	case "due":
 		return "due_at IS NULL, due_at ASC, created_at DESC"
 	case "title":
 		return "lower(title), type, id"
+	case "date": // events by the day they happen, everything else by creation
+		return unknown + "CASE WHEN type = 'event' AND due_at IS NOT NULL THEN due_at ELSE created_at END DESC, id DESC"
 	}
-	return "created_at DESC, id DESC"
+	return unknown + "created_at DESC, id DESC"
 }
 
 // ListNodes lists nodes matching f.
@@ -489,6 +527,26 @@ func (f NodeFilter) Matches(n *Node) bool {
 		return false
 	}
 	if f.Batch != "" && n.Meta["import_batch"] != f.Batch {
+		return false
+	}
+	switch f.Origin {
+	case OriginImported:
+		if !n.Imported() {
+			return false
+		}
+	case OriginMine:
+		if !slices.Contains(ManualSources, n.Source) {
+			return false
+		}
+	case OriginAuto:
+		if n.Imported() || slices.Contains(ManualSources, n.Source) {
+			return false
+		}
+	}
+	if f.KnownDate && n.DateUnknown() {
+		return false
+	}
+	if f.HideOldImports != nil && n.Imported() && !n.DateUnknown() && n.CreatedAt.Before(*f.HideOldImports) {
 		return false
 	}
 	if f.Tag != "" {

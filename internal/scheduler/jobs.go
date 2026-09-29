@@ -61,6 +61,9 @@ func Register(s *Scheduler, d *Deps) error {
 		{"actions", "CRON_ACTIONS", func(ctx context.Context) error { _, err := d.ActionItems(ctx, true); return err }, nil},
 		{"memory", "CRON_MEMORY", func(ctx context.Context) error { _, err := d.MemoryRun(ctx, true); return err }, nil},
 		{"cleanup", "CRON_CLEANUP", func(ctx context.Context) error { _, err := d.Cleanup(ctx, true); return err }, []JobOption{CatchUpWithin(72 * time.Hour)}},
+		{"review", "CRON_REVIEW", func(ctx context.Context) error { _, err := d.Review(ctx, true); return err }, []JobOption{CatchUpWithin(5 * time.Hour)}},
+		{"diary", "CRON_DIARY", func(ctx context.Context) error { _, err := d.Diary(ctx, true); return err }, []JobOption{CatchUpWithin(2 * time.Hour)}},
+		{"year-review", "CRON_YEAR_REVIEW", func(ctx context.Context) error { _, err := d.YearReview(ctx, true); return err }, []JobOption{CatchUpWithin(45 * 24 * time.Hour)}},
 		{"reminders", "CRON_REMINDERS", d.Reminders, nil},
 		{"maintenance", "CRON_MAINTENANCE", d.Maintenance, nil},
 		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }, nil},
@@ -156,8 +159,10 @@ func (d *Deps) MorningBriefing(ctx context.Context, notify bool) (string, error)
 	var (
 		memory  agent.MemoryView
 		aiTasks []agent.TaskOrigin
+		onDay   []agent.DayMemory
 	)
-	wg.Add(6)
+	wg.Add(7)
+	go func() { defer wg.Done(); onDay, _ = d.Agent.OnThisDay(ctx, now) }()
 	go func() { defer wg.Done(); memory, _ = d.Agent.Memory(ctx, 5) }()
 	go func() { defer wg.Done(); aiTasks, _ = d.Agent.NewAITasks(ctx, now.Add(-24*time.Hour), 15) }()
 	go func() {
@@ -169,7 +174,7 @@ func (d *Deps) MorningBriefing(ctx context.Context, notify bool) (string, error)
 	go func() {
 		defer wg.Done()
 		from := now.Add(-24 * time.Hour)
-		recent, _ = d.DB.ListNodes(ctx, database.NodeFilter{Types: []string{database.TypeInsight, database.TypeNote, database.TypeArticle}, From: &from, Limit: 15})
+		recent, _ = d.DB.ListNodes(ctx, database.NodeFilter{Types: []string{database.TypeInsight, database.TypeNote, database.TypeArticle}, From: &from, KnownDate: true, Limit: 15})
 	}()
 	wg.Wait()
 
@@ -247,10 +252,18 @@ func (d *Deps) MorningBriefing(ctx context.Context, notify bool) (string, error)
 			fmt.Fprintf(&data, "- [%s] %s\n", n.Type, n.Title)
 		}
 	}
+	if len(onDay) > 0 {
+		data.WriteString("\n## Neste dia, em anos anteriores\n")
+		for _, m := range onDay {
+			for _, n := range m.Nodes {
+				fmt.Fprintf(&data, "- %d ano(s) atrás (%d): [%s] %s\n", m.YearsAgo, m.Date.Year(), n.Type, n.Title)
+			}
+		}
+	}
 
 	text := d.compose(ctx, "briefing",
 		`Você é o chief-of-staff pessoal do usuário. Gere um BRIEFING MATINAL acionável em português, conciso (máx. 220 palavras), com seções:
-🛌 Recuperação (interprete sono/recuperação e recomende intensidade do dia), 📅 Agenda, ✅ Top 3 prioridades (com IDs; alinhe às prioridades atuais da memória quando houver), 📝 Tarefas novas da IA (se houver), ⚠️ Riscos/atrasos, 💡 Uma sugestão.
+🛌 Recuperação (interprete sono/recuperação e recomende intensidade do dia), 📅 Agenda, ✅ Top 3 prioridades (com IDs; alinhe às prioridades atuais da memória quando houver), 📝 Tarefas novas da IA (se houver), 🕰️ Neste dia (uma linha sobre o que aconteceu em anos anteriores, se houver), ⚠️ Riscos/atrasos, 💡 Uma sugestão.
 Use apenas os dados fornecidos. Formatação compatível com Telegram Markdown simples (*negrito*, listas com -).`,
 		data.String(), "☀️ *Briefing matinal*\n\n"+data.String())
 	title := "Briefing matinal " + now.Format("02/01/2006")
@@ -270,7 +283,8 @@ func (d *Deps) EveningReview(ctx context.Context, notify bool) (string, error) {
 	now := time.Now().In(loc)
 	start, _ := dayBounds(loc, now)
 	done, _ := d.DB.UpdatedBetween(ctx, []string{database.TypeTask}, database.StatusDone, start, now.Add(time.Minute), 50)
-	created, _ := d.DB.ListNodes(ctx, database.NodeFilter{From: &start, Limit: 200})
+	created, _ := d.DB.ListNodes(ctx, database.NodeFilter{From: &start, KnownDate: true, Limit: 200}) // undated imports are not captures
+	imported, _ := d.DB.CountImported(ctx, start, start.AddDate(0, 0, 1))
 	open, _ := d.DB.OpenTasks(ctx, 100)
 	errCount, _ := d.DB.CountLogs(ctx, "ERROR", start)
 	qs, _ := d.DB.QueueStats(ctx)
@@ -293,6 +307,9 @@ func (d *Deps) EveningReview(ctx context.Context, notify bool) (string, error) {
 		if t.DueAt != nil && t.DueAt.Before(now) {
 			overdue++
 		}
+	}
+	if imported > 0 {
+		fmt.Fprintf(&data, "\n## Importados hoje\n%d itens vieram de importações (não são capturas novas)\n", imported)
 	}
 	fmt.Fprintf(&data, "\n## Capturas de hoje\n%v\n\n## Pendências\nabertas=%d atrasadas=%d\n\n## Sistema\nerros=%d fila_pendente=%d fila_falhas=%d custo_llm_hoje=US$%.4f\n",
 		byType, len(open), overdue, errCount, qs[database.TaskPending], qs[database.TaskFailed], cost)
@@ -322,6 +339,8 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 		created []database.Node
 		usage   []database.UsageRow
 		qs      map[string]int
+
+		imported int
 	)
 	var (
 		cleanup   int
@@ -343,7 +362,8 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 	go func() { defer wg.Done(); open, _ = d.DB.OpenTasks(ctx, 500) }()
 	go func() {
 		defer wg.Done()
-		created, _ = d.DB.ListNodes(ctx, database.NodeFilter{From: &weekAgo, Limit: 2000})
+		created, _ = d.DB.ListNodes(ctx, database.NodeFilter{From: &weekAgo, KnownDate: true, Limit: 2000})
+		imported, _ = d.DB.CountImported(ctx, weekAgo, now.Add(time.Minute))
 	}()
 	go func() {
 		defer wg.Done()
@@ -374,7 +394,11 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 		cost += u.CostUSD
 	}
 	var data strings.Builder
-	fmt.Fprintf(&data, "Semana até %s\n\n## Crescimento\n%d nós novos\n\n## Nós órfãos (%d)\n", now.Format("02/01/2006"), len(created), len(orphans))
+	fmt.Fprintf(&data, "Semana até %s\n\n## Crescimento\n%d nós novos", now.Format("02/01/2006"), len(created))
+	if imported > 0 {
+		fmt.Fprintf(&data, " (mais %d itens importados, que não contam como novos)", imported)
+	}
+	fmt.Fprintf(&data, "\n\n## Nós órfãos (%d)\n", len(orphans))
 	for i, o := range orphans {
 		if i >= 15 {
 			fmt.Fprintf(&data, "… e mais %d\n", len(orphans)-15)
@@ -403,6 +427,7 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 	if _, err := d.saveInsight(ctx, fmt.Sprintf("Weekly Review %d-W%02d", year, week), fmt.Sprintf("weekly:%d-W%02d", year, week), text, []string{"review", "semanal"}); err != nil {
 		return text, err
 	}
+	text = withBlock(text, d.goalsBlock(ctx)) // personal: not saved, not sent to a model
 	if notify {
 		d.notify(ctx, text)
 	}
