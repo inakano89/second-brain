@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/inakano89/second-brain/internal/config"
@@ -108,6 +109,7 @@ type Store struct {
 	db  *database.DB
 	log *slog.Logger
 	v   *vault
+	wmu sync.Mutex // serialises AI upserts (find + save)
 }
 
 // New creates the store.

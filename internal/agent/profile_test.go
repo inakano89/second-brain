@@ -118,3 +118,56 @@ func TestPrivateChatTurns(t *testing.T) {
 		t.Fatalf("private turn should be replayed with full access: %s", last)
 	}
 }
+
+// TestProfileSaveTool: the write tool exists only with PROFILE_AI_WRITE, fills the profile
+// and never echoes stored data back to the model.
+func TestProfileSaveTool(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, ".env"), []byte("EMBEDDING_PROVIDER=local\n"), 0o600)
+	cfg, err := config.Load(filepath.Join(dir, ".env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	db, err := database.Open(filepath.Join(dir, "brain.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer db.Close()
+	a := New(cfg, db, llm.NewManager(cfg, nil), slog.New(slog.NewTextHandler(io.Discard, nil)))
+	ctx := context.Background()
+	has := func() bool {
+		for _, tl := range a.Tools() {
+			if tl.Name == toolProfileSave {
+				return true
+			}
+		}
+		return false
+	}
+	if has() {
+		t.Fatal("save tool offered without PROFILE_AI_WRITE")
+	}
+	cfg.Update(map[string]string{"PROFILE_AI_WRITE": "true"})
+	if !has() {
+		t.Fatal("save tool missing with PROFILE_AI_WRITE")
+	}
+
+	call := llm.ToolCall{ID: "c1", Name: toolProfileSave, Arguments: json.RawMessage(`{"kind":"medication","title":"Losartana","fields":[{"key":"dose","value":"50 mg"},{"key":"times","value":"08:00, 20:00"},{"key":"stock","value":"30"}]}`)}
+	res := a.ExecuteTool(ctx, call)
+	if !strings.Contains(res, `"created":true`) || strings.Contains(res, "error") {
+		t.Fatalf("save: %s", res)
+	}
+	// Update by title: the answer only repeats what the model sent (no stored fields).
+	call.Arguments = json.RawMessage(`{"kind":"medication","title":"losartana","fields":[{"key":"stock","value":"28"}]}`)
+	res = a.ExecuteTool(ctx, call)
+	if !strings.Contains(res, `"created":false`) || strings.Contains(res, "50 mg") {
+		t.Fatalf("update leaked or failed: %s", res)
+	}
+	items, _ := a.Profile().List(ctx, false)
+	if len(items) != 1 || items[0].Get("dose") != "50 mg" || items[0].Get("stock") != "28" || !items[0].Sensitive {
+		t.Fatalf("stored: %+v", items)
+	}
+	bad := a.ExecuteTool(ctx, llm.ToolCall{Name: toolProfileSave, Arguments: json.RawMessage(`{"kind":"medication","title":"X","fields":[{"key":"cor","value":"azul"}]}`)})
+	if !strings.Contains(bad, "error") {
+		t.Fatalf("unknown field accepted: %s", bad)
+	}
+}

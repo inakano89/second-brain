@@ -207,7 +207,7 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 		}
 		twg.Wait()
 		for i, call := range resp.ToolCalls {
-			if call.Name == toolProfile {
+			if isProfileTool(call.Name) {
 				private = true
 			}
 			onEvent(ChatEvent{Type: "tool_result", Data: map[string]any{"name": call.Name, "result": extract.Truncate(results[i], 400)}})

@@ -27,7 +27,7 @@ Identificadores e comentários de código ficam em inglês.
 | `internal/agent` | ingestão, enriquecimento, busca híbrida, chat RAG + tools, ações |
 | `internal/telegram`, `internal/integrations/*`, `internal/watcher` | canais de captura |
 | `internal/importer` | importação de arquivos (Obsidian, Notion, Evernote, Keep, CSV, vCard, iCal, Google Takeout via `integrations/takeout`) e fila `import.file` (inbox `.zip`, Takeout do Drive) |
-| `internal/profile` | Perfil pessoal: tipos e campos (`kinds.go`), cofre AES-GCM dos itens sensíveis (`vault.go`), agenda do dia, alertas e classificação de eventos (`agenda.go`), política de acesso da IA (`PROFILE_AI_ACCESS`) |
+| `internal/profile` | Perfil pessoal: tipos e campos (`kinds.go`), cofre AES-GCM dos itens sensíveis (`vault.go`), agenda do dia, alertas e classificação de eventos (`agenda.go`), política de acesso da IA (`PROFILE_AI_ACCESS` leitura, `PROFILE_AI_WRITE` gravação via `Store.UpsertFromAI`, em `write.go`) |
 | `internal/scheduler` | cron, rotinas (inclui lembretes do Perfil), backup |
 | `internal/updater` | auto-update via GitHub Releases (+ modo overlay em container, rollback) |
 | `internal/web` | handlers, templates HTMX (`templates/`), assets (`static/`) |

@@ -481,8 +481,9 @@ Registro estruturado da vida do usuário em `/profile` (pacote `internal/profile
 - Nas listas, os campos de itens sensíveis só aparecem após **👁 Mostrar**; cada exibição é registrada no audit log.
 - `PROFILE_ENCRYPT_ALL=true` cifra todos os itens (não só os sensíveis); ao mudar a opção pela UI os itens são regravados na hora (e a manutenção diária confere, para edições manuais do `.env`).
 - Notificações que falham e vão para a fila de reenvio (`telegram.send`) são guardadas cifradas com a mesma chave.
-- Turnos do chat/Telegram em que a ferramenta `personal_profile` foi chamada são gravados cifrados em `chat_messages` com `private=1`: não entram na rotina de Memória (`ChatSince`) e só voltam como histórico quando o modelo da conversa é local ou `PROFILE_AI_ACCESS=full`.
+- Turnos do chat/Telegram em que a ferramenta `personal_profile` (ou `save_profile_item`) foi chamada são gravados cifrados em `chat_messages` com `private=1`: não entram na rotina de Memória (`ChatSince`) e só voltam como histórico quando o modelo da conversa é local ou `PROFILE_AI_ACCESS=full`.
 - A IA lê o perfil pela ferramenta `personal_profile` do chat/Telegram conforme `PROFILE_AI_ACCESS`: `basic` (padrão) libera itens comuns e só entrega os sensíveis quando todas as rotas possíveis do chat e do Telegram são locais (Ollama); `full` libera tudo; `none` remove a ferramenta. Cada consulta é registrada no audit log.
+- `PROFILE_AI_WRITE=true` (padrão `false`) libera a ferramenta `save_profile_item`: o chat/Telegram cria ou atualiza itens do Perfil (mesmo tipo e título = atualização; campos omitidos são mantidos, valor vazio limpa). Nunca apaga, nunca altera a marca “sensível” (itens novos seguem o padrão do tipo), valida datas, horários, números, dias da semana e opções, e a resposta ao modelo repete só o que ele enviou, sem devolver dados guardados. Exige `PROFILE_AI_ACCESS` diferente de `none`; turnos com a ferramenta também são privados (cifrados).
 
 ## Integrações
 

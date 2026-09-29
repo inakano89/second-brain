@@ -308,3 +308,75 @@ func TestEncryptAllAndSeal(t *testing.T) {
 		t.Fatal("plain text must pass through")
 	}
 }
+
+func TestUpsertFromAI(t *testing.T) {
+	s, cfg, _ := newStore(t)
+	ctx := context.Background()
+	vals := map[string]string{"dose": "50 mg", "times": "20h, 8", "weekdays": "segunda e quarta", "stock": "30"}
+	if _, _, err := s.UpsertFromAI(ctx, "medication", "Losartana", vals); err == nil {
+		t.Fatal("write must be off by default")
+	}
+	cfg.Update(map[string]string{"PROFILE_AI_WRITE": "true"})
+	it, created, err := s.UpsertFromAI(ctx, "medication", "Losartana", vals)
+	if err != nil || !created || !it.Sensitive {
+		t.Fatalf("create: %+v %v %v", it, created, err)
+	}
+	if got, _ := s.Get(ctx, it.ID); got.Get("times") != "08:00, 20:00" || got.Get("weekdays") != "seg,qua" {
+		t.Fatalf("normalised values: %+v", got.Values)
+	}
+
+	// Same kind+title (any case) updates: omitted fields stay, empty clears.
+	up, created, err := s.UpsertFromAI(ctx, "medication", "losartana", map[string]string{"stock": "28", "weekdays": "todos os dias", "doctor": "Dra. Ana"})
+	if err != nil || created || up.ID != it.ID {
+		t.Fatalf("update: %+v %v %v", up, created, err)
+	}
+	if got, _ := s.Get(ctx, it.ID); got.Get("dose") != "50 mg" || got.Get("stock") != "28" || got.Get("weekdays") != "" || got.Get("doctor") != "Dra. Ana" {
+		t.Fatalf("merge: %+v", got.Values)
+	}
+	if _, _, err := s.UpsertFromAI(ctx, "medication", "Losartana", map[string]string{"doctor": ""}); err != nil {
+		t.Fatal(err)
+	}
+	if got, _ := s.Get(ctx, it.ID); got.Get("doctor") != "" {
+		t.Fatalf("clear: %+v", got.Values)
+	}
+
+	for name, c := range map[string]struct {
+		kind, title string
+		v           map[string]string
+	}{
+		"kind":   {"nope", "x", nil},
+		"title":  {"medication", " ", nil},
+		"field":  {"medication", "X", map[string]string{"cor": "azul"}},
+		"time":   {"medication", "X", map[string]string{"times": "de manhã"}},
+		"day":    {"medication", "X", map[string]string{"weekdays": "feriado"}},
+		"select": {"allergy", "X", map[string]string{"severity": "enorme"}},
+	} {
+		if _, _, err := s.UpsertFromAI(ctx, c.kind, c.title, c.v); err == nil {
+			t.Errorf("%s: expected error", name)
+		}
+	}
+	if items, _ := s.List(ctx, false); len(items) != 1 {
+		t.Fatalf("invalid writes left items behind: %d", len(items))
+	}
+
+	// Concurrent upserts of the same item never duplicate it.
+	var wg sync.WaitGroup
+	for range 8 {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if _, _, err := s.UpsertFromAI(ctx, "supplement", "Vitamina D", map[string]string{"dose": "2000 UI"}); err != nil {
+				t.Error(err)
+			}
+		}()
+	}
+	wg.Wait()
+	if items, _ := s.List(ctx, false); len(items) != 2 {
+		t.Fatalf("duplicated under concurrency: %d", len(items))
+	}
+
+	cfg.Update(map[string]string{"PROFILE_AI_ACCESS": AccessNone})
+	if s.AIWrite() {
+		t.Fatal("PROFILE_AI_ACCESS=none must disable writing")
+	}
+}

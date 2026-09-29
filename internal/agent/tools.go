@@ -17,6 +17,9 @@ import (
 // toolProfile reads the personal profile; chat turns that call it are stored encrypted.
 const toolProfile = "personal_profile"
 
+// toolProfileSave creates or updates profile items (PROFILE_AI_WRITE).
+const toolProfileSave = "save_profile_item"
+
 func obj(props map[string]any, required ...string) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -74,6 +77,18 @@ func (a *Agent) Tools() []llm.Tool {
 				"query": str("Termos opcionais para filtrar"),
 				"kind":  map[string]any{"type": "string", "enum": kinds, "description": "Tipo opcional"},
 			})})
+		if a.profile.AIWrite() {
+			tools = append(tools, llm.Tool{Name: toolProfileSave,
+				Description: "Cria ou atualiza um item do PERFIL PESSOAL (medicações, suplementos, matrículas, hábitos, datas…). Use só quando o usuário pedir para cadastrar/atualizar. Se já existir item do mesmo tipo e título, ele é atualizado: campos omitidos são mantidos e valor vazio limpa o campo. Não apaga nada. Não invente dose, horário ou datas: pergunte o que faltar. Tipos, campos e formatos:\n" + profileSaveDoc(),
+				Parameters: obj(map[string]any{
+					"kind":  map[string]any{"type": "string", "enum": kinds, "description": "Tipo do item (ex.: medication)"},
+					"title": str("Título do item, ex.: nome do medicamento"),
+					"fields": map[string]any{"type": "array", "description": "Campos a gravar", "items": obj(map[string]any{
+						"key":   str("Chave do campo, ex.: dose"),
+						"value": str("Valor no formato indicado"),
+					}, "key", "value")},
+				}, "kind", "title")})
+		}
 	}
 	if a.calendar() != nil {
 		tools = append(tools,
@@ -339,6 +354,8 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		return a.execGoogleTool(ctx, name, args)
 	case toolProfile:
 		return a.profileForAI(ctx, args.str("query"), args.str("kind"))
+	case toolProfileSave:
+		return a.profileSave(ctx, args)
 	case "run_action":
 		out, err := a.actions.Run(ctx, args.str("name"), args.str("input"))
 		if err != nil {

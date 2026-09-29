@@ -43,6 +43,8 @@ var Schema = []Field{
 		Help: "Cifra os itens sensíveis do Perfil (AES-256-GCM). Criada sozinha no primeiro uso. Guarde junto com a chave de backup: sem ela os itens sensíveis não podem ser lidos."},
 	{Key: "PROFILE_AI_ACCESS", Label: "O que a IA pode ler do Perfil", Group: "Perfil", Default: "basic", Kind: "select", Options: []string{"basic", "full", "none"},
 		Help: "basic = itens comuns sempre; itens sensíveis (saúde, documentos, endereços) só com modelo local. full = tudo, inclusive modelos na nuvem. none = a IA nunca lê o Perfil."},
+	{Key: "PROFILE_AI_WRITE", Label: "IA pode gravar no Perfil", Group: "Perfil", Default: "false", Kind: "bool",
+		Help: "Ligado: o chat e o Telegram podem criar e atualizar itens do Perfil (ex.: “cadastre minha Losartana 50 mg às 8h e 20h”). Nunca apagam nada nem mudam a marca “sensível”. Exige PROFILE_AI_ACCESS diferente de none."},
 	{Key: "PROFILE_ENCRYPT_ALL", Label: "Criptografar todos os itens do Perfil", Group: "Perfil", Default: "false", Kind: "bool",
 		Help: "Desligado: só os itens marcados como sensíveis são cifrados. Ligado: todos (matrículas, datas, metas…) ficam cifrados no banco. A marca “sensível” continua decidindo o que fica oculto na tela e o que a IA pode ler."},
 	{Key: "REMINDERS_ENABLED", Label: "Lembretes no Telegram", Group: "Perfil", Default: "true", Kind: "bool", Help: "Doses de medicação e suplementos, hábitos com horário e aulas."},
