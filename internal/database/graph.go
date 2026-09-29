@@ -68,6 +68,22 @@ func (db *DB) DeleteEdge(ctx context.Context, id int64) error {
 	return err
 }
 
+// DeleteEdgesBetween removes the edges linking a and b in either direction (only those with
+// relation when it is not empty) and returns how many were removed.
+func (db *DB) DeleteEdgesBetween(ctx context.Context, a, b int64, relation string) (int64, error) {
+	q := `DELETE FROM edges WHERE ((source_id = ? AND target_id = ?) OR (source_id = ? AND target_id = ?))`
+	args := []any{a, b, b, a}
+	if relation != "" {
+		q += ` AND relation = ?`
+		args = append(args, relation)
+	}
+	res, err := db.ExecContext(ctx, q, args...)
+	if err != nil {
+		return 0, err
+	}
+	return res.RowsAffected()
+}
+
 // Neighbors returns every node linked to id.
 func (db *DB) Neighbors(ctx context.Context, id int64) ([]Link, error) {
 	rows, err := db.QueryContext(ctx, `

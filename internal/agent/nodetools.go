@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -12,8 +13,15 @@ import (
 	"github.com/inakano89/second-brain/internal/llm"
 )
 
-// toolUpdateNode edits an existing graph node (notes, tasks, people, events…).
-const toolUpdateNode = "update_node"
+// Tools that edit the graph. All of them are gated by user_requested (see mutatingTools).
+const (
+	toolUpdateNode  = "update_node"
+	toolDeleteNode  = "delete_node"
+	toolUnlinkNodes = "unlink_nodes"
+)
+
+// editableTypes are the node types the chat may switch a node to (health nodes are generated).
+var editableTypes = []string{database.TypeNote, database.TypeTask, database.TypePerson, database.TypeEvent, database.TypeInsight, database.TypeArticle}
 
 func strList(desc string) map[string]any {
 	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": desc}
@@ -26,6 +34,7 @@ func (a *Agent) updateNodeTool() llm.Tool {
 			"Para PESSOAS, `emails`, `phones`, `company` e `birthday` também são editáveis (listas substituem as atuais; texto vazio limpa). Não apaga nós.",
 		Parameters: obj(map[string]any{
 			"id":       integer("ID do nó"),
+			"type":     map[string]any{"type": "string", "enum": editableTypes, "description": "Novo tipo do nó"},
 			"title":    str("Novo título"),
 			"content":  str("Novo conteúdo em Markdown (substitui o atual)"),
 			"append":   str("Texto acrescentado ao final do conteúdo atual"),
@@ -117,6 +126,16 @@ func (a *Agent) updateNode(ctx context.Context, args toolArgs) (any, error) {
 	changed := []string{}
 	mark := func(f string) { changed = append(changed, f) }
 
+	if t := args.str("type"); t != "" && t != n.Type {
+		if !slices.Contains(editableTypes, t) {
+			return nil, fmt.Errorf("tipo inválido %q", t)
+		}
+		n.Type = t
+		if t == database.TypeTask && n.Status == "" {
+			n.Status = database.StatusOpen
+		}
+		mark("type")
+	}
 	if v := args.str("title"); v != "" && v != n.Title {
 		n.Title = extract.Truncate(v, 200)
 		mark("title")
@@ -205,4 +224,52 @@ func (a *Agent) updateNode(ctx context.Context, args toolArgs) (any, error) {
 		res["aviso"] = "contato sincronizado do Google: a edição fica só aqui e pode ser sobrescrita se o contato mudar no Google"
 	}
 	return res, nil
+}
+
+func deleteNodeTool() llm.Tool {
+	return llm.Tool{Name: toolDeleteNode,
+		Description: "Move um nó (nota, tarefa, pessoa, evento…) e suas ligações para a LIXEIRA, de onde o usuário pode restaurar por 30 dias em Conteúdo → Lixeira. Integrações e importações não o trazem de volta.",
+		Parameters:  obj(map[string]any{"id": integer("ID do nó")}, "id")}
+}
+
+func unlinkNodesTool() llm.Tool {
+	return llm.Tool{Name: toolUnlinkNodes,
+		Description: "Remove a ligação entre dois nós do grafo (nos dois sentidos).",
+		Parameters: obj(map[string]any{
+			"source_id": integer("Um dos nós"), "target_id": integer("O outro nó"),
+			"relation": str("Só remove esta relação (opcional; vazio remove todas)"),
+		}, "source_id", "target_id")}
+}
+
+func (a *Agent) deleteNode(ctx context.Context, args toolArgs) (any, error) {
+	n, err := a.db.GetNode(ctx, args.int("id"))
+	if err != nil {
+		return nil, err
+	}
+	if n.Type == database.TypeHealth {
+		return nil, errors.New("nós de saúde são gerados automaticamente e não podem ser apagados")
+	}
+	batch, _, err := a.db.TrashNodes(ctx, []int64{n.ID}, true)
+	if err != nil {
+		return nil, err
+	}
+	a.log.Info("nó movido para a lixeira pelo chat", "id", n.ID, "title", n.Title)
+	return map[string]any{"trashed": n.ID, "title": n.Title, "type": n.Type, "batch": batch, "restore": "Conteúdo → Lixeira (30 dias)"}, nil
+}
+
+func (a *Agent) unlinkNodes(ctx context.Context, args toolArgs) (any, error) {
+	src, dst := args.int("source_id"), args.int("target_id")
+	for _, id := range []int64{src, dst} {
+		if _, err := a.db.GetNode(ctx, id); err != nil {
+			return nil, err
+		}
+	}
+	n, err := a.db.DeleteEdgesBetween(ctx, src, dst, args.str("relation"))
+	if err != nil {
+		return nil, err
+	}
+	if n == 0 {
+		return nil, errors.New("não há ligação entre esses nós")
+	}
+	return map[string]any{"unlinked": n}, nil
 }

@@ -38,6 +38,7 @@ Identificadores e comentários de código ficam em inglês.
 - **Migrações SQLite**: só acrescentar no fim de `internal/database/migrations.go`. Nunca editar uma migração já publicada.
 - **Novo serviço Google** → entrada em `google.Services` (escopos obrigatórios/opcionais) e chave em `GOOGLE_SERVICES`; cada sync verifica `Client.Can(serviço)` antes de chamar a API.
 - **Chamadas externas lentas ou falíveis** → fila offline (`internal/queue`). Marque erros definitivos com `queue.Permanent`.
+- **Ferramentas do chat que alteram dados** entram em `mutatingTools` (`internal/agent/tools.go`): ganham o argumento obrigatório `user_requested` e, sem ele `true`, não executam (a IA pergunta antes). Leitura não entra.
 - **LLM**: sempre via `llm.Manager`. O `Purpose` da requisição define a rota. Para criar uma tarefa roteável, adicione-a em `llm.Tasks` e crie a chave `LLM_ROUTE_*` no schema.
 - **Web**: `html/template` + HTMX. A CSP proíbe scripts inline e `hx-on`, então JS novo vai em `internal/web/static/*.js`.
 - **Concorrência**: use goroutines (`errgroup`/`WaitGroup`) para I/O paralelo. Estado compartilhado sempre com mutex e testado com `-race`.

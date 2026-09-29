@@ -20,6 +20,17 @@ const toolProfile = "personal_profile"
 // toolProfileSave creates or updates profile items (PROFILE_AI_WRITE).
 const toolProfileSave = "save_profile_item"
 
+// toolUserRequested is the permission flag every tool that changes data must carry.
+const toolUserRequested = "user_requested"
+
+// mutatingTools change data or act on the outside world: they only run when the user asked
+// for that exact change (see gate); otherwise the model must ask first.
+var mutatingTools = map[string]bool{
+	"create_note": true, "create_task": true, "complete_task": true, "link_nodes": true, toolUnlinkNodes: true,
+	toolUpdateNode: true, toolDeleteNode: true, toolProfileSave: true,
+	"create_calendar_event": true, "create_email_draft": true, "run_action": true,
+}
+
 func obj(props map[string]any, required ...string) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -56,6 +67,8 @@ func (a *Agent) Tools() []llm.Tool {
 				"birthday": str("Só pessoa: AAAA-MM-DD ou --MM-DD"),
 			}, "title")},
 		a.updateNodeTool(),
+		deleteNodeTool(),
+		unlinkNodesTool(),
 		{Name: "create_task", Description: "Cria uma tarefa pendente.",
 			Parameters: obj(map[string]any{
 				"title":   str("Ação a fazer"),
@@ -148,7 +161,24 @@ func (a *Agent) Tools() []llm.Tool {
 				"input": str("Parâmetro opcional substituído em {{input}}"),
 			}, "name")})
 	}
+	for i := range tools {
+		if mutatingTools[tools[i].Name] {
+			requireUserRequested(&tools[i])
+		}
+	}
 	return tools
+}
+
+// requireUserRequested adds the mandatory permission flag to a mutating tool.
+func requireUserRequested(t *llm.Tool) {
+	props, _ := t.Parameters["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+		t.Parameters["properties"] = props
+	}
+	props[toolUserRequested] = map[string]any{"type": "boolean", "description": "true SOMENTE se a mensagem atual do usuário pediu explicitamente ESTA alteração, ou se ele acabou de autorizá-la depois de você perguntar. Se a ideia foi sua ou o pedido é ambíguo, envie false: nada será alterado e você deve perguntar antes."}
+	req, _ := t.Parameters["required"].([]string)
+	t.Parameters["required"] = append(req, toolUserRequested)
 }
 
 type toolArgs map[string]any
@@ -158,6 +188,16 @@ func (t toolArgs) str(k string) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
+}
+
+func (t toolArgs) bool(k string) bool {
+	switch v := t[k].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+	return false
 }
 
 func (t toolArgs) int(k string) int64 {
@@ -217,6 +257,16 @@ func (a *Agent) ExecuteTool(ctx context.Context, call llm.ToolCall) string {
 	_ = json.Unmarshal(call.Arguments, &args)
 	if args == nil {
 		args = toolArgs{}
+	}
+	if mutatingTools[call.Name] && !args.bool(toolUserRequested) {
+		a.log.Info("ferramenta aguardando permissão", "tool", call.Name)
+		delete(args, toolUserRequested)
+		return jsonResult(map[string]any{
+			"needs_confirmation": true,
+			"changed":            false,
+			"proposed":           map[string]any{"tool": call.Name, "arguments": args},
+			"instruction":        "NADA foi alterado. Diga ao usuário, em uma frase, exatamente o que você faria e pergunte se pode. Só depois de um \"sim\" chame a ferramenta de novo com user_requested=true.",
+		})
 	}
 	res, err := a.execTool(ctx, call.Name, args)
 	if err != nil {
@@ -290,6 +340,10 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		return map[string]any{"created": brief(n, loc)}, nil
 	case toolUpdateNode:
 		return a.updateNode(ctx, args)
+	case toolDeleteNode:
+		return a.deleteNode(ctx, args)
+	case toolUnlinkNodes:
+		return a.unlinkNodes(ctx, args)
 	case "create_task":
 		var due *time.Time
 		if d := args.str("due"); d != "" {
