@@ -171,3 +171,79 @@ func TestProfileSaveTool(t *testing.T) {
 		t.Fatalf("unknown field accepted: %s", bad)
 	}
 }
+
+// TestUpdateNodeTool: the chat edits people (fields, meta) and other nodes, and creates people.
+func TestUpdateNodeTool(t *testing.T) {
+	a, db := setupAgent(t, nil)
+	ctx := context.Background()
+	run := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		b, _ := json.Marshal(args)
+		var out map[string]any
+		if err := json.Unmarshal([]byte(a.ExecuteTool(ctx, llm.ToolCall{Name: name, Arguments: b})), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	has := false
+	for _, tl := range a.Tools() {
+		has = has || tl.Name == toolUpdateNode
+	}
+	if !has {
+		t.Fatal("update_node missing from catalogue")
+	}
+
+	res := run("create_note", map[string]any{"type": "person", "title": "Ana Lima", "emails": []string{"ana@x.com"}, "company": "ACME"})
+	if res["error"] != nil {
+		t.Fatalf("create person: %v", res)
+	}
+	p, err := db.FindByTitle(ctx, database.TypePerson, "Ana Lima")
+	if err != nil || p.Meta["company"] != "ACME" || p.Meta["auto"] != false {
+		t.Fatalf("person not created with meta: %+v %v", p, err)
+	}
+	if run("create_note", map[string]any{"type": "person", "title": "ana lima"})["error"] == nil {
+		t.Fatal("duplicate person accepted")
+	}
+
+	res = run(toolUpdateNode, map[string]any{"id": p.ID, "append": "Conheci na feira.", "phones": []string{"+5511999990000"}, "birthday": "1990-05-17", "company": "", "add_tags": []string{"amigo"}})
+	if res["error"] != nil {
+		t.Fatalf("update: %v", res)
+	}
+	p, _ = db.GetNode(ctx, p.ID)
+	if !strings.Contains(p.Content, "Conheci na feira.") || p.Meta["birthday"] != "1990-05-17" || p.Meta["company"] != nil {
+		t.Fatalf("edit not applied: %+v", p)
+	}
+	if ph, _ := p.Meta["phones"].([]any); len(ph) != 1 || len(p.Tags) != 1 || p.Tags[0] != "amigo" {
+		t.Fatalf("phones/tags: %+v %v", p.Meta, p.Tags)
+	}
+	if e, _ := p.Meta["emails"].([]any); len(e) != 1 {
+		t.Fatalf("untouched emails lost: %+v", p.Meta)
+	}
+	if run(toolUpdateNode, map[string]any{"id": p.ID, "birthday": "ontem"})["error"] == nil {
+		t.Fatal("bad birthday accepted")
+	}
+	if run(toolUpdateNode, map[string]any{"id": p.ID})["error"] == nil {
+		t.Fatal("empty edit accepted")
+	}
+
+	task := &database.Node{Type: database.TypeTask, Title: "Pagar conta", Status: database.StatusOpen}
+	if err := db.CreateNode(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if run(toolUpdateNode, map[string]any{"id": task.ID, "status": "done", "due": "2026-10-01"})["error"] != nil {
+		t.Fatal("task edit failed")
+	}
+	if task, _ = db.GetNode(ctx, task.ID); task.Status != database.StatusDone || task.DueAt == nil {
+		t.Fatalf("task: %+v", task)
+	}
+	if run(toolUpdateNode, map[string]any{"id": task.ID, "emails": []string{"a@b.c"}})["error"] == nil {
+		t.Fatal("person field accepted on a task")
+	}
+	h := &database.Node{Type: database.TypeHealth, Title: "Sono"}
+	if err := db.CreateNode(ctx, h); err != nil {
+		t.Fatal(err)
+	}
+	if run(toolUpdateNode, map[string]any{"id": h.ID, "title": "x"})["error"] == nil {
+		t.Fatal("health node edit accepted")
+	}
+}

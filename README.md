@@ -398,7 +398,8 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | Ferramenta | Função |
 |---|---|
 | `search_brain`, `get_node` | Busca híbrida e leitura completa com vizinhos |
-| `create_note`, `create_task`, `complete_task`, `list_tasks`, `link_nodes` | Gestão do grafo |
+| `create_note`, `create_task`, `complete_task`, `list_tasks`, `link_nodes` | Gestão do grafo (`create_note` também cria **pessoas**, com `type=person`) |
+| `update_node` | Edita qualquer nó (nota, tarefa, **pessoa**, evento): título, conteúdo (substituir ou acrescentar), resumo, tags, status, prazo e, em pessoas, e-mails, telefones, empresa e aniversário. Não apaga e não edita nós de saúde |
 | `health_summary` | Métricas de saúde dos últimos N dias |
 | `list_calendar_events`, `create_calendar_event` | Google Agenda (quando conectado) |
 | `search_email`, `read_email`, `create_email_draft` | Gmail: busca, leitura e **rascunhos** (nunca envia) |

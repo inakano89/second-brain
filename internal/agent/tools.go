@@ -44,13 +44,18 @@ func (a *Agent) Tools() []llm.Tool {
 			}, "query")},
 		{Name: "get_node", Description: "Lê o conteúdo completo de um nó e seus vizinhos no grafo.",
 			Parameters: obj(map[string]any{"id": integer("ID do nó")}, "id")},
-		{Name: "create_note", Description: "Cria uma nota no Second Brain (será auto-taggeada e auto-linkada).",
+		{Name: "create_note", Description: "Cria uma nota (ou uma PESSOA, com type=person) no Second Brain (será auto-taggeada e auto-linkada). Antes de criar uma pessoa, busque com search_brain para não duplicar; para alterar uma existente use update_node.",
 			Parameters: obj(map[string]any{
-				"title":   str("Título"),
-				"content": str("Conteúdo em Markdown; use [[Título]] para linkar notas"),
-				"tags":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags opcionais"},
-				"type":    map[string]any{"type": "string", "enum": []string{"note", "insight", "article"}, "description": "Tipo (padrão note)"},
-			}, "title", "content")},
+				"title":    str("Título (para pessoa: o nome)"),
+				"content":  str("Conteúdo em Markdown; use [[Título]] para linkar notas"),
+				"tags":     strList("Tags opcionais"),
+				"type":     map[string]any{"type": "string", "enum": []string{"note", "insight", "article", "person"}, "description": "Tipo (padrão note)"},
+				"emails":   strList("Só pessoa: e-mails"),
+				"phones":   strList("Só pessoa: telefones"),
+				"company":  str("Só pessoa: empresa"),
+				"birthday": str("Só pessoa: AAAA-MM-DD ou --MM-DD"),
+			}, "title")},
+		a.updateNodeTool(),
 		{Name: "create_task", Description: "Cria uma tarefa pendente.",
 			Parameters: obj(map[string]any{
 				"title":   str("Ação a fazer"),
@@ -253,17 +258,38 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		for _, l := range links {
 			neigh = append(neigh, map[string]any{"id": l.Node.ID, "title": l.Node.Title, "type": l.Node.Type, "relation": l.Relation})
 		}
-		return map[string]any{"node": brief(n, loc), "content": extract.Truncate(n.Content, 8000), "links": neigh}, nil
+		out := map[string]any{"node": brief(n, loc), "content": extract.Truncate(n.Content, 8000), "links": neigh}
+		if p := personDetails(n); p != nil {
+			out["person"] = p
+		}
+		return out, nil
 	case "create_note":
 		typ := args.str("type")
-		if typ != database.TypeInsight && typ != database.TypeArticle {
+		if typ != database.TypeInsight && typ != database.TypeArticle && typ != database.TypePerson {
 			typ = database.TypeNote
 		}
-		n, _, err := a.Ingest(ctx, IngestInput{Type: typ, Title: args.str("title"), Content: args.str("content"), Tags: args.strs("tags"), Source: "agent", Enrich: true})
+		in := IngestInput{Type: typ, Title: args.str("title"), Content: args.str("content"), Tags: args.strs("tags"), Source: "agent", Enrich: true}
+		if typ == database.TypePerson {
+			if in.Title == "" {
+				return nil, errors.New("informe o nome da pessoa")
+			}
+			if p, err := a.db.FindByTitle(ctx, database.TypePerson, in.Title); err == nil {
+				return nil, fmt.Errorf("já existe uma pessoa com esse nome (id %d): use update_node", p.ID)
+			}
+			p := &database.Node{Type: typ, Meta: map[string]any{}}
+			if err := applyPersonArgs(p, args); err != nil {
+				return nil, err
+			}
+			p.Meta["auto"] = false
+			in.Meta = p.Meta
+		}
+		n, _, err := a.Ingest(ctx, in)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"created": brief(n, loc)}, nil
+	case toolUpdateNode:
+		return a.updateNode(ctx, args)
 	case "create_task":
 		var due *time.Time
 		if d := args.str("due"); d != "" {
