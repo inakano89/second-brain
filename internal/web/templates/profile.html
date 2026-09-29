@@ -48,7 +48,8 @@
 
     <section class="card">
       <h2>🔒 Privacidade</h2>
-      <p class="small">Itens marcados como <b>sensíveis</b> ficam cifrados no banco (AES-256-GCM, chave <code>VAULT_KEY</code> no <code>.env</code>), aparecem ocultos nas listas e cada exibição fica no Audit log. Os lembretes e os blocos pessoais dos relatórios vão só para o seu Telegram, sem passar pela IA.</p>
+      <p class="small">{{if .AllEnc}}<b>Todos os itens</b> ficam cifrados{{else}}Itens marcados como <b>sensíveis</b> ficam cifrados{{end}} no banco (AES-256-GCM, chave <code>VAULT_KEY</code> no <code>.env</code>); os sensíveis aparecem ocultos nas listas e cada exibição fica no Audit log. Conversas do chat que consultaram o Perfil também são guardadas cifradas e ficam fora da rotina de Memória. Os lembretes e os blocos pessoais dos relatórios vão só para o seu Telegram, sem passar pela IA (a cópia para reenvio, se o Telegram falhar, também é cifrada).</p>
+      {{if not .AllEnc}}<p class="small muted">Quer cifrar também matrículas, datas e metas? Ligue <code>PROFILE_ENCRYPT_ALL</code> em <a href="/settings#Perfil">Configurações → Perfil</a>.</p>{{end}}
       <p class="small">IA: <b>{{.Access}}</b>. {{if .Local}}Chat e Telegram usam modelo local.{{else}}Chat e Telegram usam modelos na nuvem: itens sensíveis só são enviados se você escolher “full”.{{end}} <a href="/settings#Perfil">Alterar</a></p>
       {{with .O.Locked}}<p class="flash err">{{.}} item(ns) não puderam ser abertos: a VAULT_KEY mudou ou sumiu. Restaure a chave antiga no .env.</p>{{end}}
     </section>

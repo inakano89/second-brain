@@ -179,17 +179,24 @@ type ChatMessage struct {
 	Role    string    `json:"role"`
 	Content string    `json:"content"`
 	TS      time.Time `json:"ts"`
+	Private bool      `json:"private,omitempty"` // content encrypted by the profile vault
 }
 
 // AppendChat stores a chat turn.
 func (db *DB) AppendChat(ctx context.Context, channel, role, content string) error {
-	_, err := db.ExecContext(ctx, `INSERT INTO chat_messages (channel, role, content, ts) VALUES (?,?,?,?)`, channel, role, content, now())
+	return db.AppendChatTurn(ctx, channel, role, content, false)
+}
+
+// AppendChatTurn stores a chat turn; private turns (already encrypted by the caller) are
+// never returned by ChatSince, so the memory routine does not read them.
+func (db *DB) AppendChatTurn(ctx context.Context, channel, role, content string, private bool) error {
+	_, err := db.ExecContext(ctx, `INSERT INTO chat_messages (channel, role, content, ts, private) VALUES (?,?,?,?,?)`, channel, role, content, now(), private)
 	return err
 }
 
 // ChatHistory returns the last limit turns in chronological order.
 func (db *DB) ChatHistory(ctx context.Context, channel string, limit int) ([]ChatMessage, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, channel, role, content, ts FROM (SELECT * FROM chat_messages WHERE channel=? ORDER BY id DESC LIMIT ?) ORDER BY id`, channel, limit)
+	rows, err := db.QueryContext(ctx, `SELECT id, channel, role, content, ts, private FROM (SELECT * FROM chat_messages WHERE channel=? ORDER BY id DESC LIMIT ?) ORDER BY id`, channel, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -198,7 +205,7 @@ func (db *DB) ChatHistory(ctx context.Context, channel string, limit int) ([]Cha
 	for rows.Next() {
 		var m ChatMessage
 		var ts string
-		if err := rows.Scan(&m.ID, &m.Channel, &m.Role, &m.Content, &ts); err != nil {
+		if err := rows.Scan(&m.ID, &m.Channel, &m.Role, &m.Content, &ts, &m.Private); err != nil {
 			return nil, err
 		}
 		m.TS = parseTime(ts)

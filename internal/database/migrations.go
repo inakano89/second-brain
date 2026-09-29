@@ -199,4 +199,6 @@ CREATE TABLE profile_log (
 );
 CREATE INDEX idx_profile_log_day ON profile_log(day);
 `,
+	// 5 — chat turns that used the personal profile: encrypted and kept out of the memory routine
+	`ALTER TABLE chat_messages ADD COLUMN private INTEGER NOT NULL DEFAULT 0;`,
 }

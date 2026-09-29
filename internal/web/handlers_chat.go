@@ -24,7 +24,7 @@ type chatView struct {
 }
 
 func (s *Server) chatPage(w http.ResponseWriter, r *http.Request) {
-	hist, _ := s.DB.ChatHistory(r.Context(), webChannel, 60)
+	hist, _ := s.Agent.ChatHistory(r.Context(), webChannel, 60)
 	s.render(w, "chat", s.page(r, "Chat", "chat", chatView{Catalog: s.LLM.Catalog(), Route: s.LLM.Route(llm.TaskChat), Council: s.LLM.CouncilSetup(), History: hist, Enabled: s.LLM.Enabled()}))
 }
 

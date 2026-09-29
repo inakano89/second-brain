@@ -345,9 +345,16 @@ func (s *Server) settingsEnv(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	oldAddr := s.Cfg.Addr()
+	oldEncryptAll := s.Cfg.GetBool("PROFILE_ENCRYPT_ALL")
 	if err := s.Cfg.Update(changes); err != nil {
 		redirectFlash(w, r, "/settings", err.Error(), true)
 		return
+	}
+	if s.Cfg.GetBool("PROFILE_ENCRYPT_ALL") != oldEncryptAll {
+		if _, err := s.Agent.Profile().Sync(r.Context()); err != nil {
+			redirectFlash(w, r, "/settings", "configuração salva, mas a criptografia do Perfil falhou: "+err.Error(), true)
+			return
+		}
 	}
 	if len(removed) > 0 {
 		_ = s.Cfg.Delete(removed...)

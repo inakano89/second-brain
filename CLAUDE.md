@@ -41,7 +41,7 @@ Identificadores e comentários de código ficam em inglês.
 - **LLM**: sempre via `llm.Manager`. O `Purpose` da requisição define a rota. Para criar uma tarefa roteável, adicione-a em `llm.Tasks` e crie a chave `LLM_ROUTE_*` no schema.
 - **Web**: `html/template` + HTMX. A CSP proíbe scripts inline e `hx-on`, então JS novo vai em `internal/web/static/*.js`.
 - **Concorrência**: use goroutines (`errgroup`/`WaitGroup`) para I/O paralelo. Estado compartilhado sempre com mutex e testado com `-race`.
-- **Dados do Perfil** (`internal/profile`): nunca gravar em nós (`nodes`) nem mandar ao LLM fora de `Store.ForAI`; blocos pessoais dos relatórios vão só na notificação. Novo tipo → entrada em `profile.Kinds` (campos com `Alert` entram nos avisos).
+- **Dados do Perfil** (`internal/profile`): nunca gravar em nós (`nodes`) nem mandar ao LLM fora de `Store.ForAI`; blocos pessoais dos relatórios vão só na notificação. Texto que possa conter dados pessoais e precise ser persistido (fila, histórico) passa por `Store.Seal`/`Open`. Novo tipo → entrada em `profile.Kinds` (campos com `Alert` entram nos avisos).
 - **Mudou um fluxo de configuração?** Atualize o `README.md` (usuários técnicos) e `internal/web/templates/help.html` (usuários leigos).
 - **Assets de release** se chamam `second-brain-<os>-<arch>[.exe]`, junto com `SHA256SUMS` (e `.sig`). O auto-update depende desses nomes.
 

@@ -264,3 +264,47 @@ func TestConcurrentKeyCreation(t *testing.T) {
 		}
 	}
 }
+
+func TestEncryptAllAndSeal(t *testing.T) {
+	s, cfg, db := newStore(t)
+	ctx := context.Background()
+	it := Item{Kind: "enrollment", Title: "Academia Forte"}
+	if err := s.Save(ctx, &it); err != nil {
+		t.Fatal(err)
+	}
+	stored := func() string {
+		r, err := db.GetProfile(ctx, it.ID)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return r.Title + r.Data
+	}
+	if !strings.Contains(stored(), "Academia Forte") {
+		t.Fatal("non-sensitive item should be plain by default")
+	}
+	cfg.Update(map[string]string{"PROFILE_ENCRYPT_ALL": "true"})
+	if n, err := s.Sync(ctx); err != nil || n != 1 || strings.Contains(stored(), "Academia") {
+		t.Fatalf("sync on: %d %v %q", n, err, stored())
+	}
+	if n, _ := s.Sync(ctx); n != 0 {
+		t.Fatal("sync should be idempotent")
+	}
+	if got, err := s.Get(ctx, it.ID); err != nil || got.Title != "Academia Forte" || got.Sensitive {
+		t.Fatalf("get: %+v %v", got, err)
+	}
+	cfg.Update(map[string]string{"PROFILE_ENCRYPT_ALL": "false"})
+	if n, _ := s.Sync(ctx); n != 1 || !strings.Contains(stored(), "Academia Forte") {
+		t.Fatal("sync off should store it plain again")
+	}
+
+	sealed, err := s.Seal(ctx, "💊 Losartana 08:00")
+	if err != nil || strings.Contains(sealed, "Losartana") {
+		t.Fatalf("seal: %q %v", sealed, err)
+	}
+	if plain, err := s.Open(ctx, sealed); err != nil || plain != "💊 Losartana 08:00" {
+		t.Fatalf("open: %q %v", plain, err)
+	}
+	if plain, _ := s.Open(ctx, "texto antigo"); plain != "texto antigo" {
+		t.Fatal("plain text must pass through")
+	}
+}

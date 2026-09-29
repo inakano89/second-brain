@@ -14,6 +14,9 @@ import (
 	"github.com/inakano89/second-brain/internal/profile"
 )
 
+// toolProfile reads the personal profile; chat turns that call it are stored encrypted.
+const toolProfile = "personal_profile"
+
 func obj(props map[string]any, required ...string) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -65,7 +68,7 @@ func (a *Agent) Tools() []llm.Tool {
 		for _, k := range profile.Kinds {
 			kinds = append(kinds, k.Key)
 		}
-		tools = append(tools, llm.Tool{Name: "personal_profile",
+		tools = append(tools, llm.Tool{Name: toolProfile,
 			Description: "Consulta o PERFIL PESSOAL do usuário: identidade, endereços, contatos de emergência, alergias, medicações contínuas, suplementos, dieta, histórico de saúde, profissionais, matrículas (academia, escola) com horários, cursos, assinaturas, hábitos, datas importantes, viagens, documentos, veículos, casa, pets, garantias e metas. Use para perguntas sobre a vida do usuário (\"que remédio eu tomo?\", \"qual meu horário da academia?\").",
 			Parameters: obj(map[string]any{
 				"query": str("Termos opcionais para filtrar"),
@@ -334,7 +337,7 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		return ev, nil
 	case "search_email", "read_email", "create_email_draft", "search_drive", "read_drive_file", "search_contacts":
 		return a.execGoogleTool(ctx, name, args)
-	case "personal_profile":
+	case toolProfile:
 		return a.profileForAI(ctx, args.str("query"), args.str("kind"))
 	case "run_action":
 		out, err := a.actions.Run(ctx, args.str("name"), args.str("input"))

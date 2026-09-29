@@ -479,6 +479,9 @@ Registro estruturado da vida do usuário em `/profile` (pacote `internal/profile
 
 - Itens sensíveis (padrão para saúde, identidade, endereços, documentos e veículos; ajustável por item) têm título e dados cifrados com AES-256-GCM. A chave `VAULT_KEY` (64 hex) é criada no `.env` no primeiro uso; uma cópia fica no banco cifrada com `BACKUP_ENCRYPTION_KEY` (Argon2id), então um backup do banco pode ser lido com a chave de backup mesmo sem o `.env`. Chave errada → itens aparecem como bloqueados, sem perda.
 - Nas listas, os campos de itens sensíveis só aparecem após **👁 Mostrar**; cada exibição é registrada no audit log.
+- `PROFILE_ENCRYPT_ALL=true` cifra todos os itens (não só os sensíveis); ao mudar a opção pela UI os itens são regravados na hora (e a manutenção diária confere, para edições manuais do `.env`).
+- Notificações que falham e vão para a fila de reenvio (`telegram.send`) são guardadas cifradas com a mesma chave.
+- Turnos do chat/Telegram em que a ferramenta `personal_profile` foi chamada são gravados cifrados em `chat_messages` com `private=1`: não entram na rotina de Memória (`ChatSince`) e só voltam como histórico quando o modelo da conversa é local ou `PROFILE_AI_ACCESS=full`.
 - A IA lê o perfil pela ferramenta `personal_profile` do chat/Telegram conforme `PROFILE_AI_ACCESS`: `basic` (padrão) libera itens comuns e só entrega os sensíveis quando todas as rotas possíveis do chat e do Telegram são locais (Ollama); `full` libera tudo; `none` remove a ferramenta. Cada consulta é registrada no audit log.
 
 ## Integrações
@@ -653,7 +656,7 @@ Alterações feitas pelo editor web são aplicadas na hora: clientes LLM, açõe
 - Markdown renderizado com escape total de HTML; segredos nunca são reexibidos na UI.
 - Ações do agente limitadas a uma whitelist explícita, desativadas por padrão, sem shell.
 - Backups cifrados com autenticação (AES-GCM); a chave nunca sai do `.env`.
-- Itens sensíveis do Perfil cifrados no banco (AES-256-GCM, `VAULT_KEY`), ocultos até serem exibidos (com registro no audit log) e, por padrão, nunca enviados a modelos na nuvem.
+- Itens sensíveis do Perfil cifrados no banco (AES-256-GCM, `VAULT_KEY`), ocultos até serem exibidos (com registro no audit log) e, por padrão, nunca enviados a modelos na nuvem; o mesmo vale para as conversas que consultaram o Perfil e para notificações na fila de reenvio.
 - Auto-update só instala binários que conferem com o `SHA256SUMS` (e com a assinatura ed25519 quando configurada), com rollback automático.
 
 Vulnerabilidades: veja [SECURITY.md](SECURITY.md) (relato privado via GitHub Security Advisories).

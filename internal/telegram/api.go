@@ -24,8 +24,11 @@ type Client struct {
 }
 
 // NewClient creates a client for token.
+// apiBase is the Bot API endpoint (replaced in tests).
+var apiBase = "https://api.telegram.org"
+
 func NewClient(token string) *Client {
-	return &Client{token: token, base: "https://api.telegram.org", http: &http.Client{Timeout: 90 * time.Second}}
+	return &Client{token: token, base: apiBase, http: &http.Client{Timeout: 90 * time.Second}}
 }
 
 // APIError is a Telegram error response.
