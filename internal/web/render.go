@@ -12,7 +12,10 @@ import (
 
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/llm"
+	"github.com/inakano89/second-brain/internal/profile"
 )
+
+var weekdayNames = []string{"Domingo", "Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado"}
 
 func (s *Server) funcs() template.FuncMap {
 	return template.FuncMap{
@@ -57,7 +60,25 @@ func (s *Server) funcs() template.FuncMap {
 			b, _ := json.Marshal(v)
 			return string(b)
 		},
-		"usd":       func(v float64) string { return fmt.Sprintf("US$ %.4f", v) },
+		"usd":      func(v float64) string { return fmt.Sprintf("US$ %.4f", v) },
+		"weekdays": func() []string { return profile.Weekdays },
+		"kindLabel": func(k string) string {
+			if d := profile.KindOf(k); d != nil {
+				return d.Label
+			}
+			return k
+		},
+		"fmtDay": func(t time.Time) string {
+			return weekdayNames[t.Weekday()] + ", " + t.Format("02/01/2006")
+		},
+		"rfc3339": func(t time.Time) string { return t.Format(time.RFC3339) },
+		"dict": func(kv ...any) map[string]any {
+			m := make(map[string]any, len(kv)/2)
+			for i := 0; i+1 < len(kv); i += 2 {
+				m[fmt.Sprint(kv[i])] = kv[i+1]
+			}
+			return m
+		},
 		"num":       func(v int64) string { return humanInt(v) },
 		"pct":       func(v float64) string { return fmt.Sprintf("%.0f%%", v) },
 		"safeURL":   func(s string) template.URL { return template.URL(s) },

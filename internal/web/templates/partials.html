@@ -241,3 +241,92 @@
 {{define "cleanup_done"}}
 <article class="cleanup-card resolved" id="cl-{{.ID}}"><p class="small">{{if .Error}}<span class="warn">{{.Error}}</span>{{else}}✓ {{.Message}}{{end}}</p></article>
 {{end}}
+
+{{define "profile_slot"}}{{with .S}}
+<li class="{{if .Done}}done{{end}}">
+  <span class="p-time">{{or .Time "—"}}</span>
+  <span class="p-what">{{.Icon}} <b>{{.Title}}</b>{{with .Detail}} <small class="muted">· {{.}}</small>{{end}}</span>
+  {{if .Check}}
+  <form method="post" action="/profile/check">
+    <input type="hidden" name="id" value="{{.ItemID}}"><input type="hidden" name="day" value="{{$.Day}}"><input type="hidden" name="slot" value="{{.Time}}">
+    {{if .Done}}<input type="hidden" name="undo" value="1"><button class="btn small" title="Desfazer">✔️ feito</button>{{else}}<button class="btn small primary">Marcar</button>{{end}}
+  </form>
+  {{end}}
+</li>
+{{end}}{{end}}
+
+{{define "profile_item"}}
+<article class="p-item{{if .Item.Sensitive}} sensitive{{end}}" id="item-{{.Item.ID}}">
+  <div class="p-item-head">
+    <b>{{.Kind.Icon}} {{.Item.Title}}</b>
+    {{if .Item.Sensitive}}<span class="badge" title="Cifrado no banco; a IA na nuvem não lê">🔒 sensível</span>{{end}}
+    {{with .Stock}}<span class="badge">{{.}}</span>{{end}}
+    {{if and .Masked (not .Item.Locked)}}<button type="button" class="btn small" hx-get="/profile/items/{{.Item.ID}}" hx-target="closest article" hx-swap="outerHTML">👁 Mostrar</button>{{end}}
+  </div>
+  {{if and (not .Masked) (not .Item.Locked)}}
+    {{with .Shown}}<dl class="p-fields">{{range .}}<dt>{{.Label}}</dt><dd>{{.Display}}</dd>{{end}}</dl>{{end}}
+    <details class="p-edit"><summary>Editar</summary>
+      {{template "profile_form" .}}
+      <form method="post" action="/profile/items/{{.Item.ID}}/delete" class="p-del"><button class="btn small danger" data-confirm="Apagar “{{.Item.Title}}”?">Apagar</button></form>
+    </details>
+  {{end}}
+</article>
+{{end}}
+
+{{define "profile_form"}}
+<form method="post" action="{{if .Item.ID}}/profile/items/{{.Item.ID}}{{else}}/profile/items{{end}}" class="p-form">
+  <input type="hidden" name="kind" value="{{.Kind.Key}}">
+  <label>{{.Kind.TitleLabel}} <input name="title" value="{{.Item.Title}}" required></label>
+  <div class="p-grid">
+  {{range .Fields}}
+    {{if eq .Type "textarea"}}
+      <label class="wide">{{.Label}} <textarea name="{{.Key}}" rows="3">{{.Value}}</textarea>{{with .Help}}<small class="muted">{{.}}</small>{{end}}</label>
+    {{else if eq .Type "select"}}
+      <label>{{.Label}} <select name="{{.Key}}">{{$v := .Value}}{{range .Options}}<option value="{{.}}"{{if eq . $v}} selected{{end}}>{{if .}}{{.}}{{else}}—{{end}}</option>{{end}}</select></label>
+    {{else if eq .Type "weekdays"}}
+      <fieldset class="wide p-days"><legend>{{.Label}}</legend>{{$c := .Checked}}{{$k := .Key}}
+        {{range weekdays}}<label class="chk"><input type="checkbox" name="{{$k}}" value="{{.}}"{{if index $c .}} checked{{end}}> {{.}}</label>{{end}}
+        {{with .Help}}<small class="muted">{{.}}</small>{{end}}
+      </fieldset>
+    {{else}}
+      <label>{{.Label}}
+        {{if eq .Type "date"}}<input type="date" name="{{.Key}}" value="{{.Value}}">
+        {{else if eq .Type "time"}}<input type="time" name="{{.Key}}" value="{{.Value}}">
+        {{else if eq .Type "number"}}<input type="number" step="any" min="0" name="{{.Key}}" value="{{.Value}}">
+        {{else if eq .Type "day"}}<input type="number" min="1" max="31" name="{{.Key}}" value="{{.Value}}">
+        {{else if eq .Type "times"}}<input name="{{.Key}}" value="{{.Value}}" placeholder="08:00, 20:00">
+        {{else}}<input name="{{.Key}}" value="{{.Value}}">{{end}}
+        {{with .Help}}<small class="muted">{{.}}</small>{{end}}
+      </label>
+    {{end}}
+  {{end}}
+  </div>
+  <label class="chk"><input type="checkbox" name="sensitive"{{if .Item.Sensitive}} checked{{end}}> 🔒 Sensível: cifrar no banco e não enviar a IA na nuvem</label>
+  <button class="btn primary small">Salvar</button>
+</form>
+{{end}}
+
+{{define "profile_suggestions"}}
+<div class="p-suggestions">
+  {{with .Error}}<p class="muted">Agenda indisponível: {{.}}</p>{{end}}
+  <ul>
+  {{range .List}}
+    <li>
+      <span>{{.Category.Icon}} <b>{{.Event.Title}}</b> <small class="muted">{{.Event.Start.Format "02/01/2006"}} · vira {{kindLabel .Category.Kind}}</small></span>
+      <span class="p-actions">
+        <form method="post" action="/profile/import">
+          <input type="hidden" name="event_id" value="{{.Event.ID}}"><input type="hidden" name="title" value="{{.Event.Title}}">
+          <input type="hidden" name="start" value="{{rfc3339 .Event.Start}}"><input type="hidden" name="all_day" value="{{if .Event.AllDay}}1{{end}}">
+          <button class="btn small primary">Adicionar</button>
+        </form>
+        <form hx-post="/profile/dismiss" hx-target="closest li" hx-swap="delete" method="post" action="/profile/dismiss">
+          <input type="hidden" name="event_id" value="{{.Event.ID}}"><button class="btn small" title="Não sugerir de novo">Ignorar</button>
+        </form>
+      </span>
+    </li>
+  {{else}}
+    {{if not $.Error}}<li class="muted">Nenhum evento parecido com cirurgia, consulta, curso, viagem, aniversário ou vencimento no próximo ano.</li>{{end}}
+  {{end}}
+  </ul>
+</div>
+{{end}}

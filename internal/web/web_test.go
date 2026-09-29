@@ -628,3 +628,55 @@ func TestCleanupTabAndDashboard(t *testing.T) {
 	}
 	e.expect(e.do("POST", fmt.Sprintf("/dashboard/tasks/%d/nope", meeting.ID), nil, nil), 404)
 }
+
+func TestProfilePages(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+
+	e.expect(e.do("GET", "/profile", nil, nil), 200, "Visão geral", "Nada agendado para hoje", "Privacidade")
+	rec := e.form("/profile/items", url.Values{"kind": {"medication"}, "title": {"Losartana"}, "dose": {"37 mg"}, "times": {"8h"}, "stock": {"30"}, "sensitive": {"on"}})
+	if rec.Code != http.StatusSeeOther || !strings.Contains(rec.Header().Get("Location"), "tab=saude") {
+		t.Fatalf("create: %d %s", rec.Code, rec.Header().Get("Location"))
+	}
+	rec = e.form("/profile/items", url.Values{"kind": {"enrollment"}, "title": {"Academia Forte"}, "weekdays": {"seg", "qua"}, "time": {"18:00"}})
+	if rec.Code != http.StatusSeeOther {
+		t.Fatalf("create enrollment: %d", rec.Code)
+	}
+	items, err := e.ag.Profile().List(ctx, false)
+	if err != nil || len(items) != 2 {
+		t.Fatalf("items: %+v %v", items, err)
+	}
+	var med, gym int64
+	for _, it := range items {
+		if it.Kind == "medication" {
+			med = it.ID
+		} else {
+			gym = it.ID
+		}
+	}
+
+	// Sensitive details stay out of the list until revealed; the reveal is audited.
+	rec = e.do("GET", "/profile?tab=saude", nil, nil)
+	e.expect(rec, 200, "Losartana", "🔒 sensível", "👁 Mostrar")
+	if strings.Contains(rec.Body.String(), "37 mg") {
+		t.Fatal("sensitive detail rendered before reveal")
+	}
+	e.expect(e.do("GET", fmt.Sprintf("/profile/items/%d", med), nil, nil), 200, "37 mg", "08:00")
+	e.expect(e.do("GET", "/profile?tab=rotina", nil, nil), 200, "Academia Forte", "seg, qua")
+
+	// Edit, check a dose (stock goes down), then delete.
+	e.expect(e.form(fmt.Sprintf("/profile/items/%d", gym), url.Values{"title": {"Academia Forte"}, "time": {"07:00"}}), 303)
+	day := time.Now().In(e.cfg.Location()).Format("2006-01-02")
+	e.expect(e.form("/profile/check", url.Values{"id": {fmt.Sprint(med)}, "day": {day}, "slot": {"08:00"}}), 303)
+	if it, _ := e.ag.Profile().Get(ctx, med); it.Get("stock") != "29" {
+		t.Fatalf("stock after check: %s", it.Get("stock"))
+	}
+	e.expect(e.do("GET", "/profile", nil, nil), 200, "Losartana", "✔️ feito")
+	e.expect(e.form(fmt.Sprintf("/profile/items/%d/delete", gym), url.Values{}), 303)
+	if items, _ := e.ag.Profile().List(ctx, false); len(items) != 1 {
+		t.Fatalf("delete: %d items", len(items))
+	}
+	e.expect(e.form("/profile/items", url.Values{"kind": {"bill"}, "title": {"Luz"}, "due_day": {"45"}}), 303)
+	e.expect(e.do("GET", "/profile/suggestions", nil, nil), 200)
+}

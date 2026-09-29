@@ -61,6 +61,7 @@ func Register(s *Scheduler, d *Deps) error {
 		{"actions", "CRON_ACTIONS", func(ctx context.Context) error { _, err := d.ActionItems(ctx, true); return err }, nil},
 		{"memory", "CRON_MEMORY", func(ctx context.Context) error { _, err := d.MemoryRun(ctx, true); return err }, nil},
 		{"cleanup", "CRON_CLEANUP", func(ctx context.Context) error { _, err := d.Cleanup(ctx, true); return err }, []JobOption{CatchUpWithin(72 * time.Hour)}},
+		{"reminders", "CRON_REMINDERS", d.Reminders, nil},
 		{"maintenance", "CRON_MAINTENANCE", d.Maintenance, nil},
 		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }, nil},
 		{"rss", "CRON_RSS", enqueue(rss.TaskPoll), nil},
@@ -256,6 +257,7 @@ Use apenas os dados fornecidos. Formatação compatível com Telegram Markdown s
 	if _, err := d.saveInsight(ctx, title, "morning:"+now.Format("2006-01-02"), text, []string{"briefing"}); err != nil {
 		return text, err
 	}
+	text = withBlock(text, d.personalBlock(ctx, false)) // not saved: the note is readable by the AI
 	if notify {
 		d.notify(ctx, text)
 	}
@@ -300,6 +302,7 @@ func (d *Deps) EveningReview(ctx context.Context, notify bool) (string, error) {
 	if _, err := d.saveInsight(ctx, "Balanço "+now.Format("02/01/2006"), "evening:"+now.Format("2006-01-02"), text, []string{"review", "diario"}); err != nil {
 		return text, err
 	}
+	text = withBlock(text, d.personalBlock(ctx, true))
 	if notify {
 		d.notify(ctx, text)
 	}

@@ -11,6 +11,7 @@ import (
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/llm"
+	"github.com/inakano89/second-brain/internal/profile"
 )
 
 func obj(props map[string]any, required ...string) map[string]any {
@@ -58,6 +59,18 @@ func (a *Agent) Tools() []llm.Tool {
 			Parameters: obj(map[string]any{"source_id": integer("Origem"), "target_id": integer("Destino"), "relation": str("Relação, ex: related, part_of, mentions")}, "source_id", "target_id")},
 		{Name: "health_summary", Description: "Retorna métricas de saúde (sono, recuperação, FC repouso, passos) dos últimos N dias.",
 			Parameters: obj(map[string]any{"days": integer("Dias (padrão 7)")})},
+	}
+	if a.profile.Access() != profile.AccessNone {
+		kinds := make([]string, 0, len(profile.Kinds))
+		for _, k := range profile.Kinds {
+			kinds = append(kinds, k.Key)
+		}
+		tools = append(tools, llm.Tool{Name: "personal_profile",
+			Description: "Consulta o PERFIL PESSOAL do usuário: identidade, endereços, contatos de emergência, alergias, medicações contínuas, suplementos, dieta, histórico de saúde, profissionais, matrículas (academia, escola) com horários, cursos, assinaturas, hábitos, datas importantes, viagens, documentos, veículos, casa, pets, garantias e metas. Use para perguntas sobre a vida do usuário (\"que remédio eu tomo?\", \"qual meu horário da academia?\").",
+			Parameters: obj(map[string]any{
+				"query": str("Termos opcionais para filtrar"),
+				"kind":  map[string]any{"type": "string", "enum": kinds, "description": "Tipo opcional"},
+			})})
 	}
 	if a.calendar() != nil {
 		tools = append(tools,
@@ -321,6 +334,8 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		return ev, nil
 	case "search_email", "read_email", "create_email_draft", "search_drive", "read_drive_file", "search_contacts":
 		return a.execGoogleTool(ctx, name, args)
+	case "personal_profile":
+		return a.profileForAI(ctx, args.str("query"), args.str("kind"))
 	case "run_action":
 		out, err := a.actions.Run(ctx, args.str("name"), args.str("input"))
 		if err != nil {

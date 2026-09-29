@@ -20,6 +20,7 @@ import (
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/llm"
+	"github.com/inakano89/second-brain/internal/profile"
 	"github.com/inakano89/second-brain/internal/queue"
 )
 
@@ -40,6 +41,7 @@ type Agent struct {
 	llm     *llm.Manager
 	log     *slog.Logger
 	actions *Actions
+	profile *profile.Store
 
 	gMu sync.RWMutex
 	g   GoogleAPI
@@ -53,8 +55,12 @@ type Agent struct {
 func New(cfg *config.Config, db *database.DB, m *llm.Manager, log *slog.Logger) *Agent {
 	a := &Agent{cfg: cfg, db: db, llm: m, log: log.With("component", "agent"), qcache: map[string][]float32{}}
 	a.actions = NewActions(cfg, log)
+	a.profile = profile.New(cfg, db, log)
 	return a
 }
+
+// Profile exposes the personal profile store.
+func (a *Agent) Profile() *profile.Store { return a.profile }
 
 // DB exposes the database.
 func (a *Agent) DB() *database.DB { return a.db }

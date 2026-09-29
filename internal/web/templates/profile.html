@@ -1,0 +1,80 @@
+{{define "content"}}
+{{with .Data}}
+<div class="profile">
+  <nav class="content-tabs" aria-label="Seções do perfil">
+    <a href="/profile" class="{{if eq .Tab "overview"}}on{{end}}">✨ Visão geral</a>
+    {{range .Sections}}<a href="/profile?tab={{.Key}}" class="{{if eq $.Data.Tab .Key}}on{{end}}">{{.Icon}} {{.Label}}{{with index $.Data.Counts .Key}}<span class="count">{{.}}</span>{{end}}</a>{{end}}
+    <a href="/help#profile" class="muted small">❓ Como usar</a>
+  </nav>
+
+{{if .O}}
+  <div class="p-overview">
+    <section class="card" id="today">
+      <div class="card-head"><h2>📋 Hoje</h2><small class="muted">{{fmtDay .O.Now}}</small></div>
+      <ul class="p-slots">
+      {{range .O.Today}}{{template "profile_slot" (dict "S" . "Day" $.Data.Day)}}
+      {{else}}<li class="muted">Nada agendado para hoje. Cadastre medicações, suplementos, matrículas e hábitos (com dias e horários) nas abas <a href="/profile?tab=saude">Saúde</a> e <a href="/profile?tab=rotina">Rotina</a>.</li>{{end}}
+      </ul>
+      {{with .O.Tomorrow}}
+      <details class="p-tomorrow"><summary>Amanhã ({{len .}})</summary>
+        <ul class="p-slots">{{range .}}{{template "profile_slot" (dict "S" . "Day" $.Data.Tomorrow)}}{{end}}</ul>
+      </details>
+      {{end}}
+    </section>
+
+    <section class="card">
+      <h2>📆 Próximos 30 dias</h2>
+      <ul class="p-alerts">
+      {{range .O.Alerts}}
+        <li class="lvl-{{.Level}}">
+          <span class="p-when">{{.When}}</span>
+          <span>{{.Icon}} <b>{{.Label}}</b>: {{if .ItemID}}<a href="/profile?tab={{.Section}}#item-{{.ItemID}}">{{.Title}}</a>{{else if .NodeID}}<a href="/?focus={{.NodeID}}">{{.Title}}</a>{{else}}{{.Title}}{{end}}
+            {{if ne .Source "perfil"}}<small class="muted">· {{.Source}}</small>{{end}}</span>
+        </li>
+      {{else}}
+        <li class="muted">Nada nos próximos 30 dias. Vencimentos, aniversários (inclusive dos Contatos), cirurgias, cursos e viagens da agenda aparecem aqui.</li>
+      {{end}}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>🗂 Resumo</h2>
+      <ul class="p-summary">
+      {{range .Sections}}
+        <li><a href="/profile?tab={{.Key}}">{{.Icon}} {{.Label}}</a> <b>{{or (index $.Data.Counts .Key) 0}}</b><br><small class="muted">{{.Help}}</small></li>
+      {{end}}
+      </ul>
+    </section>
+
+    <section class="card">
+      <h2>🔒 Privacidade</h2>
+      <p class="small">Itens marcados como <b>sensíveis</b> ficam cifrados no banco (AES-256-GCM, chave <code>VAULT_KEY</code> no <code>.env</code>), aparecem ocultos nas listas e cada exibição fica no Audit log. Os lembretes e os blocos pessoais dos relatórios vão só para o seu Telegram, sem passar pela IA.</p>
+      <p class="small">IA: <b>{{.Access}}</b>. {{if .Local}}Chat e Telegram usam modelo local.{{else}}Chat e Telegram usam modelos na nuvem: itens sensíveis só são enviados se você escolher “full”.{{end}} <a href="/settings#Perfil">Alterar</a></p>
+      {{with .O.Locked}}<p class="flash err">{{.}} item(ns) não puderam ser abertos: a VAULT_KEY mudou ou sumiu. Restaure a chave antiga no .env.</p>{{end}}
+    </section>
+  </div>
+{{else}}
+  <p class="muted p-help">{{.Section.Help}}</p>
+  <div class="p-kinds">
+  {{range .Kinds}}
+    <section class="card p-kind" id="kind-{{.Kind.Key}}">
+      <div class="card-head"><h2>{{.Kind.Icon}} {{.Kind.Label}}</h2>{{with .Items}}<small class="muted">{{len .}}</small>{{end}}</div>
+      {{range .Items}}{{template "profile_item" .}}{{else}}<p class="muted small p-none">Nada cadastrado.</p>{{end}}
+      <details class="p-new">
+        <summary>+ Adicionar</summary>
+        {{template "profile_form" .New}}
+      </details>
+    </section>
+  {{end}}
+  {{if eq .Tab "datas"}}
+    <section class="card p-kind">
+      <h2>📅 Sugestões do Google Agenda</h2>
+      <p class="muted small">Eventos do próximo ano que parecem cirurgias, consultas, exames, vacinas, cursos, viagens, aniversários ou vencimentos. Adicione ao perfil para completar os detalhes e receber avisos.</p>
+      <div hx-get="/profile/suggestions" hx-trigger="load" hx-swap="outerHTML"><p class="muted">Lendo a agenda…</p></div>
+    </section>
+  {{end}}
+  </div>
+{{end}}
+</div>
+{{end}}
+{{end}}

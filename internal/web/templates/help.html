@@ -21,6 +21,7 @@
     <a href="#import">📥 Importar de outros apps</a>
     <a href="#content">🗂 Conteúdo: editar e apagar</a>
     <a href="#memory">🧠 Memória, tarefas e faxina</a>
+    <a href="#profile">🪪 Perfil: saúde, rotina e datas</a>
     <a href="#backup">🔐 Backup</a>
     <a href="#install">🖥️ Instalação</a>
     <a href="#docker">🐳 Docker na VPS</a>
@@ -250,6 +251,27 @@
       <p class="muted">Quer mudar os horários? Em Configurações → Agendamentos: <code>CRON_ACTIONS</code>, <code>CRON_MEMORY</code> e <code>CRON_CLEANUP</code> (use <code>off</code> para desligar). O modelo de IA de cada uma se escolhe em <a href="#models">Modelos</a>.</p>
     </section>
 
+    <section class="card" id="profile">
+      <h2>🪪 Perfil: saúde, rotina e datas</h2>
+      <p>O menu <b>Perfil</b> guarda as informações fixas da sua vida, organizadas em abas. A <b>Visão geral</b> junta tudo: o que você tem para hoje, os próximos 30 dias e um resumo.</p>
+      <ul>
+        <li><b>🪪 Sobre mim</b>: nome, documentos, tipo sanguíneo, plano de saúde, endereços (casa, trabalho), contatos de emergência, alergias e preferências.</li>
+        <li><b>🩺 Saúde</b>: medicações contínuas (dose, horários, estoque, validade da receita), suplementos, dieta (metas de calorias e macros, nutricionista), condições, cirurgias, vacinas, exames e seus médicos (com “retorno a cada N meses”).</li>
+        <li><b>🗓️ Rotina</b>: matrículas (academia, escola, inglês…) com dias da semana e horário opcional, mensalidade e renovação; cursos, assinaturas e hábitos.</li>
+        <li><b>🎂 Datas</b>: aniversários, casamento e outras datas que se repetem, e viagens. Os aniversários dos seus <a href="#google">Contatos do Google</a> entram sozinhos. Nessa aba aparecem <b>sugestões do Google Agenda</b>: eventos que parecem cirurgia, consulta, exame, vacina, curso, viagem ou aniversário. Clique em <b>Adicionar</b> e complete os detalhes.</li>
+        <li><b>🏠 Casa e bens</b>: documentos com validade (CNH, passaporte), veículos (revisão, seguro, IPVA), manutenção da casa, contas fixas, pets e garantias.</li>
+        <li><b>🎯 Metas</b>: objetivos com prazo, progresso e próximo passo.</li>
+      </ul>
+      <ol class="steps">
+        <li>Abra a aba, clique em <b>+ Adicionar</b>, preencha o que souber (só o nome é obrigatório) e salve.</li>
+        <li>Para medicações e suplementos, informe os <b>horários</b> (ex.: <code>08:00, 20:00</code>) e o <b>estoque</b>. Você recebe o lembrete no Telegram na hora certa; responda <code>/tomei 12</code> (o número vem na mensagem) ou marque em <b>Perfil → Hoje</b>. O estoque diminui sozinho e você é avisado quando estiver acabando.</li>
+        <li>Matrículas e cursos com horário geram um aviso antes da aula (60 minutos por padrão, em <code>REMINDERS_CLASS_BEFORE</code>).</li>
+      </ol>
+      <p>O <b>balanço das 21h</b> ganha o bloco “Amanhã e próximos 7 dias” (doses, aulas, vencimentos, aniversários, estoque baixo) e o <b>briefing das 7h</b> o bloco “Hoje na sua rotina”. No Telegram, <code>/hoje</code> mostra o mesmo a qualquer hora. No chat, pergunte “que remédios eu tomo?” ou “qual meu horário da academia?”.</p>
+      <p class="hint">🔒 <b>Privacidade</b>: itens marcados como <b>sensíveis</b> (saúde, documentos e endereços já vêm marcados) ficam cifrados no banco, aparecem ocultos nas listas até você clicar em <b>👁 Mostrar</b> (cada exibição fica no Audit log) e, por padrão, <b>não são enviados a IAs na nuvem</b>: só um <a href="#ollama">modelo local</a> os lê. Mude em Configurações → Perfil → <code>PROFILE_AI_ACCESS</code> (<code>basic</code>, <code>full</code> ou <code>none</code>). Os lembretes e os blocos pessoais dos relatórios vão direto para o seu Telegram, sem passar pela IA.</p>
+      <p class="muted">A chave que cifra esses itens (<code>VAULT_KEY</code>) é criada sozinha no <code>.env</code>. Uma cópia dela fica no banco, protegida pela chave de backup: se você perder o <code>.env</code> mas tiver a chave de backup, os itens voltam a abrir.</p>
+    </section>
+
     <section class="card" id="backup">
       <h2>🔐 Backup</h2>
       <p>Os backups são cifrados com a <b>chave mestre</b> definida no setup. <b>Guarde essa chave fora do servidor</b> (gerenciador de senhas) — sem ela não há como restaurar.</p>
@@ -316,7 +338,7 @@ docker compose up -d</pre></li>
     <section class="card" id="schedules">
       <h2>⏰ Agendamentos</h2>
       <p>Formato cron com 5 campos: <code>minuto hora dia mês dia-da-semana</code>. Exemplos: <code>0 7 * * *</code> = todo dia às 7h; <code>30 21 * * 1-5</code> = dias úteis às 21h30; <code>*/15 * * * *</code> = a cada 15 min; <code>off</code> desativa.</p>
-      <p>Rotinas: briefing (7h), tarefas de reuniões (12h e 18h), balanço da noite (21h), memória (22h30), faxina (domingo 17h30) e revisão semanal (domingo 18h), além de backup, manutenção e sincronizações.</p>
+      <p>Rotinas: briefing (7h), tarefas de reuniões (12h e 18h), balanço da noite (21h), memória (22h30), faxina (domingo 17h30) e revisão semanal (domingo 18h), além dos lembretes do <a href="#profile">Perfil</a> (checados a cada 5 minutos), backup, manutenção e sincronizações.</p>
       <p><b>E se o computador estiver desligado no horário?</b> A rotina roda uma vez quando o Second Brain voltar a abrir (cerca de 2 minutos depois), inclusive a verificação de atualizações e o backup. O briefing da manhã só é enviado até 5 horas depois do horário marcado, o balanço da noite até 3 horas e a revisão semanal até 3 dias; depois disso ficam para o próximo ciclo.</p>
     </section>
 
