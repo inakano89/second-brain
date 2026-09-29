@@ -24,12 +24,27 @@ jobs:
       - name: Assinar SHA256SUMS (ed25519)
         if: env.UPDATE_SIGNING_KEY != ''
         run: make sign
+      # Se a release já foi criada pela página do GitHub (com "Generate release notes"),
+      # o softprops/action-gh-release ACRESCENTA as notas geradas ao texto existente e o
+      # "What's Changed" aparece duas vezes. Só gera quando a release não existe ou está sem texto.
+      - name: Decidir se gera as notas
+        id: notes
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          body="$(gh release view "$GITHUB_REF_NAME" --json body --jq .body 2>/dev/null || true)"
+          if [ -z "$(printf '%s' "$body" | tr -d '[:space:]')" ]; then
+            echo "generate=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "generate=false" >> "$GITHUB_OUTPUT"
+          fi
       - uses: softprops/action-gh-release@v3
         with:
           files: |
             dist/second-brain-*
             dist/SHA256SUMS*
-          generate_release_notes: true
+          generate_release_notes: ${{ steps.notes.outputs.generate == 'true' }}
           # vX.Y.Z → estável e "latest" (instalador e auto-update usam /releases/latest);
           # vX.Y.Z-rc1 etc. → pré-release.
           prerelease: ${{ contains(github.ref_name, '-') }}
