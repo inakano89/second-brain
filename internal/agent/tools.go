@@ -20,6 +20,17 @@ const toolProfile = "personal_profile"
 // toolProfileSave creates or updates profile items (PROFILE_AI_WRITE).
 const toolProfileSave = "save_profile_item"
 
+// toolUserRequested is the permission flag every tool that changes data must carry.
+const toolUserRequested = "user_requested"
+
+// mutatingTools change data or act on the outside world: they only run when the user asked
+// for that exact change (see gate); otherwise the model must ask first.
+var mutatingTools = map[string]bool{
+	"create_note": true, "create_task": true, "complete_task": true, "link_nodes": true, toolUnlinkNodes: true,
+	toolUpdateNode: true, toolDeleteNode: true, toolProfileSave: true,
+	"create_calendar_event": true, "create_email_draft": true, "run_action": true,
+}
+
 func obj(props map[string]any, required ...string) map[string]any {
 	s := map[string]any{"type": "object", "properties": props}
 	if len(required) > 0 {
@@ -44,13 +55,20 @@ func (a *Agent) Tools() []llm.Tool {
 			}, "query")},
 		{Name: "get_node", Description: "Lê o conteúdo completo de um nó e seus vizinhos no grafo.",
 			Parameters: obj(map[string]any{"id": integer("ID do nó")}, "id")},
-		{Name: "create_note", Description: "Cria uma nota no Second Brain (será auto-taggeada e auto-linkada).",
+		{Name: "create_note", Description: "Cria uma nota (ou uma PESSOA, com type=person) no Second Brain (será auto-taggeada e auto-linkada). Antes de criar uma pessoa, busque com search_brain para não duplicar; para alterar uma existente use update_node.",
 			Parameters: obj(map[string]any{
-				"title":   str("Título"),
-				"content": str("Conteúdo em Markdown; use [[Título]] para linkar notas"),
-				"tags":    map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": "Tags opcionais"},
-				"type":    map[string]any{"type": "string", "enum": []string{"note", "insight", "article"}, "description": "Tipo (padrão note)"},
-			}, "title", "content")},
+				"title":    str("Título (para pessoa: o nome)"),
+				"content":  str("Conteúdo em Markdown; use [[Título]] para linkar notas"),
+				"tags":     strList("Tags opcionais"),
+				"type":     map[string]any{"type": "string", "enum": []string{"note", "insight", "article", "person"}, "description": "Tipo (padrão note)"},
+				"emails":   strList("Só pessoa: e-mails"),
+				"phones":   strList("Só pessoa: telefones"),
+				"company":  str("Só pessoa: empresa"),
+				"birthday": str("Só pessoa: AAAA-MM-DD ou --MM-DD"),
+			}, "title")},
+		a.updateNodeTool(),
+		deleteNodeTool(),
+		unlinkNodesTool(),
 		{Name: "create_task", Description: "Cria uma tarefa pendente.",
 			Parameters: obj(map[string]any{
 				"title":   str("Ação a fazer"),
@@ -143,7 +161,24 @@ func (a *Agent) Tools() []llm.Tool {
 				"input": str("Parâmetro opcional substituído em {{input}}"),
 			}, "name")})
 	}
+	for i := range tools {
+		if mutatingTools[tools[i].Name] {
+			requireUserRequested(&tools[i])
+		}
+	}
 	return tools
+}
+
+// requireUserRequested adds the mandatory permission flag to a mutating tool.
+func requireUserRequested(t *llm.Tool) {
+	props, _ := t.Parameters["properties"].(map[string]any)
+	if props == nil {
+		props = map[string]any{}
+		t.Parameters["properties"] = props
+	}
+	props[toolUserRequested] = map[string]any{"type": "boolean", "description": "true SOMENTE se a mensagem atual do usuário pediu explicitamente ESTA alteração, ou se ele acabou de autorizá-la depois de você perguntar. Se a ideia foi sua ou o pedido é ambíguo, envie false: nada será alterado e você deve perguntar antes."}
+	req, _ := t.Parameters["required"].([]string)
+	t.Parameters["required"] = append(req, toolUserRequested)
 }
 
 type toolArgs map[string]any
@@ -153,6 +188,16 @@ func (t toolArgs) str(k string) string {
 		return strings.TrimSpace(v)
 	}
 	return ""
+}
+
+func (t toolArgs) bool(k string) bool {
+	switch v := t[k].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(strings.TrimSpace(v), "true")
+	}
+	return false
 }
 
 func (t toolArgs) int(k string) int64 {
@@ -213,6 +258,16 @@ func (a *Agent) ExecuteTool(ctx context.Context, call llm.ToolCall) string {
 	if args == nil {
 		args = toolArgs{}
 	}
+	if mutatingTools[call.Name] && !args.bool(toolUserRequested) {
+		a.log.Info("ferramenta aguardando permissão", "tool", call.Name)
+		delete(args, toolUserRequested)
+		return jsonResult(map[string]any{
+			"needs_confirmation": true,
+			"changed":            false,
+			"proposed":           map[string]any{"tool": call.Name, "arguments": args},
+			"instruction":        "NADA foi alterado. Diga ao usuário, em uma frase, exatamente o que você faria e pergunte se pode. Só depois de um \"sim\" chame a ferramenta de novo com user_requested=true.",
+		})
+	}
 	res, err := a.execTool(ctx, call.Name, args)
 	if err != nil {
 		a.log.Warn("ferramenta falhou", "tool", call.Name, "err", err)
@@ -253,17 +308,42 @@ func (a *Agent) execTool(ctx context.Context, name string, args toolArgs) (any, 
 		for _, l := range links {
 			neigh = append(neigh, map[string]any{"id": l.Node.ID, "title": l.Node.Title, "type": l.Node.Type, "relation": l.Relation})
 		}
-		return map[string]any{"node": brief(n, loc), "content": extract.Truncate(n.Content, 8000), "links": neigh}, nil
+		out := map[string]any{"node": brief(n, loc), "content": extract.Truncate(n.Content, 8000), "links": neigh}
+		if p := personDetails(n); p != nil {
+			out["person"] = p
+		}
+		return out, nil
 	case "create_note":
 		typ := args.str("type")
-		if typ != database.TypeInsight && typ != database.TypeArticle {
+		if typ != database.TypeInsight && typ != database.TypeArticle && typ != database.TypePerson {
 			typ = database.TypeNote
 		}
-		n, _, err := a.Ingest(ctx, IngestInput{Type: typ, Title: args.str("title"), Content: args.str("content"), Tags: args.strs("tags"), Source: "agent", Enrich: true})
+		in := IngestInput{Type: typ, Title: args.str("title"), Content: args.str("content"), Tags: args.strs("tags"), Source: "agent", Enrich: true}
+		if typ == database.TypePerson {
+			if in.Title == "" {
+				return nil, errors.New("informe o nome da pessoa")
+			}
+			if p, err := a.db.FindByTitle(ctx, database.TypePerson, in.Title); err == nil {
+				return nil, fmt.Errorf("já existe uma pessoa com esse nome (id %d): use update_node", p.ID)
+			}
+			p := &database.Node{Type: typ, Meta: map[string]any{}}
+			if err := applyPersonArgs(p, args); err != nil {
+				return nil, err
+			}
+			p.Meta["auto"] = false
+			in.Meta = p.Meta
+		}
+		n, _, err := a.Ingest(ctx, in)
 		if err != nil {
 			return nil, err
 		}
 		return map[string]any{"created": brief(n, loc)}, nil
+	case toolUpdateNode:
+		return a.updateNode(ctx, args)
+	case toolDeleteNode:
+		return a.deleteNode(ctx, args)
+	case toolUnlinkNodes:
+		return a.unlinkNodes(ctx, args)
 	case "create_task":
 		var due *time.Time
 		if d := args.str("due"); d != "" {

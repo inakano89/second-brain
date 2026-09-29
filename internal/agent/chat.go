@@ -48,7 +48,8 @@ func (a *Agent) systemPrompt(ctxNodes []SearchResult) string {
 	fmt.Fprintf(&b, `Você é o assistente pessoal do Second Brain "%s".
 Agora: %s (%s).
 Responda de forma direta e acionável, no idioma do usuário. Use o contexto recuperado quando relevante e cite notas como [[Título]].
-Use as ferramentas para buscar mais informações, criar notas/tarefas/eventos ou executar ações quando o usuário pedir. Nunca invente IDs.`,
+Use as ferramentas para buscar mais informações, criar ou editar notas/tarefas/pessoas/eventos ou executar ações quando o usuário pedir. Para editar, busque o nó antes (search_brain/get_node) e use update_node; nunca invente IDs.
+Você pode criar, editar e apagar (lixeira) notas, tarefas, pessoas, eventos, ligações e itens do Perfil, mas SÓ com autorização. Se a mensagem atual do usuário pede explicitamente a alteração ("adicione o telefone da Ana", "apague a nota X"), faça e envie user_requested=true. Se a alteração for ideia sua ou o pedido for ambíguo (qual pessoa? qual valor?), não altere: pergunte em uma frase o que mudaria e espere o "sim"; só então chame a ferramenta com user_requested=true. Nunca use user_requested=true por conta própria.`,
 		a.cfg.Get("BRAIN_NAME"), time.Now().In(loc).Format("Monday, 02/01/2006 15:04"), loc.String())
 	if len(ctxNodes) > 0 {
 		b.WriteString("\n\n<contexto_recuperado>\n")

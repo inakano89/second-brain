@@ -398,13 +398,16 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | Ferramenta | Função |
 |---|---|
 | `search_brain`, `get_node` | Busca híbrida e leitura completa com vizinhos |
-| `create_note`, `create_task`, `complete_task`, `list_tasks`, `link_nodes` | Gestão do grafo |
+| `create_note`, `create_task`, `complete_task`, `list_tasks`, `link_nodes` | Gestão do grafo (`create_note` também cria **pessoas**, com `type=person`) |
+| `update_node`, `delete_node`, `unlink_nodes` | Editam qualquer nó (nota, tarefa, **pessoa**, evento): título, tipo, conteúdo (substituir ou acrescentar), resumo, tags, status, prazo e, em pessoas, e-mails, telefones, empresa e aniversário. `delete_node` manda para a **lixeira** (30 dias); `unlink_nodes` remove ligações. Nós de saúde não são editáveis |
 | `health_summary` | Métricas de saúde dos últimos N dias |
 | `list_calendar_events`, `create_calendar_event` | Google Agenda (quando conectado) |
 | `search_email`, `read_email`, `create_email_draft` | Gmail: busca, leitura e **rascunhos** (nunca envia) |
 | `search_drive`, `read_drive_file` | Google Drive: busca e leitura de Docs, Planilhas, Apresentações, PDF, DOCX e texto |
 | `search_contacts` | Contatos do Google (inclui “outros contatos” do Gmail) |
 | `run_action` | Ações de automação da whitelist (quando `ACTIONS_ENABLED=true`) |
+
+**Permissão para alterar:** toda ferramenta que grava ou age (`create_*`, `complete_task`, `link_nodes`, `unlink_nodes`, `update_node`, `delete_node`, `save_profile_item`, `create_email_draft`, `run_action`) exige o argumento `user_requested=true`, que a IA só envia quando a mensagem do usuário pediu aquela alteração explicitamente (ou depois de ele responder “sim” a uma pergunta). Sem isso nada é alterado: a ferramenta devolve `needs_confirmation` e a IA pergunta antes. O portão depende do julgamento do modelo; o padrão é negar. Ferramentas novas que alteram dados entram em `mutatingTools` (`internal/agent/tools.go`).
 
 O prompt do chat (web e Telegram) inclui a **memória**: prioridades atuais e as decisões e aprendizados mais recentes (veja abaixo).
 

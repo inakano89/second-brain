@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync"
 	"testing"
@@ -151,13 +152,13 @@ func TestProfileSaveTool(t *testing.T) {
 		t.Fatal("save tool missing with PROFILE_AI_WRITE")
 	}
 
-	call := llm.ToolCall{ID: "c1", Name: toolProfileSave, Arguments: json.RawMessage(`{"kind":"medication","title":"Losartana","fields":[{"key":"dose","value":"50 mg"},{"key":"times","value":"08:00, 20:00"},{"key":"stock","value":"30"}]}`)}
+	call := llm.ToolCall{ID: "c1", Name: toolProfileSave, Arguments: json.RawMessage(`{"user_requested":true,"kind":"medication","title":"Losartana","fields":[{"key":"dose","value":"50 mg"},{"key":"times","value":"08:00, 20:00"},{"key":"stock","value":"30"}]}`)}
 	res := a.ExecuteTool(ctx, call)
 	if !strings.Contains(res, `"created":true`) || strings.Contains(res, "error") {
 		t.Fatalf("save: %s", res)
 	}
 	// Update by title: the answer only repeats what the model sent (no stored fields).
-	call.Arguments = json.RawMessage(`{"kind":"medication","title":"losartana","fields":[{"key":"stock","value":"28"}]}`)
+	call.Arguments = json.RawMessage(`{"user_requested":true,"kind":"medication","title":"losartana","fields":[{"key":"stock","value":"28"}]}`)
 	res = a.ExecuteTool(ctx, call)
 	if !strings.Contains(res, `"created":false`) || strings.Contains(res, "50 mg") {
 		t.Fatalf("update leaked or failed: %s", res)
@@ -166,8 +167,185 @@ func TestProfileSaveTool(t *testing.T) {
 	if len(items) != 1 || items[0].Get("dose") != "50 mg" || items[0].Get("stock") != "28" || !items[0].Sensitive {
 		t.Fatalf("stored: %+v", items)
 	}
-	bad := a.ExecuteTool(ctx, llm.ToolCall{Name: toolProfileSave, Arguments: json.RawMessage(`{"kind":"medication","title":"X","fields":[{"key":"cor","value":"azul"}]}`)})
+	bad := a.ExecuteTool(ctx, llm.ToolCall{Name: toolProfileSave, Arguments: json.RawMessage(`{"user_requested":true,"kind":"medication","title":"X","fields":[{"key":"cor","value":"azul"}]}`)})
 	if !strings.Contains(bad, "error") {
 		t.Fatalf("unknown field accepted: %s", bad)
+	}
+}
+
+// TestUpdateNodeTool: the chat edits people (fields, meta) and other nodes, and creates people.
+func TestUpdateNodeTool(t *testing.T) {
+	a, db := setupAgent(t, nil)
+	ctx := context.Background()
+	run := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		if _, ok := args[toolUserRequested]; !ok {
+			args[toolUserRequested] = true
+		}
+		b, _ := json.Marshal(args)
+		var out map[string]any
+		if err := json.Unmarshal([]byte(a.ExecuteTool(ctx, llm.ToolCall{Name: name, Arguments: b})), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	has := false
+	for _, tl := range a.Tools() {
+		has = has || tl.Name == toolUpdateNode
+	}
+	if !has {
+		t.Fatal("update_node missing from catalogue")
+	}
+
+	res := run("create_note", map[string]any{"type": "person", "title": "Ana Lima", "emails": []string{"ana@x.com"}, "company": "ACME"})
+	if res["error"] != nil {
+		t.Fatalf("create person: %v", res)
+	}
+	p, err := db.FindByTitle(ctx, database.TypePerson, "Ana Lima")
+	if err != nil || p.Meta["company"] != "ACME" || p.Meta["auto"] != false {
+		t.Fatalf("person not created with meta: %+v %v", p, err)
+	}
+	if run("create_note", map[string]any{"type": "person", "title": "ana lima"})["error"] == nil {
+		t.Fatal("duplicate person accepted")
+	}
+
+	res = run(toolUpdateNode, map[string]any{"id": p.ID, "append": "Conheci na feira.", "phones": []string{"+5511999990000"}, "birthday": "1990-05-17", "company": "", "add_tags": []string{"amigo"}})
+	if res["error"] != nil {
+		t.Fatalf("update: %v", res)
+	}
+	p, _ = db.GetNode(ctx, p.ID)
+	if !strings.Contains(p.Content, "Conheci na feira.") || p.Meta["birthday"] != "1990-05-17" || p.Meta["company"] != nil {
+		t.Fatalf("edit not applied: %+v", p)
+	}
+	if ph, _ := p.Meta["phones"].([]any); len(ph) != 1 || len(p.Tags) != 1 || p.Tags[0] != "amigo" {
+		t.Fatalf("phones/tags: %+v %v", p.Meta, p.Tags)
+	}
+	if e, _ := p.Meta["emails"].([]any); len(e) != 1 {
+		t.Fatalf("untouched emails lost: %+v", p.Meta)
+	}
+	if run(toolUpdateNode, map[string]any{"id": p.ID, "birthday": "ontem"})["error"] == nil {
+		t.Fatal("bad birthday accepted")
+	}
+	if run(toolUpdateNode, map[string]any{"id": p.ID})["error"] == nil {
+		t.Fatal("empty edit accepted")
+	}
+
+	task := &database.Node{Type: database.TypeTask, Title: "Pagar conta", Status: database.StatusOpen}
+	if err := db.CreateNode(ctx, task); err != nil {
+		t.Fatal(err)
+	}
+	if run(toolUpdateNode, map[string]any{"id": task.ID, "status": "done", "due": "2026-10-01"})["error"] != nil {
+		t.Fatal("task edit failed")
+	}
+	if task, _ = db.GetNode(ctx, task.ID); task.Status != database.StatusDone || task.DueAt == nil {
+		t.Fatalf("task: %+v", task)
+	}
+	if run(toolUpdateNode, map[string]any{"id": task.ID, "emails": []string{"a@b.c"}})["error"] == nil {
+		t.Fatal("person field accepted on a task")
+	}
+	h := &database.Node{Type: database.TypeHealth, Title: "Sono"}
+	if err := db.CreateNode(ctx, h); err != nil {
+		t.Fatal(err)
+	}
+	if run(toolUpdateNode, map[string]any{"id": h.ID, "title": "x"})["error"] == nil {
+		t.Fatal("health node edit accepted")
+	}
+}
+
+// TestChatWritePermission: every mutating tool demands user_requested and changes nothing without it.
+func TestChatWritePermission(t *testing.T) {
+	a, db := setupAgent(t, nil)
+	ctx := context.Background()
+	call := func(name string, args map[string]any) map[string]any {
+		t.Helper()
+		b, _ := json.Marshal(args)
+		var out map[string]any
+		if err := json.Unmarshal([]byte(a.ExecuteTool(ctx, llm.ToolCall{Name: name, Arguments: b})), &out); err != nil {
+			t.Fatal(err)
+		}
+		return out
+	}
+	for _, tl := range a.Tools() {
+		if !mutatingTools[tl.Name] {
+			continue
+		}
+		req, _ := tl.Parameters["required"].([]string)
+		if !slices.Contains(req, toolUserRequested) {
+			t.Errorf("%s does not require %s", tl.Name, toolUserRequested)
+		}
+	}
+	p := &database.Node{Type: database.TypePerson, Title: "Carlos", Source: "web"}
+	if err := db.CreateNode(ctx, p); err != nil {
+		t.Fatal(err)
+	}
+	other := &database.Node{Type: database.TypeNote, Title: "Ideia", Source: "web"}
+	if err := db.CreateNode(ctx, other); err != nil {
+		t.Fatal(err)
+	}
+
+	for name, args := range map[string]map[string]any{
+		"create_note":  {"title": "Nova"},
+		"create_task":  {"title": "Fazer"},
+		"update_node":  {"id": p.ID, "company": "ACME"},
+		"delete_node":  {"id": p.ID},
+		"link_nodes":   {"source_id": p.ID, "target_id": other.ID},
+		"unlink_nodes": {"source_id": p.ID, "target_id": other.ID},
+	} {
+		if res := call(name, args); res["needs_confirmation"] != true || res["changed"] != false {
+			t.Fatalf("%s ran without permission: %v", name, res)
+		}
+		args[toolUserRequested] = false
+		if res := call(name, args); res["needs_confirmation"] != true {
+			t.Fatalf("%s ran with user_requested=false: %v", name, res)
+		}
+	}
+	if n, _ := db.CountNodes(ctx, database.NodeFilter{}); n != 2 {
+		t.Fatalf("nodes changed without permission: %d", n)
+	}
+	if got, _ := db.GetNode(ctx, p.ID); got.Meta["company"] != nil {
+		t.Fatalf("person edited without permission: %+v", got.Meta)
+	}
+	if raw := a.ExecuteTool(ctx, llm.ToolCall{Name: "list_tasks", Arguments: json.RawMessage(`{}`)}); strings.Contains(raw, "needs_confirmation") {
+		t.Fatalf("read tool gated: %s", raw)
+	}
+
+	// With permission: edit, change type, link/unlink, delete to trash.
+	if res := call("update_node", map[string]any{"id": p.ID, "company": "ACME", toolUserRequested: true}); res["error"] != nil {
+		t.Fatalf("update: %v", res)
+	}
+	if res := call("update_node", map[string]any{"id": other.ID, "type": "insight", toolUserRequested: true}); res["error"] != nil {
+		t.Fatalf("retype: %v", res)
+	}
+	if n, _ := db.GetNode(ctx, other.ID); n.Type != database.TypeInsight {
+		t.Fatalf("type not changed: %s", n.Type)
+	}
+	if res := call("update_node", map[string]any{"id": other.ID, "type": "health", toolUserRequested: true}); res["error"] == nil {
+		t.Fatal("switch to health accepted")
+	}
+	call("link_nodes", map[string]any{"source_id": p.ID, "target_id": other.ID, "relation": "knows", toolUserRequested: true})
+	if links, _ := db.Neighbors(ctx, p.ID); len(links) != 1 {
+		t.Fatalf("link missing: %+v", links)
+	}
+	if res := call("unlink_nodes", map[string]any{"source_id": other.ID, "target_id": p.ID, toolUserRequested: true}); res["unlinked"] != float64(1) {
+		t.Fatalf("unlink: %v", res)
+	}
+	if links, _ := db.Neighbors(ctx, p.ID); len(links) != 0 {
+		t.Fatalf("link not removed: %+v", links)
+	}
+	if res := call("delete_node", map[string]any{"id": p.ID, toolUserRequested: true}); res["trashed"] != float64(p.ID) {
+		t.Fatalf("delete: %v", res)
+	}
+	if _, err := db.GetNode(ctx, p.ID); err == nil {
+		t.Fatal("node still live after delete_node")
+	}
+	batch, _ := call("delete_node", map[string]any{"id": other.ID, toolUserRequested: true})["batch"].(string)
+	if batch == "" {
+		t.Fatal("no trash batch returned")
+	}
+	if _, err := db.RestoreBatch(ctx, batch); err != nil {
+		t.Fatalf("restore: %v", err)
+	}
+	if _, err := db.GetNode(ctx, other.ID); err != nil {
+		t.Fatalf("restored node missing: %v", err)
 	}
 }
