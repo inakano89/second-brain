@@ -135,7 +135,7 @@
     <div><b>{{.Failed}}</b><span>falhas</span></div>
     <div><b>{{.Links}}</b><span>conexões</span></div>
   </div>
-  <small class="muted">{{.Queued}} na fila de enriquecimento{{if .Feeds}} · {{.Feeds}} feed(s) adicionados ao RSS{{end}}{{if .Ignored}} · {{.Ignored}} arquivo(s) ignorado(s) (anexos, índices){{end}}</small>
+  <small class="muted">{{.Queued}} na fila de enriquecimento{{if .Feeds}} · {{.Feeds}} feed(s) adicionados ao RSS{{end}}{{if or .Lines .LinesDup}} · 💰 {{.Lines}} lançamento(s) em <a href="/financas">Finanças</a>{{if .LinesDup}} ({{.LinesDup}} já existiam){{end}}{{end}}{{if .Ignored}} · {{.Ignored}} arquivo(s) ignorado(s) (anexos, índices){{end}}</small>
   {{if and (not .Running) (or .Created .Updated)}}<p class="small"><a href="/content?batch={{.ID}}">🗂 Revisar ou apagar os itens deste envio</a></p>{{end}}
   {{if .Errors}}<details open><summary>Erros ({{len .Errors}})</summary><ul class="small">{{range .Errors}}<li>{{.}}</li>{{end}}</ul></details>{{end}}
   {{if .Warnings}}<details><summary>Avisos ({{len .Warnings}})</summary><ul class="small">{{range .Warnings}}<li>{{.}}</li>{{end}}</ul></details>{{end}}

@@ -130,3 +130,24 @@ func TestMorningBriefingHasOnThisDay(t *testing.T) {
 		t.Fatalf("briefing = %q, %v", text, err)
 	}
 }
+
+func TestFinanceJob(t *testing.T) {
+	d, n := newDeps(t)
+	ctx := context.Background()
+	prev := time.Now().In(d.Cfg.Location()).AddDate(0, -1, 0)
+	month := prev.Format("2006-01")
+	if text, err := d.Finance(ctx, true); err != nil || text != "" {
+		t.Fatalf("no data = %q, %v", text, err)
+	}
+	d.DB.InsertTransactions(ctx, []database.Transaction{
+		{Date: month + "-05", Amount: 5000, Description: "SALARIO", Category: "Renda", Ref: "1", Account: "a"},
+		{Date: month + "-06", Amount: -800, Description: "SUPERMERCADO", Category: "Mercado", Ref: "2", Account: "a"},
+	})
+	text, err := d.Finance(ctx, true)
+	if err != nil || !strings.Contains(text, "Finanças de") || !strings.Contains(text, "Mercado: R$ 800,00") || len(n.sent) != 1 {
+		t.Fatalf("finance = %q, %v", text, err)
+	}
+	if text, _ := d.Finance(ctx, true); text != "" || len(n.sent) != 1 {
+		t.Fatalf("finance twice = %q", text)
+	}
+}

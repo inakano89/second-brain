@@ -3,6 +3,7 @@ package scheduler
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -10,6 +11,7 @@ import (
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
+	"github.com/inakano89/second-brain/internal/finance"
 )
 
 // Review sends the day's spaced-repetition items (Kindle highlights, insights and learnings).
@@ -164,4 +166,76 @@ func (d *Deps) goalTasks(ctx context.Context, title string, weekAgo time.Time) (
 		}
 	}
 	return
+}
+
+// CRM tells you who you have not talked to in a while (each person once per stretch of silence).
+func (d *Deps) CRM(ctx context.Context, notify bool) (string, error) {
+	now := time.Now()
+	list, err := d.Agent.CRMReminders(ctx, now, 6)
+	if err != nil {
+		return "", err
+	}
+	text := agent.FormatStaleContacts(list, d.Cfg.Location(), now)
+	if text != "" && notify {
+		d.notify(ctx, text)
+	}
+	return text, nil
+}
+
+// MeetingPrep sends, shortly before each meeting with people you know, a brief of each of them.
+func (d *Deps) MeetingPrep(ctx context.Context) error {
+	lead := d.Cfg.GetInt("MEETING_PREP_MINUTES", 45)
+	if lead <= 0 {
+		return nil
+	}
+	briefs, err := d.Agent.MeetingPrep(ctx, time.Now(), time.Duration(lead)*time.Minute)
+	if err != nil {
+		return err
+	}
+	for _, b := range briefs {
+		d.notify(ctx, b)
+	}
+	return nil
+}
+
+// Travel sends the dossier of each trip of the profile that starts within a week (once per trip).
+// It goes only to the user's chat: it carries documents and medication from the profile.
+func (d *Deps) Travel(ctx context.Context, notify bool) (string, error) {
+	now := time.Now()
+	var sent []string
+	for _, it := range d.Agent.UpcomingTrips(ctx, now, 7) {
+		start, _ := it.Date("start", d.Cfg.Location())
+		if fresh, err := d.DB.MarkSeen(ctx, "travel", fmt.Sprintf("%d:%s", it.ID, start.Format("2006-01-02"))); err != nil || !fresh {
+			continue
+		}
+		text, err := d.Agent.TravelDossier(ctx, agent.TravelOptions{Destination: it.Title, Personal: true, SensitiveOK: true})
+		if err != nil {
+			d.Log.Warn("dossiê de viagem falhou", "trip", it.ID, "err", err)
+			continue
+		}
+		if notify {
+			d.notify(ctx, text)
+		}
+		sent = append(sent, text)
+	}
+	return strings.Join(sent, "\n\n"), nil
+}
+
+// Finance sends the summary of the previous month (once per month) from the imported statements.
+func (d *Deps) Finance(ctx context.Context, notify bool) (string, error) {
+	prev := finance.ShiftMonth(time.Now().In(d.Cfg.Location()).Format("2006-01"), -1)
+	if months, _ := d.DB.TransactionMonths(ctx); !slices.Contains(months, prev) {
+		return "", nil // no statement for that month (yet)
+	}
+	if fresh, err := d.DB.MarkSeen(ctx, "finance", prev); err != nil || !fresh {
+		return "", err
+	}
+	text, err := d.Agent.FinanceDigest(ctx, prev)
+	if err != nil || text == "" {
+		return "", err
+	}
+	if notify {
+		d.notify(ctx, text)
+	}
+	return text, nil
 }

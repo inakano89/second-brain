@@ -722,3 +722,43 @@ func TestContentDatesGroupsAndOrigin(t *testing.T) {
 	}
 	e.expect(e.do("GET", "/content/rows?origin=auto", nil, map[string]string{"HX-Request": "true"}), 200, "Viagem futura", "1–1 de 1")
 }
+
+func TestFinancePage(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	e.expect(e.do("GET", "/financas", nil, nil), 200, "Importe o extrato do banco", `href="/financas"`)
+
+	var txs []database.Transaction
+	for _, m := range []string{"2026-07", "2026-08", "2026-09"} {
+		txs = append(txs,
+			database.Transaction{Date: m + "-05", Amount: 8000, Description: "SALARIO", Merchant: "salario", Category: "Renda", Ref: m + "s"},
+			database.Transaction{Date: m + "-06", Amount: -39.90, Description: "NETFLIX.COM", Merchant: "netflix", Category: "Assinaturas", Ref: m + "n"},
+			database.Transaction{Date: m + "-08", Amount: -1234.5, Description: "ALUGUEL <b>", Merchant: "aluguel", Category: "Moradia", Ref: m + "a"})
+	}
+	if _, err := e.db.InsertTransactions(ctx, txs); err != nil {
+		t.Fatal(err)
+	}
+	page := e.do("GET", "/financas", nil, nil)
+	e.expect(page, 200, "setembro de 2026", "R$ 8.000,00", "R$ 1.274,40", "Moradia", "Assinaturas", "NETFLIX.COM", "fora do Perfil", "Cobranças que se repetem",
+		"← 2026-08", "ALUGUEL &lt;b&gt;")
+	if strings.Contains(page.Body.String(), "ALUGUEL <b>") {
+		t.Fatal("statement description not escaped")
+	}
+	e.expect(e.do("GET", "/financas?month=2026-07", nil, nil), 200, "julho de 2026", "2026-08 →")
+	e.expect(e.do("GET", "/financas?month=1999-01", nil, nil), 200, "setembro de 2026") // unknown month falls back to the latest
+
+	rec := e.form("/financas/rules", url.Values{"rules": {"netflix=Streaming"}})
+	if rec.Code != http.StatusSeeOther && rec.Code != http.StatusFound {
+		t.Fatalf("rules: %d", rec.Code)
+	}
+	if e.cfg.Get("FINANCE_RULES") != "netflix=Streaming" {
+		t.Fatalf("rules not saved: %q", e.cfg.Get("FINANCE_RULES"))
+	}
+	e.expect(e.do("GET", "/financas", nil, nil), 200, "Streaming", "netflix=Streaming")
+	rec = e.form("/financas/clear", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "9+lan") {
+		t.Fatalf("clear: %s", rec.Header().Get("Location"))
+	}
+	e.expect(e.do("GET", "/financas", nil, nil), 200, "Importe o extrato do banco")
+}

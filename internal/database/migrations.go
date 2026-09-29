@@ -221,4 +221,22 @@ CREATE TABLE reviews (
 );
 CREATE INDEX idx_reviews_next ON reviews(next_at);
 `,
+	// 8 — bank statement lines (OFX / CSV): amounts in reais, negative = money out
+	`
+CREATE TABLE transactions (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	date        TEXT NOT NULL,
+	amount      REAL NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	merchant    TEXT NOT NULL DEFAULT '',
+	category    TEXT NOT NULL DEFAULT '',
+	account     TEXT NOT NULL DEFAULT '',
+	ref         TEXT NOT NULL,
+	batch       TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	UNIQUE(account, ref)
+);
+CREATE INDEX idx_tx_date ON transactions(date);
+CREATE INDEX idx_tx_merchant ON transactions(merchant, date);
+`,
 }

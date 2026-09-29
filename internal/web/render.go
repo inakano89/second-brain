@@ -100,12 +100,31 @@ func (s *Server) funcs() template.FuncMap {
 			}
 			return fmt.Sprintf("%.0f", v)
 		},
-		"levelClass":    func(l string) string { return "lvl-" + strings.ToLower(l) },
-		"importState":   func(st string) string { return importStates[st] },
-		"sourceLabel":   sourceLabel,
-		"nodeDate":      func(n database.Node) string { return nodeDate(n, s.Cfg.Location()) },
-		"importedNote":  func(n database.Node) string { return importedNote(n, s.Cfg.Location()) },
-		"originLabel":   func(o string) string { return originLabels[o] },
+		"levelClass":   func(l string) string { return "lvl-" + strings.ToLower(l) },
+		"importState":  func(st string) string { return importStates[st] },
+		"sourceLabel":  sourceLabel,
+		"nodeDate":     func(n database.Node) string { return nodeDate(n, s.Cfg.Location()) },
+		"importedNote": func(n database.Node) string { return importedNote(n, s.Cfg.Location()) },
+		"originLabel":  func(o string) string { return originLabels[o] },
+		"brl": func(v float64) string {
+			neg := v < 0
+			if neg {
+				v = -v
+			}
+			s := fmt.Sprintf("%.2f", v)
+			whole, cents, _ := strings.Cut(s, ".")
+			var parts []string
+			for len(whole) > 3 {
+				parts = append([]string{whole[len(whole)-3:]}, parts...)
+				whole = whole[:len(whole)-3]
+			}
+			parts = append([]string{whole}, parts...)
+			out := "R$ " + strings.Join(parts, ".") + "," + cents
+			if neg {
+				out = "−" + out
+			}
+			return out
+		},
 		"isUnknownDate": func(n database.Node) bool { return n.DateUnknown() },
 	}
 }

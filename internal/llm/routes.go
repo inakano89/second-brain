@@ -43,7 +43,7 @@ var Tasks = []TaskInfo{
 	{Key: TaskChat, Label: "Chat (web)", Help: "Modelo padrão da página de Chat.", Purposes: []string{"chat"}, AllowCouncil: true},
 	{Key: TaskTelegram, Label: "Conversa no Telegram", Help: "Respostas às mensagens de texto do bot.", Purposes: []string{"telegram"}, AllowCouncil: true},
 	{Key: TaskEnrich, Label: "Auto-tagging e auto-linking", Help: "Resumo, tags, pessoas e tarefas de cada nota nova. Roda muitas vezes: prefira um modelo barato.", Purposes: []string{"enrich"}, AllowCouncil: true},
-	{Key: TaskVision, Label: "Imagens e PDFs (OCR)", Help: "Leitura de fotos, prints, recibos e PDFs digitalizados.", Purposes: []string{"vision", "pdf-ocr"}},
+	{Key: TaskVision, Label: "Imagens e PDFs (OCR)", Help: "Leitura de fotos, prints, recibos e PDFs digitalizados.", Purposes: []string{"vision", "pdf-ocr", "receipt"}},
 	{Key: TaskTranscription, Label: "Transcrição de voz", Help: "Áudios do Telegram e da pasta inbox.", Purposes: []string{"transcription"}, Providers: []string{"openai", "gemini"}},
 	{Key: TaskEvents, Label: "Eventos por linguagem natural", Help: "Converte “amanhã 15h reunião” em evento do Google Calendar.", Purposes: []string{"event-parse"}, AllowCouncil: true},
 	{Key: TaskEmail, Label: "E-mails e newsletters", Help: "Triagem do Gmail e resumo de newsletters.", Purposes: []string{"gmail", "newsletter"}, AllowCouncil: true},

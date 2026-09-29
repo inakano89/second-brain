@@ -78,6 +78,7 @@ type NodeFilter struct {
 	Offset  int
 	Order   string // "created" (default), "date", "oldest", "updated", "due", "title"
 
+	DueFrom, DueTo *time.Time // due_at in [DueFrom, DueTo): when an event happens, when a task is due
 	Origin         string     // OriginImported, OriginMine or OriginAuto
 	KnownDate      bool       // leave out items whose original date is unknown
 	HideOldImports *time.Time // leave out imported items with a known date before this (chat archive)
@@ -364,6 +365,14 @@ func (f NodeFilter) where(alias string) (string, []any) {
 		conds = append(conds, col("created_at")+" < ?")
 		args = append(args, fmtTime(*f.To))
 	}
+	if f.DueFrom != nil {
+		conds = append(conds, col("due_at")+" >= ?")
+		args = append(args, fmtTime(*f.DueFrom))
+	}
+	if f.DueTo != nil {
+		conds = append(conds, col("due_at")+" < ?")
+		args = append(args, fmtTime(*f.DueTo))
+	}
 	if f.Tag != "" {
 		conds = append(conds, "(','||"+col("tags")+"||',') LIKE ?")
 		args = append(args, "%,"+strings.ToLower(strings.TrimPrefix(f.Tag, "#"))+",%")
@@ -515,6 +524,12 @@ func (f NodeFilter) Matches(n *Node) bool {
 		return false
 	}
 	if f.To != nil && !n.CreatedAt.Before(*f.To) {
+		return false
+	}
+	if f.DueFrom != nil && (n.DueAt == nil || n.DueAt.Before(*f.DueFrom)) {
+		return false
+	}
+	if f.DueTo != nil && (n.DueAt == nil || !n.DueAt.Before(*f.DueTo)) {
 		return false
 	}
 	if f.Source != "" && n.Source != f.Source {

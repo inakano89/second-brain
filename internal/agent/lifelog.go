@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -127,6 +128,11 @@ func (a *Agent) YearReview(ctx context.Context, year int) (*database.Node, strin
 	if err != nil {
 		return nil, "", err
 	}
+	// Calendar events are mirrored when they sync: they belong to the year they happen in.
+	nodes = slices.DeleteFunc(nodes, func(n database.Node) bool { return n.Type == database.TypeEvent })
+	if evs, err := a.db.ListNodes(ctx, database.NodeFilter{Types: []string{database.TypeEvent}, DueFrom: &from, DueTo: &to, Limit: 5000}); err == nil {
+		nodes = append(nodes, evs...)
+	}
 	byType, byMonth := map[string]int{}, [12]int{}
 	tags := map[string]int{}
 	var written []database.Node
@@ -135,7 +141,7 @@ func (a *Agent) YearReview(ctx context.Context, year int) (*database.Node, strin
 			continue
 		}
 		byType[n.Type]++
-		byMonth[n.CreatedAt.In(loc).Month()-1]++
+		byMonth[n.EffectiveAt().In(loc).Month()-1]++
 		for _, t := range n.Tags {
 			tags[t]++
 		}

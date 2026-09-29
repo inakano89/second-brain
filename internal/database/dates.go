@@ -202,3 +202,11 @@ func (db *DB) LastInteraction(ctx context.Context, personID int64, now time.Time
 	}
 	return parseTime(*s), count, nil
 }
+
+// HasUpcoming reports whether an event after now is linked to the person.
+func (db *DB) HasUpcoming(ctx context.Context, personID int64, now time.Time) (bool, error) {
+	var n int
+	err := db.QueryRowContext(ctx, `SELECT COUNT(*) FROM edges e JOIN nodes n ON n.id = CASE WHEN e.source_id = ? THEN e.target_id ELSE e.source_id END
+		WHERE (e.source_id = ? OR e.target_id = ?) AND n.type = 'event' AND n.due_at > ?`, personID, personID, personID, fmtTime(now)).Scan(&n)
+	return n > 0, err
+}

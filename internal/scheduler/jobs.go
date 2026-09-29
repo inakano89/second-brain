@@ -64,6 +64,10 @@ func Register(s *Scheduler, d *Deps) error {
 		{"review", "CRON_REVIEW", func(ctx context.Context) error { _, err := d.Review(ctx, true); return err }, []JobOption{CatchUpWithin(5 * time.Hour)}},
 		{"diary", "CRON_DIARY", func(ctx context.Context) error { _, err := d.Diary(ctx, true); return err }, []JobOption{CatchUpWithin(2 * time.Hour)}},
 		{"year-review", "CRON_YEAR_REVIEW", func(ctx context.Context) error { _, err := d.YearReview(ctx, true); return err }, []JobOption{CatchUpWithin(45 * 24 * time.Hour)}},
+		{"crm", "CRON_CRM", func(ctx context.Context) error { _, err := d.CRM(ctx, true); return err }, []JobOption{CatchUpWithin(24 * time.Hour)}},
+		{"meeting-prep", "CRON_MEETING_PREP", d.MeetingPrep, nil},
+		{"travel", "CRON_TRAVEL", func(ctx context.Context) error { _, err := d.Travel(ctx, true); return err }, []JobOption{CatchUpWithin(5 * time.Hour)}},
+		{"finance", "CRON_FINANCE", func(ctx context.Context) error { _, err := d.Finance(ctx, true); return err }, []JobOption{CatchUpWithin(5 * 24 * time.Hour)}},
 		{"reminders", "CRON_REMINDERS", d.Reminders, nil},
 		{"maintenance", "CRON_MAINTENANCE", d.Maintenance, nil},
 		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }, nil},
@@ -341,13 +345,15 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 		qs      map[string]int
 
 		imported int
+		routine  string
 	)
 	var (
 		cleanup   int
 		decisions []database.Node
 		learnings []database.Node
 	)
-	wg.Add(7)
+	wg.Add(8)
+	go func() { defer wg.Done(); _, routine, _ = d.Agent.HealthRoutine(ctx, 30) }()
 	go func() { defer wg.Done(); cleanup, _ = d.DB.CleanupPendingCount(ctx) }()
 	go func() {
 		defer wg.Done()
@@ -418,10 +424,13 @@ func (d *Deps) WeeklyReview(ctx context.Context, notify bool) (string, error) {
 			fmt.Fprintf(&data, "- Aprendizado: %s\n", n.Title)
 		}
 	}
+	if routine != "" {
+		data.WriteString("\n## Saúde × rotina (30 dias)\n" + strings.ReplaceAll(routine, "*", "") + "\n")
+	}
 	fmt.Fprintf(&data, "\n## Faxina sugerida\n%d sugestões aguardando aprovação em Conteúdo → Faxina\n", cleanup)
 	fmt.Fprintf(&data, "\n## Sistema\nfila_falhas=%d custo_llm_7d=US$%.4f tamanho_db=%.1fMB\n", qs[database.TaskFailed], cost, float64(d.DB.Size())/1e6)
 	text := d.compose(ctx, "weekly",
-		`Gere um RELATÓRIO DE MANUTENÇÃO SEMANAL do Second Brain em português (máx. 300 palavras): 📈 resumo da semana, 🧠 decisões e aprendizados (se houver), 🧹 higiene do grafo (órfãos, links quebrados, faxina pendente — sugira ações concretas), ⏳ pendências acumuladas (sugira o que delegar, reagendar ou descartar), 🎯 3 intenções para a próxima semana. Telegram Markdown simples.`,
+		`Gere um RELATÓRIO DE MANUTENÇÃO SEMANAL do Second Brain em português (máx. 300 palavras): 📈 resumo da semana, 🧠 decisões e aprendizados (se houver), 🩺 saúde × rotina (uma frase, se houver dados), 🧹 higiene do grafo (órfãos, links quebrados, faxina pendente — sugira ações concretas), ⏳ pendências acumuladas (sugira o que delegar, reagendar ou descartar), 🎯 3 intenções para a próxima semana. Telegram Markdown simples.`,
 		data.String(), "🗓️ *Weekly Review*\n\n"+data.String())
 	year, week := now.ISOWeek()
 	if _, err := d.saveInsight(ctx, fmt.Sprintf("Weekly Review %d-W%02d", year, week), fmt.Sprintf("weekly:%d-W%02d", year, week), text, []string{"review", "semanal"}); err != nil {

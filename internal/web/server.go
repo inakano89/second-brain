@@ -70,7 +70,7 @@ type Server struct {
 	static  http.Handler
 }
 
-var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import", "content", "profile"}
+var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import", "content", "profile", "financas"}
 
 // New parses templates and builds the server.
 func New(d Deps) (*Server, error) {
@@ -159,6 +159,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("POST /profile/import", s.auth(s.profileImport))
 	mux.HandleFunc("POST /profile/dismiss", s.auth(s.profileDismiss))
 
+	mux.HandleFunc("GET /financas", s.auth(s.financePage))
+	mux.HandleFunc("POST /financas/recategorize", s.auth(s.financeRecategorize))
+	mux.HandleFunc("POST /financas/rules", s.auth(s.financeRules))
+	mux.HandleFunc("POST /financas/clear", s.auth(s.financeClear))
 	mux.HandleFunc("GET /dashboard", s.auth(s.dashboardPage))
 	mux.HandleFunc("POST /dashboard/tasks/{id}/{action}", s.auth(s.dashboardTask))
 	mux.HandleFunc("POST /jobs/{name}/run", s.auth(s.runJob))

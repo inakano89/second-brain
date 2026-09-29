@@ -348,6 +348,9 @@ func (s *Service) processMedia(ctx context.Context, raw json.RawMessage) error {
 	} else {
 		b.WriteString("\n" + extract.Truncate(n.Content, 1500))
 	}
+	if r, _ := n.Meta[agent.MetaReceipt].(string); r != "" { // a purchase document: what became of its warranties
+		b.WriteString("\n\n" + r)
+	}
 	if p.Status != 0 {
 		return c.EditMessage(ctx, p.ChatID, p.Status, b.String(), true)
 	}
@@ -374,6 +377,17 @@ func (s *Service) diaryVoice(ctx context.Context, p mediaPayload, data []byte, m
 		return true, err
 	}
 	return true, nil
+}
+
+// splitItems splits "leite, pão; ovos" into items.
+func splitItems(s string) []string {
+	var out []string
+	for _, p := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ';' || r == '\n' }) {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func mdEscape(s string) string {
@@ -482,6 +496,11 @@ const helpText = `*Second Brain* — comandos:
 /revisao — revisão espaçada agora (destaques e insights)
 /diario — abre o diário guiado (ou /diario pular)
 /retro [ano] — retrospectiva do ano
+/pessoa <nome> — resumo de uma pessoa (última conversa, pendências)
+/crm — quem você não fala há tempo
+/viagem [destino] — dossiê da viagem (agenda, reservas, documentos)
+/financas [AAAA-MM] — resumo do mês do extrato importado
+/compras [itens] — lista de compras (ex.: /compras leite, pão · /compras ok leite · /compras limpar)
 /tomei <id> — marca dose ou hábito como feito (desconta o estoque)
 /model — escolhe o modelo (ou council para o Conselho)
 /reset — limpa o histórico da conversa
@@ -650,6 +669,69 @@ func (s *Service) command(ctx context.Context, c *Client, m *Message) {
 			return
 		}
 		reply(fmt.Sprintf("🎆 *Retrospectiva %d* (nota #%d)\n\n%s", year, n.ID, extract.Truncate(text, 3500)))
+	case "/pessoa", "/person":
+		p, err := s.agent.FindPerson(ctx, arg)
+		if err != nil {
+			reply(err.Error())
+			return
+		}
+		b, err := s.agent.PersonBriefOf(ctx, p.ID, time.Now())
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(agent.FormatPersonBrief(b, s.cfg.Location(), time.Now()))
+	case "/crm":
+		list, err := s.agent.StaleContacts(ctx, time.Now(), 10)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		text := agent.FormatStaleContacts(list, s.cfg.Location(), time.Now())
+		if text == "" {
+			text = "Ninguém em atraso. 👏 (Ajuste CRM_STALE_DAYS ou use a tag crm em uma pessoa.)"
+		}
+		reply(text)
+	case "/viagem", "/dossie":
+		c.SendChatAction(ctx, m.Chat.ID, "typing")
+		text, err := s.agent.TravelDossier(ctx, agent.TravelOptions{Destination: arg, Personal: true, SensitiveOK: true})
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(text)
+	case "/financas", "/finanças":
+		text, err := s.agent.FinanceDigest(ctx, arg)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		if text == "" {
+			text = "Nenhum extrato importado. Use a página Importar → Extrato bancário."
+		}
+		reply(text)
+	case "/compras":
+		action, items := "", []string(nil)
+		switch lower := strings.ToLower(arg); {
+		case arg == "":
+		case lower == "limpar":
+			action = "clear_done"
+		case strings.HasPrefix(lower, "ok "):
+			action, items = "check", splitItems(arg[3:])
+		case strings.HasPrefix(lower, "tirar "):
+			action, items = "remove", splitItems(arg[6:])
+		default:
+			action, items = "add", splitItems(arg)
+		}
+		list, err := s.agent.ShoppingList(ctx)
+		if action != "" {
+			list, err = s.agent.ShoppingEdit(ctx, action, items)
+		}
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(agent.FormatShopping(list))
 	case "/brief":
 		if s.Briefing == nil {
 			reply("Briefing indisponível.")

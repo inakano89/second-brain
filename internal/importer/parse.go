@@ -18,6 +18,8 @@ import (
 
 	"golang.org/x/sync/errgroup"
 
+	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/finance"
 	"github.com/inakano89/second-brain/internal/integrations/takeout"
 )
 
@@ -38,6 +40,7 @@ const (
 	FormatOPML      = "opml"
 	FormatHTML      = "html"
 	FormatTakeout   = "takeout"
+	FormatStatement = "extrato"
 
 	formatZip = "zip"
 )
@@ -66,6 +69,8 @@ var Formats = []FormatInfo{
 	{FormatICal, "Agenda (Google Agenda, Outlook, Apple)", ".ics", "Google Agenda → Configurações → Importar e exportar → Exportar (.zip com .ics).", "eventos e tarefas (VTODO)", true},
 	{FormatOPML, "OPML: Feedly, Inoreader, outliners", ".opml", "Leitor RSS → Exportar OPML. Outliners (Workflowy, Dynalist) também exportam OPML.", "feeds vão para RSS_FEEDS; tópicos viram notas", true},
 	{FormatHTML, "Páginas HTML (Notion/Evernote em HTML)", ".html", "Qualquer página salva ou exportada em HTML.", "notas com o texto principal da página", true},
+	{FormatStatement, "Extrato bancário e fatura de cartão (Finanças)", ".ofx, .qfx, .csv", "Internet banking → Extrato → exportar em OFX (ou CSV). Cartão: fatura em OFX/CSV (Nubank, Inter, Itaú, C6…).",
+		"lançamentos na página Finanças (categorias, assinaturas e gastos por mês). Não viram notas e não vão para a IA.", true},
 	{FormatTakeout, "Google Takeout: histórico do YouTube, pesquisas, Chrome, Linha do tempo, Maps, Play Store", ".zip, .json",
 		"takeout.google.com → Minha atividade, YouTube, Chrome, Maps (seus lugares), Histórico de localização, Google Play Store e Keep → em “Vários formatos” troque HTML por JSON → .zip. Linha do tempo: app Maps → Configurações → Conteúdo pessoal → Exportar.",
 		"uma nota por produto e mês (itens mais frequentes no resumo) e listas de lugares e apps; Keep, contatos e agendas vão para os leitores próprios", false},
@@ -97,11 +102,12 @@ type Link struct {
 
 // Batch is the result of parsing one or more files.
 type Batch struct {
-	Items    []Item
-	Feeds    []string
-	Formats  map[string]int
-	Ignored  int
-	Warnings []string
+	Items        []Item
+	Transactions []database.Transaction // bank statement lines (Finanças), not notes
+	Feeds        []string
+	Formats      map[string]int
+	Ignored      int
+	Warnings     []string
 }
 
 func newBatch() *Batch { return &Batch{Formats: map[string]int{}} }
@@ -118,6 +124,7 @@ func (b *Batch) merge(o *Batch) {
 		return
 	}
 	b.Items = append(b.Items, o.Items...)
+	b.Transactions = append(b.Transactions, o.Transactions...)
 	b.Feeds = append(b.Feeds, o.Feeds...)
 	for k, v := range o.Formats {
 		b.Formats[k] += v
@@ -220,7 +227,12 @@ func detect(name string, head []byte) string {
 		return FormatICal
 	case ".opml":
 		return FormatOPML
+	case ".ofx", ".qfx":
+		return FormatStatement
 	case ".csv", ".tsv":
+		if finance.LooksLikeStatementCSV(head) {
+			return FormatStatement
+		}
 		return FormatCSV
 	case ".md", ".markdown", ".mdown":
 		return FormatMarkdown
@@ -254,6 +266,8 @@ func detect(name string, head []byte) string {
 		return FormatICal
 	case strings.Contains(t, "<opml"):
 		return FormatOPML
+	case strings.HasPrefix(t, "ofxheader") || strings.Contains(t[:min(len(t), 600)], "<ofx>"):
+		return FormatStatement
 	case isBookmarks(t):
 		return FormatBookmarks
 	case isKeepJSON(t):
@@ -323,6 +337,16 @@ func (p *parser) parseStream(kind, name, relPath string, r io.Reader, mod time.T
 			return nil, err
 		}
 		b.addItems(items...)
+	case FormatStatement:
+		txs, warns, err := finance.Parse(name, data)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", name, err)
+		}
+		b.Transactions = append(b.Transactions, txs...)
+		b.Formats[FormatStatement] += len(txs)
+		for _, w := range warns {
+			b.warn("%s", w)
+		}
 	case FormatKindle:
 		b.addItems(p.parseKindle(string(data))...)
 	case FormatVCard:
@@ -458,7 +482,7 @@ func (p *parser) parseEntry(ctx context.Context, e zipEntry, depth int, hasMD bo
 		return ignored()
 	}
 	switch ext {
-	case ".md", ".markdown", ".mdown", ".txt", ".enex", ".vcf", ".vcard", ".ics", ".opml", ".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".html", ".htm", ".zip", ".xml":
+	case ".md", ".markdown", ".mdown", ".txt", ".enex", ".vcf", ".vcard", ".ics", ".opml", ".csv", ".tsv", ".json", ".jsonl", ".ndjson", ".html", ".htm", ".zip", ".xml", ".ofx", ".qfx":
 	default:
 		return ignored()
 	}

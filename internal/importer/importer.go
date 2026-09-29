@@ -24,6 +24,7 @@ import (
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
+	"github.com/inakano89/second-brain/internal/finance"
 )
 
 // SourcePrefix prefixes the node source of imported items ("import:evernote").
@@ -73,6 +74,8 @@ type Report struct {
 	Ignored  int            `json:"ignored"`
 	Links    int            `json:"links"`
 	Feeds    int            `json:"feeds"`
+	Lines    int            `json:"lines"`     // bank statement lines stored (Finanças)
+	LinesDup int            `json:"lines_dup"` // statement lines that were already there
 	Queued   int            `json:"queued"`
 	Errors   []string       `json:"errors,omitempty"`
 	Warnings []string       `json:"warnings,omitempty"`
@@ -259,7 +262,7 @@ func (im *Importer) run(ctx context.Context, j *Job, files []File, opt Options) 
 	}()
 	j.update(func(r *Report) { r.State = StateParsing })
 	batch, err := im.parse(ctx, files, opt)
-	if err != nil && (batch == nil || len(batch.Items)+len(batch.Feeds) == 0) {
+	if err != nil && (batch == nil || len(batch.Items)+len(batch.Feeds)+len(batch.Transactions) == 0) {
 		j.errorf("%v", err)
 		j.update(func(r *Report) { r.State, r.Finished = StateFailed, time.Now() })
 		im.log.Warn("importação falhou", "files", j.rep.Files, "err", err)
@@ -332,6 +335,9 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 	}
 
 	rep := j.Report()
+	if len(b.Transactions) > 0 {
+		im.storeStatement(ctx, j, b.Transactions, rep.ID)
+	}
 	stamp := map[string]any{ // lets the Conteúdo page list and undo this import
 		"import_batch": rep.ID,
 		"import_name":  extract.Truncate(strings.Join(rep.Files, ", "), 120),
@@ -384,6 +390,20 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 			r.State = StateFailed
 		}
 	})
+}
+
+// storeStatement categorises bank statement lines and stores them; lines already imported are skipped.
+func (im *Importer) storeStatement(ctx context.Context, j *Job, txs []database.Transaction, batch string) {
+	finance.NewCategorizer(im.cfg.Get("FINANCE_RULES")).Apply(txs)
+	for i := range txs {
+		txs[i].Batch = batch
+	}
+	added, err := im.db.InsertTransactions(ctx, txs)
+	if err != nil {
+		j.errorf("extrato: %v", err)
+		return
+	}
+	j.update(func(r *Report) { r.Lines, r.LinesDup = added, len(txs)-added })
 }
 
 // dedupe keeps one item per (format, ref): the most recent one (an unknown date counts as the

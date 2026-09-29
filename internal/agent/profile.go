@@ -60,7 +60,9 @@ func (a *Agent) profileForAI(ctx context.Context, query, kind string) (any, erro
 }
 
 // isProfileTool reports whether a tool call touches profile data (its turn is stored encrypted).
-func isProfileTool(name string) bool { return name == toolProfile || name == toolProfileSave }
+func isProfileTool(name string) bool {
+	return name == toolProfile || name == toolProfileSave || name == toolTravel || name == toolFinance
+}
 
 // profileSaveDoc lists, per kind, the field keys the model may fill in.
 func profileSaveDoc() string {
