@@ -27,7 +27,7 @@ Identificadores e comentários de código ficam em inglês.
 | `internal/agent` | ingestão, enriquecimento, busca híbrida, chat RAG + tools, ações |
 | `internal/telegram`, `internal/integrations/*`, `internal/watcher` | canais de captura |
 | `internal/importer` | importação de arquivos (Obsidian, Notion, Evernote, Keep, CSV, vCard, iCal, Google Takeout via `integrations/takeout`) e fila `import.file` (inbox `.zip`, Takeout do Drive) |
-| `internal/profile` | Perfil pessoal: tipos e campos (`kinds.go`), cofre AES-GCM dos itens sensíveis (`vault.go`), agenda do dia, alertas e classificação de eventos (`agenda.go`), política de acesso da IA (`PROFILE_AI_ACCESS`) |
+| `internal/profile` | Perfil pessoal: tipos e campos (`kinds.go`), cofre AES-GCM dos itens sensíveis (`vault.go`), agenda do dia, alertas e classificação de eventos (`agenda.go`), política de acesso da IA (`PROFILE_AI_ACCESS` leitura, `PROFILE_AI_WRITE` gravação via `Store.UpsertFromAI`, em `write.go`) |
 | `internal/scheduler` | cron, rotinas (inclui lembretes do Perfil), backup |
 | `internal/updater` | auto-update via GitHub Releases (+ modo overlay em container, rollback) |
 | `internal/web` | handlers, templates HTMX (`templates/`), assets (`static/`) |
@@ -41,7 +41,7 @@ Identificadores e comentários de código ficam em inglês.
 - **LLM**: sempre via `llm.Manager`. O `Purpose` da requisição define a rota. Para criar uma tarefa roteável, adicione-a em `llm.Tasks` e crie a chave `LLM_ROUTE_*` no schema.
 - **Web**: `html/template` + HTMX. A CSP proíbe scripts inline e `hx-on`, então JS novo vai em `internal/web/static/*.js`.
 - **Concorrência**: use goroutines (`errgroup`/`WaitGroup`) para I/O paralelo. Estado compartilhado sempre com mutex e testado com `-race`.
-- **Dados do Perfil** (`internal/profile`): nunca gravar em nós (`nodes`) nem mandar ao LLM fora de `Store.ForAI`; blocos pessoais dos relatórios vão só na notificação. Novo tipo → entrada em `profile.Kinds` (campos com `Alert` entram nos avisos).
+- **Dados do Perfil** (`internal/profile`): nunca gravar em nós (`nodes`) nem mandar ao LLM fora de `Store.ForAI`; blocos pessoais dos relatórios vão só na notificação. Texto que possa conter dados pessoais e precise ser persistido (fila, histórico) passa por `Store.Seal`/`Open`. Novo tipo → entrada em `profile.Kinds` (campos com `Alert` entram nos avisos).
 - **Mudou um fluxo de configuração?** Atualize o `README.md` (usuários técnicos) e `internal/web/templates/help.html` (usuários leigos).
 - **Assets de release** se chamam `second-brain-<os>-<arch>[.exe]`, junto com `SHA256SUMS` (e `.sig`). O auto-update depende desses nomes.
 

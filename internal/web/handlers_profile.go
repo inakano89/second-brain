@@ -45,6 +45,7 @@ type profileView struct {
 	Tomorrow string
 	Access   string
 	Local    bool
+	AllEnc   bool
 	Weekdays []string
 }
 
@@ -95,7 +96,7 @@ func (s *Server) profilePage(w http.ResponseWriter, r *http.Request) {
 	store := s.Agent.Profile()
 	tab := r.URL.Query().Get("tab")
 	v := profileView{Tab: "overview", Sections: profile.Sections, Access: accessLabels[store.Access()], Weekdays: profile.Weekdays,
-		Local: s.LLM.IsLocal("chat") && s.LLM.IsLocal("telegram")}
+		Local: s.LLM.IsLocal("chat") && s.LLM.IsLocal("telegram"), AllEnc: store.EncryptAll()}
 	for i := range profile.Sections {
 		if profile.Sections[i].Key == tab {
 			v.Tab, v.Section = tab, &profile.Sections[i]

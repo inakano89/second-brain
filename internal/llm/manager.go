@@ -152,8 +152,12 @@ func (m *Manager) Configured(provider string) bool {
 
 // IsLocal reports whether every model a request with this purpose may reach runs locally
 // (Ollama/llama.cpp), so private data never leaves the machine.
-func (m *Manager) IsLocal(purpose string) bool {
-	spec := m.routeSpec("", purpose)
+func (m *Manager) IsLocal(purpose string) bool { return m.IsLocalSpec(m.routeSpec("", purpose)) }
+
+// IsLocalSpec reports whether a spec ("auto", "council", "provider[:model]") can only reach
+// local models.
+func (m *Manager) IsLocalSpec(spec string) bool {
+	spec = strings.TrimSpace(spec)
 	if spec == SpecCouncil {
 		return false
 	}

@@ -376,9 +376,10 @@ func (db *DB) SetMetaKey(ctx context.Context, id int64, key string, value any) e
 	return err
 }
 
-// ChatSince returns chat turns (every channel) from since on, oldest first.
+// ChatSince returns chat turns (every channel) from since on, oldest first. Private turns
+// (personal profile) are left out.
 func (db *DB) ChatSince(ctx context.Context, since time.Time, limit int) ([]ChatMessage, error) {
-	rows, err := db.QueryContext(ctx, `SELECT id, channel, role, content, ts FROM chat_messages WHERE ts >= ? ORDER BY id LIMIT ?`, fmtTime(since), limit)
+	rows, err := db.QueryContext(ctx, `SELECT id, channel, role, content, ts FROM chat_messages WHERE ts >= ? AND private = 0 ORDER BY id LIMIT ?`, fmtTime(since), limit)
 	if err != nil {
 		return nil, err
 	}

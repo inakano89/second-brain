@@ -9,6 +9,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/inakano89/second-brain/internal/config"
@@ -108,6 +109,7 @@ type Store struct {
 	db  *database.DB
 	log *slog.Logger
 	v   *vault
+	wmu sync.Mutex // serialises AI upserts (find + save)
 }
 
 // New creates the store.
@@ -224,7 +226,7 @@ func (s *Store) Save(ctx context.Context, it *Item) error {
 	it.Values = vals
 	data, _ := json.Marshal(vals)
 	row := database.ProfileRow{ID: it.ID, Kind: it.Kind, Title: it.Title, Data: string(data), Sensitive: it.Sensitive, Archived: it.Archived}
-	if it.Sensitive {
+	if s.encrypted(it.Sensitive) {
 		var err error
 		if row.Title, err = s.v.encrypt(ctx, it.Title); err != nil {
 			return err
@@ -239,6 +241,46 @@ func (s *Store) Save(ctx context.Context, it *Item) error {
 	}
 	it.ID = id
 	return nil
+}
+
+// EncryptAll reports whether every item is encrypted, not only the sensitive ones.
+func (s *Store) EncryptAll() bool { return s.cfg.GetBool("PROFILE_ENCRYPT_ALL") }
+
+func (s *Store) encrypted(sensitive bool) bool { return sensitive || s.EncryptAll() }
+
+// Sync re-saves the items whose storage does not match the current policy (after
+// PROFILE_ENCRYPT_ALL changes). It returns how many were rewritten.
+func (s *Store) Sync(ctx context.Context) (int, error) {
+	rows, err := s.db.ListProfile(ctx, true)
+	if err != nil {
+		return 0, err
+	}
+	n := 0
+	for _, r := range rows {
+		if s.encrypted(r.Sensitive) == strings.HasPrefix(r.Data, encPrefix) {
+			continue
+		}
+		it := s.decode(ctx, r)
+		if it.Locked {
+			continue
+		}
+		if err := s.Save(ctx, &it); err != nil {
+			return n, err
+		}
+		n++
+	}
+	if n > 0 {
+		s.log.Info("perfil: criptografia dos itens atualizada", "items", n, "encrypt_all", s.EncryptAll())
+	}
+	return n, nil
+}
+
+// Seal encrypts arbitrary text with the vault key (queued notifications, private chat turns).
+func (s *Store) Seal(ctx context.Context, text string) (string, error) { return s.v.encrypt(ctx, text) }
+
+// Open decrypts text from Seal; plain text is returned unchanged.
+func (s *Store) Open(ctx context.Context, text string) (string, error) {
+	return s.v.decrypt(ctx, text)
 }
 
 // Delete removes an item.

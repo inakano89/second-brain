@@ -439,6 +439,11 @@ func (d *Deps) Maintenance(ctx context.Context) error {
 	if d.Agent != nil {
 		trash, _ = d.Agent.PurgeTrash(ctx, nil, time.Now().Add(-database.TrashRetention))
 	}
+	if d.Agent != nil { // safety net for PROFILE_ENCRYPT_ALL edited by hand in .env
+		if _, err := d.Agent.Profile().Sync(ctx); err != nil {
+			d.Log.Warn("perfil: falha ao ajustar a criptografia", "err", err)
+		}
+	}
 	full := time.Now().In(d.Cfg.Location()).Weekday() == time.Sunday
 	if err := d.DB.Maintenance(ctx, full); err != nil {
 		return err

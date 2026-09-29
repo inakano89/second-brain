@@ -253,21 +253,28 @@ func (s *Service) enqueueMedia(ctx context.Context, c *Client, m *Message, fileI
 // RegisterTasks wires the media/send queue handlers.
 func (s *Service) RegisterTasks(w *queue.Worker) {
 	w.Handle(TaskMedia, s.processMedia)
-	w.Handle(TaskSend, func(ctx context.Context, raw json.RawMessage) error {
-		var p struct {
-			ChatID int64  `json:"chat_id"`
-			Text   string `json:"text"`
-		}
-		if err := json.Unmarshal(raw, &p); err != nil {
-			return queue.Permanent(err)
-		}
-		c := s.client()
-		if c == nil {
-			return queue.Permanentf("telegram não configurado")
-		}
-		_, err := c.SendMessage(ctx, p.ChatID, p.Text, 0)
-		return err
-	})
+	w.Handle(TaskSend, s.sendQueued)
+}
+
+// sendQueued retries a notification; the text was encrypted when it was queued.
+func (s *Service) sendQueued(ctx context.Context, raw json.RawMessage) error {
+	var p struct {
+		ChatID int64  `json:"chat_id"`
+		Text   string `json:"text"`
+	}
+	if err := json.Unmarshal(raw, &p); err != nil {
+		return queue.Permanent(err)
+	}
+	c := s.client()
+	if c == nil {
+		return queue.Permanentf("telegram não configurado")
+	}
+	text, err := s.agent.Profile().Open(ctx, p.Text)
+	if err != nil {
+		return queue.Permanent(err)
+	}
+	_, err = c.SendMessage(ctx, p.ChatID, text, 0)
+	return err
 }
 
 func (s *Service) processMedia(ctx context.Context, raw json.RawMessage) error {
@@ -604,11 +611,22 @@ func (s *Service) Notify(ctx context.Context, text string) error {
 	if c == nil {
 		return nil
 	}
-	var errs []error
+	var (
+		errs   []error
+		sealed string
+	)
 	for _, id := range s.AllowedIDs() {
 		if _, err := c.SendMessage(ctx, id, text, 0); err != nil {
 			errs = append(errs, err)
-			s.db.Enqueue(ctx, TaskSend, map[string]any{"chat_id": id, "text": text}, database.EnqueueOpts{MaxAttempts: 12})
+			// Reports and reminders may carry personal data: the retry copy is encrypted.
+			if sealed == "" {
+				var serr error
+				if sealed, serr = s.agent.Profile().Seal(ctx, text); serr != nil {
+					s.log.Error("notificação não reenfileirada (cofre indisponível)", "err", serr)
+					continue
+				}
+			}
+			s.db.Enqueue(ctx, TaskSend, map[string]any{"chat_id": id, "text": sealed}, database.EnqueueOpts{MaxAttempts: 12})
 		}
 	}
 	return errors.Join(errs...)
