@@ -24,7 +24,7 @@ Identificadores e comentários de código ficam em inglês.
 | `internal/config` | `.env` (lock + escrita atômica); **schema de todas as variáveis** em `schema.go` |
 | `internal/database` | SQLite WAL, migrações, FTS5, grafo, vetores, fila, logs |
 | `internal/llm` | provedores (OpenAI/Claude/Gemini/Ollama), roteamento por tarefa (`routes.go`), Conselho (`council.go`), catálogo curado + sync (`models.json`, `catalog*.go`), preços |
-| `internal/agent` | ingestão, enriquecimento, busca híbrida, chat RAG + tools, ações |
+| `internal/agent` | ingestão, enriquecimento, busca híbrida, chat RAG + tools, personas do chat (`personas.go`), ações |
 | `internal/telegram`, `internal/integrations/*`, `internal/watcher` | canais de captura |
 | `internal/importer` | importação de arquivos (Obsidian, Notion, Evernote, Keep, CSV, vCard, iCal, Google Takeout via `integrations/takeout`) e fila `import.file` (inbox `.zip`, Takeout do Drive) |
 | `internal/profile` | Perfil pessoal: tipos e campos (`kinds.go`), cofre AES-GCM dos itens sensíveis (`vault.go`), agenda do dia, alertas e classificação de eventos (`agenda.go`), política de acesso da IA (`PROFILE_AI_ACCESS` leitura, `PROFILE_AI_WRITE` gravação via `Store.UpsertFromAI`, em `write.go`) |
@@ -46,6 +46,7 @@ Identificadores e comentários de código ficam em inglês.
 - **Chamadas externas lentas ou falíveis** → fila offline (`internal/queue`). Marque erros definitivos com `queue.Permanent`.
 - **Ferramentas do chat que alteram dados** entram em `mutatingTools` (`internal/agent/tools.go`): ganham o argumento obrigatório `user_requested` e, sem ele `true`, não executam (a IA pergunta antes). Leitura não entra.
 - **LLM**: sempre via `llm.Manager`. O `Purpose` da requisição define a rota. Para criar uma tarefa roteável, adicione-a em `llm.Tasks` e crie a chave `LLM_ROUTE_*` no schema.
+- **Chat em abas**: cada aba é uma linha de `chats` e o histórico fica no canal `database.ChatChannel(id)` (`web:<id>`); nunca use um canal fixo para o chat web. **Nova persona** → entrada em `agent.Personas` (`Role` com as ferramentas que ela deve consultar e seus limites; `Topics` só com palavras de 3+ letras, pois palavras curtas casam com tudo na busca por prefixo; um teste confere). Persona não muda permissões: alteração de dados continua em `mutatingTools`.
 - **Web**: `html/template` + HTMX. A CSP proíbe scripts inline e `hx-on`, então JS novo vai em `internal/web/static/*.js`.
 - **Concorrência**: use goroutines (`errgroup`/`WaitGroup`) para I/O paralelo. Estado compartilhado sempre com mutex e testado com `-race`.
 - **Dados do Perfil** (`internal/profile`): nunca gravar em nós (`nodes`) nem mandar ao LLM fora de `Store.ForAI`; blocos pessoais dos relatórios vão só na notificação. Texto que possa conter dados pessoais e precise ser persistido (fila, histórico) passa por `Store.Seal`/`Open`. Novo tipo → entrada em `profile.Kinds` (campos com `Alert` entram nos avisos).

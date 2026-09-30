@@ -22,6 +22,11 @@ type ChatRequest struct {
 	Parts    []llm.Part
 	NoTools  bool
 	History  int // turns of history to load (default 16)
+
+	// Persona is a preset key from Personas, PersonaCustom or empty (plain assistant).
+	// Instructions are extra directions for the chat (for PersonaCustom, the persona itself).
+	Persona      string
+	Instructions string
 }
 
 // ChatEvent notifies the UI about retrieval and tool activity.
@@ -45,7 +50,7 @@ const maxToolRounds = 6
 // datesRule tells the model how to weigh information of different ages.
 const datesRule = `Datas: se duas informações do contexto entram em conflito, vale a mais recente (compare criado=/acontece=); cite a data quando a informação for antiga (idade=) ou vier de importação (importado=). data=desconhecida significa que a origem não tinha data: não presuma que é recente nem antiga.`
 
-func (a *Agent) systemPrompt(ctxNodes []SearchResult) string {
+func (a *Agent) systemPrompt(ctxNodes, themeNodes []SearchResult, role string) string {
 	loc := a.cfg.Location()
 	nowT := time.Now()
 	var b strings.Builder
@@ -56,32 +61,70 @@ Use as ferramentas para buscar mais informações, criar ou editar notas/tarefas
 Você pode criar, editar e apagar (lixeira) notas, tarefas, pessoas, eventos, ligações e itens do Perfil, mas SÓ com autorização. Se a mensagem atual do usuário pede explicitamente a alteração ("adicione o telefone da Ana", "apague a nota X"), faça e envie user_requested=true. Se a alteração for ideia sua ou o pedido for ambíguo (qual pessoa? qual valor?), não altere: pergunte em uma frase o que mudaria e espere o "sim"; só então chame a ferramenta com user_requested=true. Nunca use user_requested=true por conta própria.
 %s`,
 		a.cfg.Get("BRAIN_NAME"), nowT.In(loc).Format("Monday, 02/01/2006 15:04"), loc.String(), datesRule)
+	if role != "" {
+		b.WriteString("\n\n" + role)
+	}
 	if years := a.cfg.GetInt("CHAT_ARCHIVE_YEARS", 0); years > 0 {
 		fmt.Fprintf(&b, "\nItens importados com mais de %d anos ficam fora do contexto automático. Se a pergunta for sobre o passado, use search_brain (com from/to) para consultá-los.", years)
 	}
-	if len(ctxNodes) > 0 {
-		b.WriteString("\n\n<contexto_recuperado>\n")
-		for _, r := range ctxNodes {
-			n := r.Node
-			fmt.Fprintf(&b, "[id=%d tipo=%s %s", n.ID, n.Type, contextDates(&n, loc, nowT))
-			if n.Status != "" {
-				fmt.Fprintf(&b, " status=%s", n.Status)
-			}
-			if len(n.Tags) > 0 {
-				fmt.Fprintf(&b, " tags=%s", strings.Join(n.Tags, ","))
-			}
-			fmt.Fprintf(&b, "] %s\n", n.Title)
-			body := n.Summary
-			if len([]rune(n.Content)) < 1200 {
-				body = n.Content
-			} else if body == "" {
-				body = extract.Truncate(n.Content, 1200)
-			}
-			b.WriteString(extract.Truncate(body, 1200) + "\n---\n")
-		}
-		b.WriteString("</contexto_recuperado>")
-	}
+	writeSources(&b, "contexto_recuperado", ctxNodes, loc, nowT)
+	writeSources(&b, "fontes_do_tema", themeNodes, loc, nowT)
 	return b.String()
+}
+
+// writeSources appends nodes as an XML-ish block the model reads as its sources.
+func writeSources(b *strings.Builder, tag string, nodes []SearchResult, loc *time.Location, nowT time.Time) {
+	if len(nodes) == 0 {
+		return
+	}
+	b.WriteString("\n\n<" + tag + ">\n")
+	for _, r := range nodes {
+		n := r.Node
+		fmt.Fprintf(b, "[id=%d tipo=%s %s", n.ID, n.Type, contextDates(&n, loc, nowT))
+		if n.Status != "" {
+			fmt.Fprintf(b, " status=%s", n.Status)
+		}
+		if len(n.Tags) > 0 {
+			fmt.Fprintf(b, " tags=%s", strings.Join(n.Tags, ","))
+		}
+		fmt.Fprintf(b, "] %s\n", n.Title)
+		body := n.Summary
+		if len([]rune(n.Content)) < 1200 {
+			body = n.Content
+		} else if body == "" {
+			body = extract.Truncate(n.Content, 1200)
+		}
+		b.WriteString(extract.Truncate(body, 1200) + "\n---\n")
+	}
+	b.WriteString("</" + tag + ">")
+}
+
+// themeSources loads what the user has on a persona's subject, so the persona knows the
+// history even when the question is vague.
+func (a *Agent) themeSources(ctx context.Context, p Persona, n int) []SearchResult {
+	if p.Topics == "" {
+		return nil
+	}
+	hits, err := a.Search(ctx, p.Topics, database.NodeFilter{}, n)
+	if err != nil {
+		return nil
+	}
+	return hits
+}
+
+// dropSeen keeps the first max results of list that are not in seen.
+func dropSeen(list, seen []SearchResult, max int) []SearchResult {
+	have := make(map[int64]bool, len(seen))
+	for _, r := range seen {
+		have[r.Node.ID] = true
+	}
+	var out []SearchResult
+	for _, r := range list {
+		if !have[r.Node.ID] && len(out) < max {
+			out = append(out, r)
+		}
+	}
+	return out
 }
 
 // Chat runs a RAG-augmented, tool-using conversation turn with streaming output.
@@ -96,10 +139,12 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 	var (
 		wg      sync.WaitGroup
 		hits    []SearchResult
+		theme   []SearchResult
 		history []database.ChatMessage
 		memory  string
 	)
-	wg.Add(3)
+	persona := PersonaFor(req.Persona, req.Instructions)
+	wg.Add(4)
 	go func() { defer wg.Done(); memory = a.memoryPrompt(ctx) }()
 	go func() {
 		defer wg.Done()
@@ -111,12 +156,19 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 		defer wg.Done()
 		history, _ = a.db.ChatHistory(ctx, req.Channel, req.History)
 	}()
+	go func() { // themed chats also load what the user has on the persona's subject
+		defer wg.Done()
+		if persona.Key != "" {
+			theme = a.themeSources(ctx, persona, 10)
+		}
+	}()
 	wg.Wait()
+	theme = dropSeen(theme, hits, 4) // the question's hits win; the theme fills in up to 4 more
 
 	res := &ChatResult{}
-	if len(hits) > 0 {
+	if len(hits)+len(theme) > 0 {
 		var refs []map[string]any
-		for _, h := range hits {
+		for _, h := range append(append([]SearchResult{}, hits...), theme...) {
 			res.Context = append(res.Context, h.Node)
 			refs = append(refs, map[string]any{"id": h.Node.ID, "title": h.Node.Title, "type": h.Node.Type})
 		}
@@ -159,7 +211,7 @@ func (a *Agent) Chat(ctx context.Context, req ChatRequest, onText llm.StreamFunc
 	if !req.NoTools {
 		tools = a.Tools()
 	}
-	system := a.systemPrompt(hits) + memory
+	system := a.systemPrompt(hits, theme, rolePrompt(persona, req.Instructions)) + memory
 	if provider == llm.SpecCouncil {
 		// Members debate without tools; the moderator synthesizes and may call tools.
 		cc := a.llm.CouncilSetup()

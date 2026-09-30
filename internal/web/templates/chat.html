@@ -1,6 +1,10 @@
 {{define "head"}}<script src="/static/chat.js" defer></script>{{end}}
 {{define "content"}}
 <div class="chat-layout">
+  <div class="chat-tabs" id="chat-tabs" role="tablist" aria-label="Conversas">
+    {{range .Data.Tabs}}<button type="button" class="chat-tab{{if eq .ID $.Data.Active.ID}} on{{end}}" role="tab" aria-selected="{{if eq .ID $.Data.Active.ID}}true{{else}}false{{end}}" data-chat="{{.ID}}" data-name="{{.Name}}" data-blurb="{{.Blurb}}" title="{{.Name}}"><span class="ti">{{.Icon}}</span><span class="tt">{{.Title}}</span><span class="tb" hidden></span></button>{{end}}
+    <button type="button" class="chat-tab add" id="chat-new" title="Novo chat">＋</button>
+  </div>
   <div class="chat-head">
     <label>Modelo
       <select id="provider" name="provider">
@@ -10,17 +14,16 @@
       </select>
     </label>
     <a class="btn small" href="/models">⚙ Modelos</a>
-    <form method="post" action="/chat/reset"><button class="btn small">🧹 Nova conversa</button></form>
+    <span class="chat-actions">
+      <button type="button" class="btn small" id="chat-rename" title="Renomear este chat">✏️ Renomear</button>
+      <button type="button" class="btn small" id="chat-clear" title="Apagar as mensagens deste chat">🧹 Limpar</button>
+      <button type="button" class="btn small danger" id="chat-delete" title="Excluir este chat">🗑 Excluir</button>
+    </span>
   </div>
+  <div id="chat-persona" class="persona-line muted small"><b>{{.Data.Active.Icon}} {{.Data.Active.Name}}</b> — {{.Data.Active.Blurb}}</div>
   {{if not .Data.Enabled}}<div class="flash err">Nenhum provedor LLM configurado. Adicione uma chave em Configurações.</div>{{end}}
-  <div id="messages" class="messages">
-    {{range .Data.History}}
-    <div class="msg {{.Role}}"><div class="bubble">{{if eq .Role "assistant"}}{{markdown .Content}}{{else}}{{.Content}}{{end}}</div></div>
-    {{else}}
-    <div class="msg assistant intro"><div class="bubble">
-      <p>Olá! Pergunte qualquer coisa sobre suas notas, peça para criar tarefas, eventos ou resumos. Contexto relevante do seu grafo é injetado automaticamente.</p>
-    </div></div>
-    {{end}}
+  <div id="panes" class="panes">
+    <div class="messages" data-pane="{{.Data.Active.ID}}">{{template "chat_messages" .Data.Pane}}</div>
   </div>
   <form id="chat-form" class="chat-input">
     <textarea id="chat-text" name="message" rows="2" placeholder="Mensagem… (Enter envia, Shift+Enter quebra linha)"></textarea>
@@ -29,4 +32,42 @@
   </form>
   <div id="chat-file-name" class="muted small"></div>
 </div>
+
+<dialog id="new-chat" class="new-chat">
+  <form id="new-chat-form">
+    <h2>Novo chat</h2>
+    <p class="muted small">Cada chat é uma aba e os antigos continuam abertos. Escolha com quem conversar: a persona assume o papel e já conhece o que você guardou sobre o assunto.</p>
+    <div class="persona-group">
+      <h3>Geral</h3>
+      <div class="persona-grid">
+        <label class="persona-card"><input type="radio" name="persona" value="" checked><span class="pi">🧠</span><b>Assistente</b><small>O assistente de sempre, sem papel definido.</small></label>
+      </div>
+    </div>
+    {{range .Data.Groups}}
+    <div class="persona-group">
+      <h3>{{.Theme}}</h3>
+      <div class="persona-grid">
+        {{range .Personas}}<label class="persona-card"><input type="radio" name="persona" value="{{.Key}}"><span class="pi">{{.Icon}}</span><b>{{.Name}}</b><small>{{.Blurb}}</small></label>{{end}}
+      </div>
+    </div>
+    {{end}}
+    <div class="persona-group">
+      <h3>Personalizado</h3>
+      <div class="persona-grid">
+        <label class="persona-card"><input type="radio" name="persona" value="custom"><span class="pi">✨</span><b>Criar a minha</b><small>Descreva quem a IA deve ser (ex.: coach de corrida, revisor de contratos).</small></label>
+      </div>
+    </div>
+    <label>Nome do chat <span class="muted">(opcional)</span>
+      <input name="title" maxlength="60" placeholder="Se vazio, usa a primeira mensagem">
+    </label>
+    <label>Instruções <span class="muted">(opcionais; obrigatórias em “Criar a minha”)</span>
+      <textarea name="instructions" rows="3" maxlength="2000" placeholder="Ex.: responda em tópicos curtos; foque no meu joelho direito."></textarea>
+    </label>
+    <div id="new-chat-err" class="flash err" hidden></div>
+    <div class="dialog-actions">
+      <button type="button" class="btn" id="new-chat-cancel">Cancelar</button>
+      <button class="btn primary">Criar chat</button>
+    </div>
+  </form>
+</dialog>
 {{end}}

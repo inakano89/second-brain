@@ -143,7 +143,31 @@ dl.kv dt { font-weight: 600; margin-top: 10px; } dl.kv dd { margin: 4px 0 0; }
 .chat-head { display: flex; gap: 10px; align-items: flex-end; flex-wrap: wrap; }
 .chat-head label { flex-direction: row; align-items: center; gap: 8px; margin: 0; }
 .chat-head select { width: auto; }
-.chat-head form { margin-left: auto; }
+.chat-actions { margin-left: auto; display: flex; gap: 6px; flex-wrap: wrap; }
+.chat-tabs { display: flex; gap: 4px; overflow-x: auto; border-bottom: 1px solid var(--border); padding-bottom: 0; margin-bottom: 8px; scrollbar-width: thin; }
+.chat-tab { display: inline-flex; align-items: center; gap: 6px; flex: none; max-width: 220px; padding: 6px 12px; border: 1px solid var(--border); border-bottom: 0; border-radius: 8px 8px 0 0; background: var(--panel2); color: var(--muted); cursor: pointer; font: inherit; }
+.chat-tab:hover { color: var(--text); }
+.chat-tab.on { background: var(--panel); color: var(--text); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
+.chat-tab .tt { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.chat-tab .tb { font-size: 11px; }
+.chat-tab.busy .tb::before { content: "⏳"; }
+.chat-tab.unread .tb::before { content: "●"; color: var(--accent); }
+.chat-tab.add { padding: 6px 12px; font-weight: 700; }
+.persona-line { padding: 6px 0 0; }
+.panes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.messages[hidden] { display: none; }
+.new-chat { max-width: 760px; width: calc(100% - 24px); max-height: 90vh; overflow-y: auto; padding: 18px 20px; border: 1px solid var(--border); border-radius: var(--radius); background: var(--panel); color: var(--text); }
+.new-chat::backdrop { background: rgba(0, 0, 0, .45); }
+.new-chat h2 { margin: 0 0 4px; }
+.persona-group h3 { margin: 14px 0 6px; font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.persona-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 8px; }
+.persona-card { position: relative; display: flex; flex-direction: column; gap: 2px; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; cursor: pointer; background: var(--panel); }
+.persona-card:hover { border-color: var(--accent); }
+.persona-card:has(input:checked) { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, var(--panel)); box-shadow: 0 0 0 1px var(--accent); }
+.persona-card input { position: absolute; opacity: 0; pointer-events: none; }
+.persona-card .pi { font-size: 22px; line-height: 1.2; }
+.persona-card small { color: var(--muted); }
+.dialog-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 14px; }
 #custom-model { max-width: 320px; }
 .messages { flex: 1; overflow-y: auto; padding: 14px 0; display: flex; flex-direction: column; gap: 12px; min-height: 200px; }
 .msg { display: flex; }
