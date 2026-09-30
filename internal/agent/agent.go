@@ -115,13 +115,22 @@ type IngestInput struct {
 	Meta      map[string]any
 	DueAt     *time.Time
 	CreatedAt time.Time
-	Enrich    bool
+	// DateUnknown marks content whose source carried no date: CreatedAt then only records when it
+	// came in, and reports, search and listings do not treat it as recent.
+	DateUnknown bool
+	Enrich      bool
 }
 
 // explicitSources are channels where the user sends content by hand: a deleted item sent
 // again comes back. Everything else (integrations, imports, the agent) returns
 // database.ErrDeleted for items the user deleted with "não trazer de volta".
-var explicitSources = map[string]bool{"telegram": true, "voice": true, "web": true, "api": true, "clip": true, "watcher": true}
+var explicitSources = func() map[string]bool {
+	m := map[string]bool{}
+	for _, s := range database.ManualSources {
+		m[s] = true
+	}
+	return m
+}()
 
 // Ingest stores a node (upserting by source ref) and optionally queues enrichment.
 func (a *Agent) Ingest(ctx context.Context, in IngestInput) (*database.Node, bool, error) {
@@ -147,6 +156,9 @@ func (a *Agent) Ingest(ctx context.Context, in IngestInput) (*database.Node, boo
 				return nil, false, err
 			}
 		}
+	}
+	if in.DateUnknown {
+		in.Meta[database.MetaDateUnknown] = true
 	}
 	n := &database.Node{
 		Type: in.Type, Title: extract.Truncate(strings.TrimSpace(in.Title), 200), Content: in.Content, Summary: in.Summary,
@@ -272,6 +284,7 @@ func (a *Agent) analyze(ctx context.Context, n *database.Node) (enrichResult, er
 		a.log.Warn("enriquecimento LLM falhou, usando heurística", "id", n.ID, "err", err)
 		return heuristicAnalysis(n), nil
 	}
+	res.Tags = a.allowedModelTags(res.Tags) // hashtags typed in the text (heuristic path) are the user's own
 	return res, nil
 }
 
@@ -298,6 +311,23 @@ func (a *Agent) applyAnalysis(n *database.Node, res enrichResult) {
 		}
 		n.Meta["entities"] = names
 	}
+}
+
+// allowedModelTags drops the tags a model may not choose: the one that publishes a note in the
+// digital garden (GARDEN_TAG) is the user's decision alone.
+func (a *Agent) allowedModelTags(tags []string) []string {
+	reserved := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(a.cfg.Get("GARDEN_TAG")), "#"))
+	if reserved == "" {
+		reserved = "publico"
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if nt := database.NormalizeTags([]string{t}); len(nt) == 1 && (nt[0] == reserved || nt[0] == "publico" || nt[0] == "público") {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func (a *Agent) linkEntities(ctx context.Context, n *database.Node, ents []entity) error {

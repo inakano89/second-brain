@@ -7,12 +7,29 @@
     "payload": "{{input}}"
   },
   {
+    "name": "portao_garagem",
+    "description": "Abre ou fecha o portão da garagem. input: OPEN ou CLOSE",
+    "type": "mqtt",
+    "topic": "casa/garagem/portao/set",
+    "payload": "{{input}}"
+  },
+  {
+    "name": "ar_condicionado",
+    "description": "Liga, desliga ou ajusta o ar-condicionado da sala. input: OFF ou a temperatura em graus (ex.: 23)",
+    "type": "webhook",
+    "method": "POST",
+    "url": "http://home-assistant.local:8123/api/webhook/ar-sala",
+    "body": "{\"comando\": \"{{input}}\"}"
+  },
+  {
     "name": "webhook_n8n",
     "description": "Dispara o fluxo n8n de automação residencial com uma mensagem",
     "type": "webhook",
     "method": "POST",
     "url": "https://n8n.exemplo.com/webhook/brain",
-    "headers": { "X-Token": "troque-me" },
+    "headers": {
+      "X-Token": "troque-me"
+    },
     "body": "{\"message\": \"{{input}}\"}"
   },
   {
@@ -20,7 +37,11 @@
     "description": "Verifica se o roteador responde (ping)",
     "type": "command",
     "command": "ping",
-    "args": ["-c", "3", "192.168.1.1"],
+    "args": [
+      "-c",
+      "3",
+      "192.168.1.1"
+    ],
     "timeout_sec": 15
   }
 ]

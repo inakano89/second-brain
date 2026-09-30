@@ -6,6 +6,7 @@
     <a href="/content" class="{{if eq .Tab "items"}}on{{end}}">🗂 Itens</a>
     <a href="/content/sends" class="{{if eq .Tab "sends"}}on{{end}}">📥 Envios</a>
     <a href="/content/cleanup" class="{{if eq .Tab "cleanup"}}on{{end}}">🧹 Faxina{{if .Cleanup}}<span class="count">{{.Cleanup}}</span>{{end}}</a>
+    <a href="/content/garden" class="{{if eq .Tab "garden"}}on{{end}}">🌱 Jardim</a>
     <a href="/content/trash" class="{{if eq .Tab "trash"}}on{{end}}">🗑 Lixeira{{if .Trash}}<span class="count">{{.Trash}}</span>{{end}}</a>
     <a href="/help#content" class="muted small">❓ Como usar</a>
   </nav>
@@ -23,6 +24,12 @@
         <option value="">Todas as origens</option>
         {{range .Sources}}<option value="{{.Value}}" {{if eq .Value $.Data.Rows.Query.Source}}selected{{end}}>{{.Label}} ({{.Count}})</option>{{end}}
       </select>
+      <select name="origin" aria-label="Quem criou">
+        <option value="">Todas as fontes de conteúdo</option>
+        <option value="imported" {{if eq .Rows.Query.Origin "imported"}}selected{{end}}>📥 Importados</option>
+        <option value="mine" {{if eq .Rows.Query.Origin "mine"}}selected{{end}}>✍️ Criados por mim</option>
+        <option value="auto" {{if eq .Rows.Query.Origin "auto"}}selected{{end}}>🤖 Automáticos (Gmail, RSS, IA…)</option>
+      </select>
       <input name="tag" value="{{.Rows.Query.Tag}}" placeholder="#tag" aria-label="Tag">
       <select name="status" aria-label="Situação da tarefa">
         <option value="">Tarefas: todas</option>
@@ -31,7 +38,8 @@
       </select>
       <span class="dates"><input type="date" name="from" value="{{.Rows.Query.From}}" aria-label="Criados desde"> – <input type="date" name="to" value="{{.Rows.Query.To}}" aria-label="Criados até"></span>
       <select name="order" aria-label="Ordem">
-        <option value="">Mais recentes</option>
+        <option value="">Por data (eventos: quando acontecem)</option>
+        <option value="created" {{if eq .Rows.Query.Order "created"}}selected{{end}}>Por data de criação</option>
         <option value="oldest" {{if eq .Rows.Query.Order "oldest"}}selected{{end}}>Mais antigos</option>
         <option value="updated" {{if eq .Rows.Query.Order "updated"}}selected{{end}}>Editados por último</option>
         <option value="title" {{if eq .Rows.Query.Order "title"}}selected{{end}}>Título (A–Z)</option>
@@ -78,6 +86,27 @@
       <p class="empty">Clique em um item para ler, editar, apagar ou ver as conexões.</p>
     </aside>
   </div>
+{{end}}
+
+{{if eq .Tab "garden"}}
+  <section class="card">
+    <h2>🌱 Jardim digital</h2>
+    <p class="muted">Notas, insights e artigos com a tag <b>#{{.Tag}}</b> viram um site estático: uma página por nota, com links entre elas, páginas de assuntos e feed. Só o que tem a tag é publicado; links para qualquer outra coisa aparecem como texto. A IA nunca coloca essa tag sozinha.</p>
+    <div class="row-actions">
+      <a class="btn primary" href="/export/garden">⬇ Baixar o site (.zip)</a>
+      {{if .Dir}}<form method="post" action="/content/garden/publish" class="inline"><button class="btn">↻ Gerar agora em <code>{{.Dir}}</code></button></form>
+      <span class="muted small">Regerado todo dia (CRON_GARDEN).</span>{{else}}<span class="muted small">Para gerar sozinho numa pasta (servidor web, GitHub Pages), defina <b>GARDEN_DIR</b> em <a href="/settings">Configurações → Automação</a>.</span>{{end}}
+    </div>
+  </section>
+  <section class="card">
+    <h3>Serão publicadas ({{len .Nodes}})</h3>
+    {{if .Nodes}}
+    <div class="tbl-wrap"><table class="tbl compact">
+      <thead><tr><th>Título</th><th>Tipo</th><th>Tags</th></tr></thead>
+      <tbody>{{range .Nodes}}<tr><td><a href="/?focus={{.ID}}">{{.Title}}</a></td><td><span class="badge" style="--c: {{typeColor .Type}}">{{typeLabel .Type}}</span></td><td class="small muted">{{range .Tags}}#{{.}} {{end}}</td></tr>{{end}}</tbody>
+    </table></div>
+    {{else}}<p class="empty">Nenhuma nota com #{{.Tag}} ainda. Abra uma nota e adicione a tag para publicá-la.</p>{{end}}
+  </section>
 {{end}}
 
 {{if eq .Tab "sends"}}

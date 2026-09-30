@@ -191,7 +191,7 @@ type overviewList struct {
 // overviewNodes lists the most recent nodes of one overview item (drill-down panel).
 func (s *Server) overviewNodes(w http.ResponseWriter, r *http.Request) {
 	f := s.filterFromQuery(r)
-	f.Order, f.Limit = "updated", 40
+	f.Order, f.Limit = "", 40 // by content date, unknown dates last
 	nodes, err := s.DB.ListNodes(r.Context(), f)
 	if err != nil {
 		http.Error(w, err.Error(), 500)

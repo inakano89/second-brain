@@ -205,8 +205,25 @@ func (s *Service) handle(ctx context.Context, c *Client, m *Message) {
 	case strings.HasPrefix(m.Text, "/"):
 		s.command(ctx, c, m)
 	case strings.TrimSpace(m.Text) != "":
+		if s.diaryAnswer(ctx, c, m, m.Text) {
+			return
+		}
 		s.converse(ctx, c, m, m.Text)
 	}
+}
+
+// diaryAnswer takes a plain message as the answer to the pending diary question.
+func (s *Service) diaryAnswer(ctx context.Context, c *Client, m *Message, text string) bool {
+	if s.agent.DiaryActive(ctx) == nil {
+		return false
+	}
+	reply, err := s.agent.DiaryAnswer(ctx, text)
+	if err != nil {
+		s.log.Warn("diário: resposta não salva", "err", err)
+		return false
+	}
+	c.SendMessage(ctx, m.Chat.ID, reply, m.MessageID)
+	return true
 }
 
 func firstNonEmpty(ss ...string) string {
@@ -293,6 +310,14 @@ func (s *Service) processMedia(ctx context.Context, raw json.RawMessage) error {
 	if mime == "" || mime == "application/octet-stream" {
 		mime = agent.DetectMIME(p.Filename, data)
 	}
+	if p.Voice && s.agent.DiaryActive(ctx) != nil { // a spoken answer to the diary: transcribe only
+		if done, err := s.diaryVoice(ctx, p, data, mime); done || queue.IsPermanent(err) {
+			os.Remove(p.Path)
+			return nil
+		} else if err != nil {
+			return err
+		}
+	}
 	n, err := s.agent.IngestMedia(ctx, agent.MediaInput{
 		Data: data, Filename: p.Filename, MIME: mime, Caption: p.Caption, Voice: p.Voice,
 		Source: "telegram", SourceRef: fmt.Sprintf("tg:%d:%d", p.ChatID, p.MessageID),
@@ -323,11 +348,46 @@ func (s *Service) processMedia(ctx context.Context, raw json.RawMessage) error {
 	} else {
 		b.WriteString("\n" + extract.Truncate(n.Content, 1500))
 	}
+	if r, _ := n.Meta[agent.MetaReceipt].(string); r != "" { // a purchase document: what became of its warranties
+		b.WriteString("\n\n" + r)
+	}
 	if p.Status != 0 {
 		return c.EditMessage(ctx, p.ChatID, p.Status, b.String(), true)
 	}
 	_, err = c.SendMessage(ctx, p.ChatID, b.String(), p.MessageID)
 	return err
+}
+
+// diaryVoice transcribes a voice message and records it as the pending diary answer.
+func (s *Service) diaryVoice(ctx context.Context, p mediaPayload, data []byte, mime string) (bool, error) {
+	text, err := s.agent.Transcribe(ctx, data, p.Filename, mime)
+	if err != nil {
+		return false, err
+	}
+	reply, err := s.agent.DiaryAnswer(ctx, text)
+	if err != nil {
+		return false, nil // no open diary any more: store it as a normal voice note
+	}
+	if c := s.client(); c != nil {
+		msg := "🎙️ _" + extract.Truncate(strings.ReplaceAll(text, "_", " "), 400) + "_\n\n" + reply
+		if p.Status != 0 {
+			return true, c.EditMessage(ctx, p.ChatID, p.Status, msg, true)
+		}
+		_, err = c.SendMessage(ctx, p.ChatID, msg, p.MessageID)
+		return true, err
+	}
+	return true, nil
+}
+
+// splitItems splits "leite, pão; ovos" into items.
+func splitItems(s string) []string {
+	var out []string
+	for _, p := range strings.FieldsFunc(s, func(r rune) bool { return r == ',' || r == ';' || r == '\n' }) {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func mdEscape(s string) string {
@@ -432,6 +492,15 @@ const helpText = `*Second Brain* — comandos:
 /done <id> — conclui tarefa
 /brief — gera briefing agora
 /hoje — sua rotina de hoje (doses, aulas, hábitos) e próximas datas
+/neste_dia — o que você registrou neste dia em anos anteriores
+/revisao — revisão espaçada agora (destaques e insights)
+/diario — abre o diário guiado (ou /diario pular)
+/retro [ano] — retrospectiva do ano
+/pessoa <nome> — resumo de uma pessoa (última conversa, pendências)
+/crm — quem você não fala há tempo
+/viagem [destino] — dossiê da viagem (agenda, reservas, documentos)
+/financas [AAAA-MM] — resumo do mês do extrato importado
+/compras [itens] — lista de compras (ex.: /compras leite, pão · /compras ok leite · /compras limpar)
 /tomei <id> — marca dose ou hábito como feito (desconta o estoque)
 /model — escolhe o modelo (ou council para o Conselho)
 /reset — limpa o histórico da conversa
@@ -554,6 +623,119 @@ func (s *Service) command(ctx context.Context, c *Client, m *Message) {
 			msg += fmt.Sprintf("\n⚠️ Estoque para ~%d dias.", int(left))
 		}
 		reply(msg)
+	case "/neste_dia", "/nestedia":
+		mem, err := s.agent.OnThisDay(ctx, time.Now())
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		text := agent.FormatOnThisDay(mem)
+		if text == "" {
+			text = "Nada registrado neste dia nos anos configurados (ON_THIS_DAY_YEARS)."
+		}
+		reply(text)
+	case "/revisao", "/revisão":
+		items, err := s.agent.ReviewDue(ctx, time.Now(), 3)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		text := agent.FormatReviews(items)
+		if text == "" {
+			text = "Nada para revisar agora. Importe seus destaques do Kindle ou salve insights."
+		}
+		reply(text)
+	case "/diario", "/diário":
+		if strings.EqualFold(arg, "pular") {
+			s.agent.DiarySkip(ctx)
+			reply("📓 Tudo bem, diário de hoje pulado.")
+			return
+		}
+		text, err := s.agent.StartDiary(ctx, time.Now())
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(text)
+	case "/retro":
+		year := time.Now().In(s.cfg.Location()).Year() - 1
+		if y, err := strconv.Atoi(arg); err == nil {
+			year = y
+		}
+		c.SendChatAction(ctx, m.Chat.ID, "typing")
+		n, text, err := s.agent.YearReview(ctx, year)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		if n == nil {
+			reply(fmt.Sprintf("🎆 *Retrospectiva %d* (não foi salva: você a apagou antes)\n\n%s", year, extract.Truncate(text, 3500)))
+			return
+		}
+		reply(fmt.Sprintf("🎆 *Retrospectiva %d* (nota #%d)\n\n%s", year, n.ID, extract.Truncate(text, 3500)))
+	case "/pessoa", "/person":
+		p, err := s.agent.FindPerson(ctx, arg)
+		if err != nil {
+			reply(err.Error())
+			return
+		}
+		b, err := s.agent.PersonBriefOf(ctx, p.ID, time.Now())
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(agent.FormatPersonBrief(b, s.cfg.Location(), time.Now()))
+	case "/crm":
+		list, err := s.agent.StaleContacts(ctx, time.Now(), 10)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		text := agent.FormatStaleContacts(list, s.cfg.Location(), time.Now())
+		if text == "" {
+			text = "Ninguém em atraso. 👏 (Ajuste CRM_STALE_DAYS ou use a tag crm em uma pessoa.)"
+		}
+		reply(text)
+	case "/viagem", "/dossie":
+		c.SendChatAction(ctx, m.Chat.ID, "typing")
+		text, err := s.agent.TravelDossier(ctx, agent.TravelOptions{Destination: arg, Personal: true, SensitiveOK: true})
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(text)
+	case "/financas", "/finanças":
+		text, err := s.agent.FinanceDigest(ctx, arg)
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		if text == "" {
+			text = "Nenhum extrato importado. Use a página Importar → Extrato bancário."
+		}
+		reply(text)
+	case "/compras":
+		action, items := "", []string(nil)
+		switch lower := strings.ToLower(arg); {
+		case arg == "":
+		case lower == "limpar":
+			action = "clear_done"
+		case strings.HasPrefix(lower, "ok "):
+			action, items = "check", splitItems(arg[3:])
+		case strings.HasPrefix(lower, "tirar "):
+			action, items = "remove", splitItems(arg[6:])
+		default:
+			action, items = "add", splitItems(arg)
+		}
+		list, err := s.agent.ShoppingList(ctx)
+		if action != "" {
+			list, err = s.agent.ShoppingEdit(ctx, action, items)
+		}
+		if err != nil {
+			reply("Erro: " + err.Error())
+			return
+		}
+		reply(agent.FormatShopping(list))
 	case "/brief":
 		if s.Briefing == nil {
 			reply("Briefing indisponível.")

@@ -599,3 +599,16 @@ func (s *Server) updateInstall(w http.ResponseWriter, r *http.Request) {
 	}()
 	redirectFlash(w, r, "/settings#updates", "Instalando atualização — o servidor reiniciará em instantes.", false)
 }
+
+// exportGarden downloads the digital garden (notes tagged #publico) as a static site.
+func (s *Server) exportGarden(w http.ResponseWriter, r *http.Request) {
+	name := "jardim-digital-" + time.Now().Format("20060102-1504") + ".zip"
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", `attachment; filename="`+name+`"`)
+	rep, err := export.Garden(r.Context(), s.DB, w, export.GardenOptionsFrom(s.Cfg.Get, s.Cfg.Location()))
+	if err != nil {
+		s.log.Error("export do jardim falhou", "err", err)
+		return
+	}
+	s.log.Info("jardim digital exportado", "notas", len(rep.Pages))
+}

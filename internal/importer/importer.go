@@ -24,6 +24,7 @@ import (
 	"github.com/inakano89/second-brain/internal/crypto"
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
+	"github.com/inakano89/second-brain/internal/finance"
 )
 
 // SourcePrefix prefixes the node source of imported items ("import:evernote").
@@ -73,6 +74,8 @@ type Report struct {
 	Ignored  int            `json:"ignored"`
 	Links    int            `json:"links"`
 	Feeds    int            `json:"feeds"`
+	Lines    int            `json:"lines"`     // bank statement lines stored (Finanças)
+	LinesDup int            `json:"lines_dup"` // statement lines that were already there
 	Queued   int            `json:"queued"`
 	Errors   []string       `json:"errors,omitempty"`
 	Warnings []string       `json:"warnings,omitempty"`
@@ -259,7 +262,7 @@ func (im *Importer) run(ctx context.Context, j *Job, files []File, opt Options) 
 	}()
 	j.update(func(r *Report) { r.State = StateParsing })
 	batch, err := im.parse(ctx, files, opt)
-	if err != nil && (batch == nil || len(batch.Items)+len(batch.Feeds) == 0) {
+	if err != nil && (batch == nil || len(batch.Items)+len(batch.Feeds)+len(batch.Transactions) == 0) {
 		j.errorf("%v", err)
 		j.update(func(r *Report) { r.State, r.Finished = StateFailed, time.Now() })
 		im.log.Warn("importação falhou", "files", j.rep.Files, "err", err)
@@ -332,6 +335,9 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 	}
 
 	rep := j.Report()
+	if len(b.Transactions) > 0 {
+		im.storeStatement(ctx, j, b.Transactions, rep.ID)
+	}
 	stamp := map[string]any{ // lets the Conteúdo page list and undo this import
 		"import_batch": rep.ID,
 		"import_name":  extract.Truncate(strings.Join(rep.Files, ", "), 120),
@@ -386,7 +392,23 @@ func (im *Importer) ingest(ctx context.Context, j *Job, b *Batch, opt Options) {
 	})
 }
 
-// dedupe keeps the last occurrence of each (format, ref) and merges persons by name.
+// storeStatement categorises bank statement lines and stores them; lines already imported are skipped.
+func (im *Importer) storeStatement(ctx context.Context, j *Job, txs []database.Transaction, batch string) {
+	finance.NewCategorizer(im.cfg.Get("FINANCE_RULES")).Apply(txs)
+	for i := range txs {
+		txs[i].Batch = batch
+	}
+	added, err := im.db.InsertTransactions(ctx, txs)
+	if err != nil {
+		j.errorf("extrato: %v", err)
+		return
+	}
+	j.update(func(r *Report) { r.Lines, r.LinesDup = added, len(txs)-added })
+}
+
+// dedupe keeps one item per (format, ref): the most recent one (an unknown date counts as the
+// oldest; on a tie the last in the file wins). Persons with the same name are merged, the newer
+// record winning where they disagree.
 func dedupe(items []Item) []Item {
 	seen := map[string]int{}
 	var out []Item
@@ -395,17 +417,34 @@ func dedupe(items []Item) []Item {
 		if it.Type == database.TypePerson {
 			key = "person\x00" + strings.ToLower(strings.TrimSpace(it.Title))
 		}
-		if i, ok := seen[key]; ok {
-			if it.Type == database.TypePerson && !strings.Contains(out[i].Content, it.Content) {
-				out[i].Content = strings.TrimSpace(out[i].Content + "\n\n" + it.Content)
-				out[i].Tags = append(out[i].Tags, it.Tags...)
-				continue
-			}
-			out[i] = it
+		i, ok := seen[key]
+		if !ok {
+			seen[key] = len(out)
+			out = append(out, it)
 			continue
 		}
-		seen[key] = len(out)
-		out = append(out, it)
+		cur := &out[i]
+		newer := !it.CreatedAt.Before(cur.CreatedAt) // ties: the later one in the file
+		if it.CreatedAt.IsZero() && !cur.CreatedAt.IsZero() {
+			newer = false
+		}
+		if it.Type == database.TypePerson && cur.Type == database.TypePerson {
+			cur.Content = mergeContact(cur.Content, it.Content, newer)
+			cur.Tags = append(cur.Tags, it.Tags...)
+			if cur.Meta == nil {
+				cur.Meta = map[string]any{}
+			}
+			if it.Meta != nil {
+				mergePersonMeta(cur.Meta, it.Meta, newer)
+			}
+			if newerThan(it.CreatedAt, cur.CreatedAt) {
+				cur.CreatedAt = it.CreatedAt
+			}
+			continue
+		}
+		if newer {
+			out[i] = it
+		}
 	}
 	return out
 }
@@ -429,8 +468,8 @@ func (it *Item) normalize() {
 	if it.Type == database.TypeTask && it.Status == "" {
 		it.Status = database.StatusOpen
 	}
-	if it.CreatedAt.After(time.Now().Add(24 * time.Hour)) {
-		it.CreatedAt = time.Time{}
+	if it.CreatedAt.After(time.Now().Add(24*time.Hour)) || it.CreatedAt.Before(time.Date(1971, 1, 1, 0, 0, 0, 0, time.UTC)) {
+		it.CreatedAt = time.Time{} // future dates and the 1970 epoch are placeholders, not dates
 	}
 	if it.Ref == "" {
 		it.Ref = hashRef(it.Title, it.Content)
@@ -448,7 +487,8 @@ func (im *Importer) ingestOne(ctx context.Context, it *Item, opt Options, stamp 
 	ex, err := im.db.GetNodeBySource(ctx, source, it.Ref)
 	switch {
 	case err == nil:
-		if ex.Title == it.Title && ex.Content == it.Content {
+		dateFound := ex.DateUnknown() && !it.CreatedAt.IsZero() // the date was missing before
+		if ex.Title == it.Title && ex.Content == it.Content && !dateFound {
 			return ex.ID, outSkipped, nil
 		}
 		it.Tags = append(ex.Tags, it.Tags...) // keep tags added by enrichment or by hand
@@ -461,7 +501,7 @@ func (im *Importer) ingestOne(ctx context.Context, it *Item, opt Options, stamp 
 	}
 	n, created, err := im.ag.Ingest(ctx, agent.IngestInput{
 		Type: it.Type, Title: it.Title, Content: it.Content, Summary: it.Summary, Source: source, SourceRef: it.Ref,
-		Status: it.Status, Tags: it.Tags, Meta: it.Meta, DueAt: it.DueAt, CreatedAt: it.CreatedAt,
+		Status: it.Status, Tags: it.Tags, Meta: it.Meta, DueAt: it.DueAt, CreatedAt: it.CreatedAt, DateUnknown: it.CreatedAt.IsZero(),
 	})
 	if errors.Is(err, database.ErrDeleted) {
 		return 0, outDeleted, nil
@@ -475,20 +515,29 @@ func (im *Importer) ingestOne(ctx context.Context, it *Item, opt Options, stamp 
 	return n.ID, outUpdated, nil
 }
 
-// mergePerson enriches an existing person (e.g. auto-created from a mention) with contact data.
+// mergePerson enriches an existing person (e.g. auto-created from a mention or imported from
+// another app) with contact data. Missing fields are added; where the two records disagree the
+// one with the more recent date wins (an unknown date never beats a known one, and on a tie the
+// stored data stays).
 func (im *Importer) mergePerson(ctx context.Context, p *database.Node, it *Item) (int64, int, error) {
-	if it.Content == "" || strings.Contains(p.Content, it.Content) {
+	newer := newerThan(it.CreatedAt, p.Freshness())
+	content := mergeContact(p.Content, it.Content, newer)
+	tags := append(append([]string(nil), p.Tags...), it.Tags...)
+	if p.Meta == nil {
+		p.Meta = map[string]any{}
+	}
+	metaChanged := mergePersonMeta(p.Meta, it.Meta, newer)
+	if content == strings.TrimSpace(p.Content) && !metaChanged && len(database.NormalizeTags(tags)) == len(p.Tags) && !(newer && p.Freshness().IsZero()) {
 		return p.ID, outSkipped, nil
 	}
-	p.Content = strings.TrimSpace(p.Content + "\n\n" + it.Content)
-	p.Tags = append(p.Tags, it.Tags...)
-	for k, v := range it.Meta {
-		if _, ok := p.Meta[k]; !ok {
-			p.Meta[k] = v
-		}
-	}
+	p.Content, p.Tags = content, tags
 	if err := im.db.UpdateNode(ctx, p); err != nil {
 		return 0, 0, err
+	}
+	if newer || (p.DateUnknown() && !it.CreatedAt.IsZero()) {
+		if err := im.db.SetCreatedAt(ctx, p.ID, it.CreatedAt); err != nil {
+			return 0, 0, err
+		}
 	}
 	return p.ID, outUpdated, nil
 }

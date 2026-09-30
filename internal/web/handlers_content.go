@@ -49,19 +49,26 @@ var specialLabels = map[string]string{"dup": "Duplicados", "empty": "Sem conteú
 
 // contentQuery is the filter state of the Conteúdo page, as sent by the filter form.
 type contentQuery struct {
-	Q, Type, Source, Tag, Status, Special, Order, Batch, From, To string
-	Offset                                                        int
+	Q, Type, Source, Tag, Status, Special, Order, Batch, From, To, Origin string
+	Offset                                                                int
 }
+
+var originLabels = map[string]string{database.OriginImported: "Importados", database.OriginMine: "Criados por mim", database.OriginAuto: "Automáticos (Gmail, RSS, IA…)"}
 
 func (s *Server) readContentQuery(get func(string) string) (contentQuery, database.NodeFilter) {
 	q := contentQuery{
 		Q: strings.TrimSpace(get("q")), Type: get("type"), Source: get("source"), Tag: strings.TrimPrefix(strings.TrimSpace(get("tag")), "#"),
 		Status: get("status"), Special: get("special"), Order: get("order"), Batch: strings.TrimSpace(get("batch")),
-		From: get("from"), To: get("to"),
+		From: get("from"), To: get("to"), Origin: get("origin"),
 	}
 	q.Offset, _ = strconv.Atoi(get("offset"))
 	q.Offset = max(q.Offset, 0)
 	f := database.NodeFilter{Text: q.Q, Source: q.Source, Tag: q.Tag, Batch: q.Batch, Order: q.Order}
+	if _, ok := originLabels[q.Origin]; ok {
+		f.Origin = q.Origin
+	} else {
+		q.Origin = ""
+	}
 	if database.ValidType(q.Type) {
 		f.Types = []string{q.Type}
 	} else {
@@ -79,6 +86,9 @@ func (s *Server) readContentQuery(get func(string) string) (contentQuery, databa
 		}
 	} else {
 		q.Special = ""
+	}
+	if f.Order == "" {
+		f.Order = "date" // by the date of the content; events by the day they happen
 	}
 	loc := s.Cfg.Location()
 	if t, err := time.ParseInLocation("2006-01-02", q.From, loc); err == nil {
@@ -99,7 +109,7 @@ func (s *Server) readContentQuery(get func(string) string) (contentQuery, databa
 func (q contentQuery) Values(offset int) url.Values {
 	v := url.Values{}
 	for k, val := range map[string]string{"q": q.Q, "type": q.Type, "source": q.Source, "tag": q.Tag, "status": q.Status,
-		"special": q.Special, "order": q.Order, "batch": q.Batch, "from": q.From, "to": q.To} {
+		"special": q.Special, "order": q.Order, "batch": q.Batch, "from": q.From, "to": q.To, "origin": q.Origin} {
 		if val != "" {
 			v.Set(k, val)
 		}
@@ -116,6 +126,7 @@ func (q contentQuery) Active() bool { return len(q.Values(0)) > 0 }
 type contentRows struct {
 	Query      contentQuery
 	Nodes      []database.Node
+	Heads      map[int64]string // month heading shown above the row of each new month
 	Total      int
 	First      int
 	Last       int
@@ -160,12 +171,65 @@ func (s *Server) contentRowsFor(ctx context.Context, q contentQuery, f database.
 		return rows, err
 	}
 	rows.Total = total
+	rows.Heads = groupHeads(rows.Nodes, f.Order, s.Cfg.Location())
 	if len(rows.Nodes) > 0 {
 		rows.First, rows.Last = q.Offset+1, q.Offset+len(rows.Nodes)
 	}
 	rows.HasPrev, rows.Prev = q.Offset > 0, max(q.Offset-contentPage, 0)
 	rows.HasNext, rows.Next = rows.Last < total, q.Offset+contentPage
 	return rows, nil
+}
+
+var monthNames = []string{"janeiro", "fevereiro", "março", "abril", "maio", "junho", "julho", "agosto", "setembro", "outubro", "novembro", "dezembro"}
+
+// groupHeads labels the first row of each month ("2026 · setembro") of a date-ordered listing;
+// items without an original date are grouped under "Sem data". Other orders have no groups.
+func groupHeads(nodes []database.Node, order string, loc *time.Location) map[int64]string {
+	if order != "date" && order != "created" && order != "oldest" {
+		return nil
+	}
+	heads := map[int64]string{}
+	prev := ""
+	for i := range nodes {
+		n := &nodes[i]
+		label := "Sem data"
+		if !n.DateUnknown() {
+			t := n.CreatedAt
+			if order == "date" {
+				t = n.EffectiveAt()
+			}
+			t = t.In(loc)
+			label = fmt.Sprintf("%d · %s", t.Year(), monthNames[t.Month()-1])
+		}
+		if label != prev {
+			heads[n.ID] = label
+			prev = label
+		}
+	}
+	return heads
+}
+
+// nodeDate is the date column of a listing: when the content dates from, or "sem data".
+func nodeDate(n database.Node, loc *time.Location) string {
+	switch {
+	case n.DateUnknown():
+		return "sem data"
+	case n.Type == database.TypeEvent && n.DueAt != nil:
+		return n.DueAt.In(loc).Format("02/01/2006 15:04")
+	}
+	return n.CreatedAt.In(loc).Format("02/01/2006 15:04")
+}
+
+// importedNote says when an importer brought the item in, when that differs from its own date.
+func importedNote(n database.Node, loc *time.Location) string {
+	at, ok := n.ImportedAt()
+	if !ok || !n.Imported() {
+		return ""
+	}
+	if !n.DateUnknown() && at.In(loc).Format("2006-01-02") == n.CreatedAt.In(loc).Format("2006-01-02") {
+		return ""
+	}
+	return "importado em " + at.In(loc).Format("02/01/2006")
 }
 
 func (s *Server) contentPage(w http.ResponseWriter, r *http.Request) {
@@ -584,4 +648,46 @@ func (s *Server) contentTrashAction(w http.ResponseWriter, r *http.Request) {
 	}
 	s.log.Info("lixeira", "action", r.FormValue("action"), "count", n)
 	redirectFlash(w, r, "/content/trash", text, false)
+}
+
+type gardenView struct {
+	Tab        string
+	Cleanup    int
+	Trash      int
+	Tag        string
+	Nodes      []database.Node
+	Dir        string
+	URL        string
+	Published  int
+	PublishErr string
+}
+
+// contentGarden shows what the digital garden would publish and lets you download or regenerate it.
+func (s *Server) contentGarden(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	opts := export.GardenOptionsFrom(s.Cfg.Get, s.Cfg.Location())
+	v := gardenView{Tab: "garden", Tag: opts.Tag, Dir: strings.TrimSpace(s.Cfg.Get("GARDEN_DIR")), URL: opts.BaseURL}
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { v.Nodes, err = export.GardenCandidates(gctx, s.DB, opts); return })
+	g.Go(func() (err error) { v.Trash, err = s.DB.TrashCount(gctx); return })
+	g.Go(func() (err error) { v.Cleanup, err = s.DB.CleanupPendingCount(gctx); return })
+	if err := g.Wait(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.render(w, "content", s.page(r, "Conteúdo", "content", v))
+}
+
+func (s *Server) contentGardenPublish(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(s.Cfg.Get("GARDEN_DIR")) == "" {
+		redirectFlash(w, r, "/content/garden", "Defina GARDEN_DIR em Configurações → Automação para gerar o site numa pasta.", true)
+		return
+	}
+	rep, err := export.WriteGarden(r.Context(), s.DB, s.Cfg.GetPath("GARDEN_DIR"), export.GardenOptionsFrom(s.Cfg.Get, s.Cfg.Location()))
+	if err != nil {
+		redirectFlash(w, r, "/content/garden", "Falha ao gerar o site: "+err.Error(), true)
+		return
+	}
+	s.log.Info("jardim digital publicado", "notas", len(rep.Pages))
+	redirectFlash(w, r, "/content/garden", fmt.Sprintf("Site gerado com %d nota(s).", len(rep.Pages)), false)
 }

@@ -22,6 +22,12 @@
     <a href="#content">🗂 Conteúdo: editar e apagar</a>
     <a href="#memory">🧠 Memória, tarefas e faxina</a>
     <a href="#profile">🪪 Perfil: saúde, rotina e datas</a>
+    <a href="#datas">📅 Datas: o mais novo vale mais</a>
+    <a href="#vida">🕰️ Lembranças, revisão e diário</a>
+    <a href="#pessoas">👥 Pessoas e reuniões</a>
+    <a href="#viagens">✈️ Viagens, garantias e casa</a>
+    <a href="#financas">💰 Finanças</a>
+    <a href="#jardim">🌱 Jardim digital</a>
     <a href="#backup">🔐 Backup</a>
     <a href="#install">🖥️ Instalação</a>
     <a href="#docker">🐳 Docker na VPS</a>
@@ -219,7 +225,9 @@
         <li><b>Contatos</b>: <a href="https://contacts.google.com" target="_blank" rel="noopener">contacts.google.com</a> → <i>Exportar</i> → <b>vCard</b>. No iPhone: iCloud.com → Contatos → ⚙️ → <i>Exportar vCard</i>.</li>
         <li><b>Agenda</b>: Google Agenda → ⚙️ Configurações → <i>Importar e exportar</i> → <b>Exportar</b> (baixa um <code>.zip</code> com os <code>.ics</code>). Outlook: <i>Salvar calendário</i>.</li>
         <li><b>Feeds (Feedly, Inoreader)</b>: exporte o <b>OPML</b>; os feeds entram direto na lista de RSS.</li>
+        <li><b>Extrato do banco e fatura do cartão</b>: veja <a href="#financas">Finanças</a>. Eles não viram notas.</li>
       </ul>
+      <p>Cada item importado mantém a <b>data original</b> (uma nota de 2015 continua sendo de 2015). O que veio sem data aparece como “Sem data” em <a href="#content">Conteúdo</a> e não entra nos relatórios de “novos”.</p>
       <p class="hint">💰 A caixa “Analisar cada item com IA” faz resumo e tags por inteligência artificial, mas custa ~1 chamada por item. Para importar milhares de notas, deixe desmarcada: a busca, as tags e as conexões funcionam mesmo assim. Depois, use “Reprocessar” só nas notas que quiser.</p>
       <p>Importou algo por engano? Em <a href="#content">Conteúdo → Envios</a> você apaga a importação inteira de uma vez (e desfaz, se precisar).</p>
       <p class="muted">Arquivo muito grande? O limite é <code>IMPORT_MAX_MB</code> (200 MB por padrão, em Configurações → Geral). Se o servidor fica atrás do nginx, aumente <code>client_max_body_size</code>. Ou copie o arquivo para o servidor e rode <code>second-brain -env .env -import arquivo.zip</code>.</p>
@@ -229,7 +237,7 @@
       <h2>🗂 Conteúdo: editar e apagar</h2>
       <p>No menu <b>Conteúdo</b> ficam, em lista, todas as notas, tarefas, favoritos, e-mails e demais itens que entraram no seu cérebro. É o lugar para arrumar tudo de uma vez, em vez de apagar um por um.</p>
       <ol class="steps">
-        <li><b>Filtre</b>: digite parte do título ou do texto, ou escolha o tipo, a origem (por exemplo “Importação: Favoritos”, “Gmail”), uma tag ou um período.</li>
+        <li><b>Filtre</b>: digite parte do título ou do texto, ou escolha o tipo, a origem (por exemplo “Importação: Favoritos”, “Gmail”), quem criou (importados, criados por mim ou automáticos), uma tag ou um período. A lista vem agrupada por ano e mês.</li>
         <li><b>Selecione</b>: marque a caixinha dos itens (ou clique na linha). Para marcar vários seguidos, clique no primeiro e, segurando <kbd>Shift</kbd>, no último. A caixinha do cabeçalho marca a página inteira e, em seguida, aparece o botão <b>Selecionar todos os resultados</b> para pegar tudo o que o filtro encontrou.</li>
         <li><b>Escolha a ação</b> na barra que fica presa no topo: <b>Apagar</b>, <b>+ Tag</b>/<b>− Tag</b>, <b>Mudar tipo</b>, <b>Concluir</b>/<b>Reabrir</b> tarefas, <b>Reprocessar IA</b> ou <b>Exportar</b> (baixa um <code>.zip</code> que abre no Obsidian). No celular, as ações extras ficam em <b>Mais ações</b>.</li>
       </ol>
@@ -273,6 +281,69 @@
       <p>Conversas do chat em que a IA consultou o Perfil são guardadas cifradas, não entram na rotina de <a href="#memory">Memória</a> e só são reenviadas como contexto a um modelo que pode ver esses dados (local, ou todos com <code>full</code>).</p>
       <p>Quer cifrar <b>todos</b> os itens do Perfil, inclusive matrículas, datas e metas? Ligue <b>Criptografar todos os itens do Perfil</b> (<code>PROFILE_ENCRYPT_ALL</code>) em Configurações → Perfil. A marca “sensível” continua decidindo o que fica oculto na tela e o que a IA pode ler.</p>
       <p class="muted">A chave que cifra esses itens (<code>VAULT_KEY</code>) é criada sozinha no <code>.env</code>. Uma cópia dela fica no banco, protegida pela chave de backup: se você perder o <code>.env</code> mas tiver a chave de backup, os itens voltam a abrir.</p>
+    </section>
+
+    <section class="card" id="datas">
+      <h2>📅 Datas: o mais novo vale mais</h2>
+      <p>O Second Brain sabe <b>quando</b> cada coisa foi escrita e <b>quando</b> ela entrou (numa importação). Isso muda o dia a dia:</p>
+      <ul>
+        <li><b>Busca e chat</b>: entre duas respostas parecidas, a mais recente aparece antes. Se duas informações se contradizem (“o telefone da Ana”), o assistente usa a mais nova e diz a data quando a informação é antiga. Perguntas sobre o passado (“o que eu pensava em 2018?”) não são penalizadas. Ajuste em Configurações → LLM: <code>SEARCH_RECENCY_HALFLIFE</code> (0 desliga).</li>
+        <li><b>Arquivo (opcional)</b>: com <code>CHAT_ARCHIVE_YEARS</code> (por exemplo 5), o que foi importado há mais de 5 anos deixa de aparecer sozinho nas respostas, mas continua na busca e o chat vai atrás quando você perguntar do passado.</li>
+        <li><b>Faxina e importação</b>: ao juntar cópias, fica a mais nova; o texto antigo vai para “Versões anteriores” com a data. Contatos importados de duas fontes: vale o dado mais recente e o antigo fica como “(antes: …)”.</li>
+        <li><b>Sem data</b>: o que veio sem data (favoritos, feeds, alguns contatos) não é tratado como novo nem some da busca; fica no fim das listas em “Sem data”.</li>
+      </ul>
+    </section>
+
+    <section class="card" id="vida">
+      <h2>🕰️ Lembranças, revisão e diário</h2>
+      <ul>
+        <li><b>Neste dia</b>: o briefing da manhã inclui o que você registrou no mesmo dia há 1, 3 e 5 anos (<code>/neste_dia</code> no Telegram; mude os anos em <code>ON_THIS_DAY_YEARS</code>).</li>
+        <li><b>Retrospectiva do ano</b>: em 2 de janeiro você recebe o resumo do ano que passou: temas, pessoas, decisões, números e o que ficou pendente. Peça outra a qualquer momento: <code>/retro 2025</code> ou “faça a retrospectiva de 2025” no chat.</li>
+        <li><b>Revisão espaçada</b>: todo dia de manhã chegam 2 itens para você lembrar — destaques dos livros do Kindle, seus insights e aprendizados —, que voltam depois de 1, 3, 7, 14, 30… dias. <code>/revisao</code> pede agora; <code>REVIEW_PER_DAY</code> muda a quantidade (0 desliga).</li>
+        <li><b>Diário guiado</b>: às 21h30 o bot pergunta como foi o dia (2 ou 3 perguntas). Responda uma por mensagem, escrevendo ou <b>mandando áudio</b>. Tudo vira a nota “Diário DD/MM/AAAA”. Não quer hoje? <code>/diario pular</code>. Para desligar: <code>CRON_DIARY=off</code>.</li>
+        <li><b>Metas</b>: o relatório de domingo mostra o progresso das metas do <a href="#profile">Perfil</a> junto com as tarefas parecidas, e avisa se o prazo está perto e o ritmo baixo.</li>
+      </ul>
+      <p class="muted">Tudo isso chega pelo Telegram. Cada rotina tem seu horário em Configurações → Agendamentos (use <code>off</code> para desligar).</p>
+    </section>
+
+    <section class="card" id="pessoas">
+      <h2>👥 Pessoas e reuniões (CRM pessoal)</h2>
+      <ul>
+        <li>Toda segunda o bot lembra <b>quem você não fala há tempo</b> (por padrão, 90 dias): contatos com quem você tem várias notas, e-mails ou eventos e quem você marcar com a tag <code>crm</code>. Para silenciar uma pessoa, use a tag <code>sem-crm</code>. Ajuste em <code>CRM_STALE_DAYS</code>.</li>
+        <li><code>/pessoa Ana</code> mostra o resumo dela: última conversa, o que está pendente e os próximos compromissos. Ou pergunte no chat: “resuma o que tenho com a Ana”.</li>
+        <li><b>Antes de cada reunião</b> com convidados que estão no seu cérebro, chega um resumo de cada um. Precisa do <a href="#google">Google Agenda</a> conectado.</li>
+      </ul>
+    </section>
+
+    <section class="card" id="viagens">
+      <h2>✈️ Viagens, garantias e casa</h2>
+      <ul>
+        <li><b>Dossiê de viagem</b>: cadastre a viagem no <a href="#profile">Perfil → Datas</a>. Uma semana antes você recebe o dossiê: compromissos na agenda que atrapalham, reservas achadas no Gmail, arquivos e notas do destino, pendências, e do Perfil: <b>passaporte e documentos que vencem</b> (ou têm menos de 6 meses de validade após a volta), vacinas e se o estoque de remédios dá para a viagem. <code>/viagem Lisboa</code> gera na hora.</li>
+        <li><b>Nota fiscal vira garantia</b>: mande a foto da nota (ou o PDF) pelo Telegram com a legenda “garantia” ou “nota fiscal”. O bot lê, acha o produto e cadastra em Perfil → Casa e bens → Garantia, com aviso antes de vencer. Para cadastrar sozinho, ligue <b>IA pode gravar no Perfil</b> (Configurações → Perfil); se a nota não diz o prazo, ele usa 12 meses e avisa.</li>
+        <li><b>Saúde × rotina</b>: se você usa o relógio (Zepp), o relatório de domingo compara dias cheios de reuniões com dias leves e mostra o efeito no sono e na recuperação.</li>
+        <li><b>Compras e casa</b>: <code>/compras leite, pão</code> adiciona na lista; <code>/compras ok leite</code> marca como comprado; ou peça no chat (“coloque ovos na lista de compras”, “apague a luz da sala”). Comandos da casa usam as <a href="#actions">automações</a>.</li>
+      </ul>
+    </section>
+
+    <section class="card" id="financas">
+      <h2>💰 Finanças</h2>
+      <p>Traga o extrato do banco e a fatura do cartão para ver para onde vai o dinheiro. <b>Nada disso vira nota nem vai para a inteligência artificial</b>: fica só na página <b>Finanças</b>.</p>
+      <ol class="steps">
+        <li>No internet banking, baixe o <b>extrato em OFX</b> (ou CSV). No cartão (Nubank, Inter, C6, Itaú…), baixe a fatura em OFX/CSV.</li>
+        <li>Abra <a href="/import">Importar</a> e envie os arquivos (dá para enviar vários meses de uma vez; repetir um arquivo não duplica).</li>
+        <li>Abra <a href="/financas">Finanças</a>: gastos por categoria, comparação com o mês anterior e as <b>cobranças que se repetem</b>. As que não estão em Perfil → Rotina → Assinaturas aparecem como “fora do Perfil”: vale conferir se você ainda usa.</li>
+      </ol>
+      <p>Uma categoria errada? Escreva regras no fim da página, uma por linha, como <code>cafe do ze=Alimentação fora</code>. No dia 5 de cada mês o bot manda o resumo do mês anterior (<code>/financas</code> mostra na hora). Quer que o assistente comente seus gastos? Só com modelo local ou com <code>PROFILE_AI_ACCESS=full</code>: ele recebe apenas os totais, nunca as linhas do extrato.</p>
+    </section>
+
+    <section class="card" id="jardim">
+      <h2>🌱 Jardim digital (publicar notas)</h2>
+      <p>Quer publicar algumas notas na internet? Adicione a tag <code>#publico</code> nas notas que você quer mostrar. Em <b>Conteúdo → Jardim</b> você vê a lista do que será publicado e baixa o site pronto (um arquivo <code>.zip</code>) para colocar em qualquer hospedagem (GitHub Pages, Netlify, servidor próprio).</p>
+      <ul>
+        <li>Só as notas com a tag entram. Links para notas que não são públicas aparecem como texto comum.</li>
+        <li>Pessoas, tarefas, eventos e dados de saúde nunca são publicados, e a IA nunca coloca a tag sozinha.</li>
+        <li>Para atualizar sozinho todo dia, defina <code>GARDEN_DIR</code> (a pasta do site) em Configurações → Automação.</li>
+      </ul>
     </section>
 
     <section class="card" id="backup">
@@ -341,7 +412,7 @@ docker compose up -d</pre></li>
     <section class="card" id="schedules">
       <h2>⏰ Agendamentos</h2>
       <p>Formato cron com 5 campos: <code>minuto hora dia mês dia-da-semana</code>. Exemplos: <code>0 7 * * *</code> = todo dia às 7h; <code>30 21 * * 1-5</code> = dias úteis às 21h30; <code>*/15 * * * *</code> = a cada 15 min; <code>off</code> desativa.</p>
-      <p>Rotinas: briefing (7h), tarefas de reuniões (12h e 18h), balanço da noite (21h), memória (22h30), faxina (domingo 17h30) e revisão semanal (domingo 18h), além dos lembretes do <a href="#profile">Perfil</a> (checados a cada 5 minutos), backup, manutenção e sincronizações.</p>
+      <p>Rotinas: briefing (7h), revisão espaçada (8h30), tarefas de reuniões (12h e 18h), balanço da noite (21h), diário guiado (21h30), memória (22h30), faxina (domingo 17h30), revisão semanal (domingo 18h), CRM (segunda 9h), dossiê de viagem (8h), resumo financeiro (dia 5) e retrospectiva do ano (2 de janeiro), além dos lembretes do <a href="#profile">Perfil</a> (checados a cada 5 minutos), backup, manutenção e sincronizações.</p>
       <p><b>E se o computador estiver desligado no horário?</b> A rotina roda uma vez quando o Second Brain voltar a abrir (cerca de 2 minutos depois), inclusive a verificação de atualizações e o backup. O briefing da manhã só é enviado até 5 horas depois do horário marcado, o balanço da noite até 3 horas e a revisão semanal até 3 dias; depois disso ficam para o próximo ciclo.</p>
     </section>
 

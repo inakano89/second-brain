@@ -201,4 +201,42 @@ CREATE INDEX idx_profile_log_day ON profile_log(day);
 `,
 	// 5 — chat turns that used the personal profile: encrypted and kept out of the memory routine
 	`ALTER TABLE chat_messages ADD COLUMN private INTEGER NOT NULL DEFAULT 0;`,
+	// 6 — imported items that came without a date got the import moment as created_at: flag them so
+	// searches, reports and listings do not mistake them for new content
+	`
+UPDATE nodes SET meta = json_set(meta, '$.date_unknown', json('true'))
+WHERE source LIKE 'import:%' AND json_valid(meta)
+	AND json_extract(meta, '$.import_at') IS NOT NULL
+	AND julianday(created_at) >= julianday(json_extract(meta, '$.import_at')) - 0.0001
+	AND julianday(created_at) <= julianday(json_extract(meta, '$.import_at')) + 0.25;
+`,
+	// 7 — spaced repetition: highlights and insights that come back at growing intervals
+	`
+CREATE TABLE reviews (
+	node_id INTEGER PRIMARY KEY REFERENCES nodes(id) ON DELETE CASCADE,
+	step    INTEGER NOT NULL DEFAULT 0,
+	cursor  INTEGER NOT NULL DEFAULT 0,
+	next_at TEXT NOT NULL,
+	last_at TEXT
+);
+CREATE INDEX idx_reviews_next ON reviews(next_at);
+`,
+	// 8 — bank statement lines (OFX / CSV): amounts in reais, negative = money out
+	`
+CREATE TABLE transactions (
+	id          INTEGER PRIMARY KEY AUTOINCREMENT,
+	date        TEXT NOT NULL,
+	amount      REAL NOT NULL,
+	description TEXT NOT NULL DEFAULT '',
+	merchant    TEXT NOT NULL DEFAULT '',
+	category    TEXT NOT NULL DEFAULT '',
+	account     TEXT NOT NULL DEFAULT '',
+	ref         TEXT NOT NULL,
+	batch       TEXT NOT NULL DEFAULT '',
+	created_at  TEXT NOT NULL,
+	UNIQUE(account, ref)
+);
+CREATE INDEX idx_tx_date ON transactions(date);
+CREATE INDEX idx_tx_merchant ON transactions(merchant, date);
+`,
 }

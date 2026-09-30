@@ -82,6 +82,14 @@ func (a *Agent) keepFile(data []byte, name string) string {
 
 // IngestMedia converts a file (image, PDF, audio, text, HTML) into an enriched node.
 func (a *Agent) IngestMedia(ctx context.Context, in MediaInput) (*database.Node, error) {
+	n, err := a.ingestMedia(ctx, in)
+	if err == nil && (strings.HasPrefix(in.MIME, "image/") || in.MIME == "application/pdf") {
+		a.afterReceipt(ctx, in, n) // purchase documents become warranties in the profile
+	}
+	return n, err
+}
+
+func (a *Agent) ingestMedia(ctx context.Context, in MediaInput) (*database.Node, error) {
 	if in.MIME == "" {
 		in.MIME = DetectMIME(in.Filename, in.Data)
 	}

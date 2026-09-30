@@ -156,7 +156,7 @@ func (db *DB) Subgraph(ctx context.Context, f GraphFilter) (*Graph, error) {
 	} else {
 		nf := f.NodeFilter
 		nf.Limit = limit
-		nf.Order = "updated"
+		nf.Order = "" // by the date of the content, not by the last edit: an import's enrichment touches everything
 		nodes, err = db.ListNodes(ctx, nf)
 	}
 	if err != nil {
@@ -257,7 +257,7 @@ func (db *DB) RelatedByTags(ctx context.Context, exclude int64, tags []string, m
 		parts = append(parts, `(CASE WHEN (','||tags||',') LIKE ? THEN 1 ELSE 0 END)`)
 		args = append(args, "%,"+t+",%")
 	}
-	q := `SELECT ` + nodeCols + ` FROM (SELECT *, (` + strings.Join(parts, "+") + `) AS shared FROM nodes WHERE id <> ?) WHERE shared >= ? ORDER BY shared DESC, updated_at DESC LIMIT ?`
+	q := `SELECT ` + nodeCols + ` FROM (SELECT *, (` + strings.Join(parts, "+") + `) AS shared FROM nodes WHERE id <> ?) WHERE shared >= ? ORDER BY shared DESC, created_at DESC LIMIT ?`
 	args = append(args, exclude, minShared, limit)
 	return db.queryNodes(ctx, q, args...)
 }

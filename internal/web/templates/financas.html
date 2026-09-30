@@ -1,0 +1,99 @@
+{{define "content"}}
+{{with .Data}}
+<div class="finance">
+  {{if not .Total}}
+  <section class="card">
+    <h2>💰 Finanças</h2>
+    <p class="muted">Importe o extrato do banco ou a fatura do cartão (OFX ou CSV) em <a href="/import">Importar</a>. Os lançamentos ficam só aqui: não viram notas e não são enviados à IA. Você verá gastos por categoria, comparação com o mês anterior e as cobranças que se repetem (assinaturas esquecidas).</p>
+    <p><a class="btn primary" href="/import">Importar extrato</a> <a class="small" href="/help#financas">❓ Como exportar do seu banco</a></p>
+  </section>
+  {{else}}
+  <section class="card">
+    <div class="fin-head">
+      <h2>💰 {{.MonthLabel}}</h2>
+      <span class="fin-nav">
+        {{if .Older}}<a class="btn small" href="/financas?month={{.Older}}">← {{.Older}}</a>{{end}}
+        {{if .Newer}}<a class="btn small" href="/financas?month={{.Newer}}">{{.Newer}} →</a>{{end}}
+        <a class="btn small" href="/import">Importar</a>
+      </span>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><small>Entradas</small><b class="pos">{{brl .Cur.Income}}</b></div>
+      <div class="kpi"><small>Gastos</small><b class="neg">{{brl .Cur.Spend}}</b>{{if .Prev.Spend}}<span class="muted small">mês anterior: {{brl .Prev.Spend}}</span>{{end}}</div>
+      <div class="kpi"><small>Saldo do mês</small><b class="{{if ge .Cur.Net 0.0}}pos{{else}}neg{{end}}">{{brl .Cur.Net}}</b></div>
+      <div class="kpi"><small>Cobranças recorrentes</small><b>{{brl .RecurTotal}}<small>/mês</small></b>{{if .Untracked}}<span class="pill warn">{{.Untracked}} fora do Perfil</span>{{end}}</div>
+    </div>
+    {{if .Cur.Neutral}}<p class="muted small">{{brl .Cur.Neutral}} em transferências, pagamentos de fatura e investimentos ficaram fora dos totais.</p>{{end}}
+  </section>
+
+  <section class="card">
+    <h3>Gastos por categoria</h3>
+    <div class="tbl-wrap"><table class="tbl fin-cats">
+      <thead><tr><th>Categoria</th><th class="r">Total</th><th class="r">vs. mês anterior</th><th>Parte</th></tr></thead>
+      <tbody>
+      {{range .Categories}}
+      <tr>
+        <td>{{.Category}} <small class="muted">{{.Count}} lanç.</small></td>
+        <td class="r">{{brl .Total}}</td>
+        <td class="r small">{{if .HasPrev}}<span class="{{if gt .Delta 0.0}}neg{{else}}pos{{end}}">{{if gt .Delta 0.0}}+{{end}}{{brl .Delta}}</span>{{else}}<span class="muted">novo</span>{{end}}</td>
+        <td class="bar-cell"><span class="bar" style="width: {{pct .Share}}"></span><small>{{pct .Share}}</small></td>
+      </tr>
+      {{else}}<tr><td colspan="4" class="empty">Sem gastos neste mês.</td></tr>{{end}}
+      </tbody>
+    </table></div>
+  </section>
+
+  <section class="card">
+    <h3>🔁 Cobranças que se repetem</h3>
+    <p class="muted small">Mesmo valor (±15%) em 3 ou mais meses. “Fora do Perfil” = ainda não está em Perfil → Rotina → Assinaturas nem em Contas fixas: vale conferir se você ainda usa.</p>
+    {{if .Recurring}}
+    <div class="tbl-wrap"><table class="tbl">
+      <thead><tr><th>Cobrança</th><th>Categoria</th><th class="r">Valor</th><th class="r">Por ano</th><th>Desde</th><th></th></tr></thead>
+      <tbody>
+      {{range .Recurring}}
+      <tr class="{{if not .Active}}muted{{end}}">
+        <td><b>{{.Sample}}</b><br><small class="muted">{{.Months}} meses · última em {{.Last}}</small></td>
+        <td>{{.Category}}</td>
+        <td class="r">{{brl .Latest}}{{if .Increased}}<br><small class="neg">subiu (era {{brl .Amount}})</small>{{end}}</td>
+        <td class="r">{{brl .Yearly}}</td>
+        <td class="small">{{.First}}</td>
+        <td>{{if not .Active}}<span class="pill">parou</span>{{else if .Untracked}}<span class="pill warn" title="Não está cadastrada no Perfil">fora do Perfil</span>{{else}}<span class="pill ok">no Perfil</span>{{end}}</td>
+      </tr>
+      {{end}}
+      </tbody>
+    </table></div>
+    {{else}}<p class="empty">Nada se repete em 3 meses ainda: importe mais meses de extrato para detectar assinaturas.</p>{{end}}
+  </section>
+
+  <section class="card">
+    <h3>Lançamentos de {{.MonthLabel}} <small class="muted">({{.LinesTotal}}{{if gt .LinesTotal 150}}, os 150 mais recentes{{end}})</small></h3>
+    <div class="tbl-wrap"><table class="tbl compact">
+      <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="r">Valor</th></tr></thead>
+      <tbody>
+      {{range .Lines}}
+      <tr><td class="nowrap small">{{.Date}}</td><td>{{.Description}}</td><td class="small">{{.Category}}</td><td class="r {{if lt .Amount 0.0}}neg{{else}}pos{{end}}">{{brl .Amount}}</td></tr>
+      {{end}}
+      </tbody>
+    </table></div>
+  </section>
+  {{end}}
+
+  <section class="card">
+    <details {{if .Rules}}open{{end}}>
+      <summary><b>Minhas regras de categoria</b> <small class="muted">(uma por linha: palavra=Categoria)</small></summary>
+      <form method="post" action="/financas/rules" class="stack">
+        <textarea name="rules" rows="5" placeholder="cafe do ze=Alimentação fora&#10;joao da silva=Renda">{{.Rules}}</textarea>
+        <div><button class="btn small primary">Salvar e recategorizar</button></div>
+      </form>
+    </details>
+    {{if .Total}}
+    <div class="row-actions">
+      <form method="post" action="/financas/recategorize" class="inline"><button class="btn small">↻ Recategorizar tudo</button></form>
+      <form method="post" action="/financas/clear" class="inline"><button class="btn small danger" data-confirm="Apagar todos os {{.Total}} lançamentos? Você pode importar os extratos de novo.">🗑 Apagar lançamentos</button></form>
+      <span class="muted small">{{.Total}} lançamentos guardados.</span>
+    </div>
+    {{end}}
+  </section>
+</div>
+{{end}}
+{{end}}

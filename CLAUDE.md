@@ -28,7 +28,10 @@ Identificadores e comentários de código ficam em inglês.
 | `internal/telegram`, `internal/integrations/*`, `internal/watcher` | canais de captura |
 | `internal/importer` | importação de arquivos (Obsidian, Notion, Evernote, Keep, CSV, vCard, iCal, Google Takeout via `integrations/takeout`) e fila `import.file` (inbox `.zip`, Takeout do Drive) |
 | `internal/profile` | Perfil pessoal: tipos e campos (`kinds.go`), cofre AES-GCM dos itens sensíveis (`vault.go`), agenda do dia, alertas e classificação de eventos (`agenda.go`), política de acesso da IA (`PROFILE_AI_ACCESS` leitura, `PROFILE_AI_WRITE` gravação via `Store.UpsertFromAI`, em `write.go`) |
-| `internal/scheduler` | cron, rotinas (inclui lembretes do Perfil), backup |
+| `internal/finance` | extratos OFX/CSV, categorias (regras em pt-BR + `FINANCE_RULES`), resumo mensal e cobranças recorrentes. Linhas ficam em `transactions`, nunca em `nodes` |
+| `internal/mdhtml` | Markdown → HTML seguro (usado pela web e pelo jardim digital) |
+| `internal/export` | vault Obsidian e **jardim digital** (`garden.go`: site estático das notas `#publico`) |
+| `internal/scheduler` | cron, rotinas (inclui lembretes do Perfil, revisão espaçada, diário, CRM, dossiê, finanças, jardim), backup |
 | `internal/updater` | auto-update via GitHub Releases (+ modo overlay em container, rollback) |
 | `internal/web` | handlers, templates HTMX (`templates/`), assets (`static/`) |
 
@@ -36,6 +39,9 @@ Identificadores e comentários de código ficam em inglês.
 
 - **Nova variável de config** → `internal/config/schema.go` (aparece no editor web; use `Hidden: true` se for gerida por outra página, como `/models`). Depois regenere o `.env.example` com `go test ./internal/config -run EnvExample -update-env-example` (o teste falha se ele ficar desatualizado).
 - **Migrações SQLite**: só acrescentar no fim de `internal/database/migrations.go`. Nunca editar uma migração já publicada.
+- **Datas**: `created_at` é a data original do conteúdo; `meta.import_at` é a da importação; item sem data leva `meta.date_unknown` (`IngestInput.DateUnknown`). Relatórios de "novos" usam `NodeFilter.KnownDate`; ordenação por conteúdo, nunca por `updated_at` (o enriquecimento mexe nele). Peso por idade só em `agent/recency.go`. Faxina/importação mantêm o item **mais novo** (`database.NewestFirst`).
+- **Tag de publicação** (`GARDEN_TAG`): só o usuário coloca; o enriquecimento por LLM a descarta (`allowedModelTags`).
+- **Dados financeiros**: só em `transactions`; para o LLM apenas agregados via `finance_summary`, sob a mesma política de `PROFILE_AI_ACCESS` (turnos com essa ferramenta são privados, ver `isProfileTool`).
 - **Novo serviço Google** → entrada em `google.Services` (escopos obrigatórios/opcionais) e chave em `GOOGLE_SERVICES`; cada sync verifica `Client.Can(serviço)` antes de chamar a API.
 - **Chamadas externas lentas ou falíveis** → fila offline (`internal/queue`). Marque erros definitivos com `queue.Permanent`.
 - **Ferramentas do chat que alteram dados** entram em `mutatingTools` (`internal/agent/tools.go`): ganham o argumento obrigatório `user_requested` e, sem ele `true`, não executam (a IA pergunta antes). Leitura não entra.

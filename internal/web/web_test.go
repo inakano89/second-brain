@@ -594,7 +594,7 @@ func TestCleanupTabAndDashboard(t *testing.T) {
 	rec = e.do("POST", fmt.Sprintf("/content/cleanup/%d", dup.ID), strings.NewReader("action=merge"),
 		map[string]string{"Content-Type": "application/x-www-form-urlencoded", "HX-Request": "true"})
 	e.expect(rec, 200, "juntados", fmt.Sprintf(`id="cl-%d"`, dup.ID))
-	if _, err := e.db.GetNode(ctx, b.ID); err != database.ErrNotFound {
+	if _, err := e.db.GetNode(ctx, a.ID); err != database.ErrNotFound { // the newest copy (b) is the one kept
 		t.Fatal("copy still there")
 	}
 	rec = e.form("/content/cleanup/apply-all", url.Values{"kind": {database.CleanupStaleTask}})
@@ -605,7 +605,7 @@ func TestCleanupTabAndDashboard(t *testing.T) {
 		t.Fatalf("task = %+v", n)
 	}
 	_ = task
-	_ = a
+	_ = b
 
 	// Dashboard: KPIs, to-do with AI tasks, memory, charts with a table view.
 	due := time.Now().AddDate(0, 0, -2)
@@ -679,4 +679,138 @@ func TestProfilePages(t *testing.T) {
 	}
 	e.expect(e.form("/profile/items", url.Values{"kind": {"bill"}, "title": {"Luz"}, "due_day": {"45"}}), 303)
 	e.expect(e.do("GET", "/profile/suggestions", nil, nil), 200)
+}
+
+func TestContentDatesGroupsAndOrigin(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	mk := func(in agent.IngestInput) *database.Node {
+		t.Helper()
+		n, _, err := e.ag.Ingest(ctx, in)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return n
+	}
+	d := func(y int, m time.Month) time.Time { return time.Date(y, m, 10, 12, 0, 0, 0, time.UTC) }
+	stamp := map[string]any{database.MetaImportAt: "2026-09-01T10:00:00.000000Z"}
+	mk(agent.IngestInput{Title: "Nota antiga importada", Content: "a", Source: "import:markdown", SourceRef: "a", CreatedAt: d(2015, time.March), Meta: stamp})
+	mk(agent.IngestInput{Title: "Item sem data", Content: "b", Source: "import:opml", SourceRef: "b", DateUnknown: true, Meta: map[string]any{database.MetaImportAt: "2026-09-01T10:00:00.000000Z"}})
+	mk(agent.IngestInput{Title: "Nota minha", Content: "c", Source: "web", CreatedAt: d(2026, time.September)})
+	ev := d(2031, time.January)
+	mk(agent.IngestInput{Type: database.TypeEvent, Title: "Viagem futura", Content: "d", Source: "calendar", SourceRef: "e", CreatedAt: d(2026, time.August), DueAt: &ev})
+
+	page := e.do("GET", "/content", nil, nil)
+	e.expect(page, 200, `name="origin"`, "Por data (eventos: quando acontecem)", `class="month-row"`, "2031 · janeiro", "2026 · setembro", "2015 · março", "Sem data",
+		"sem data", "importado em 01/09/2026")
+	body := page.Body.String()
+	pos := func(s string) int { return strings.Index(body, s) }
+	if !(pos("Viagem futura") < pos("Nota minha") && pos("Nota minha") < pos("Nota antiga importada") && pos("Nota antiga importada") < pos("Item sem data")) {
+		t.Fatalf("order wrong: event by its date first, undated last: %s", truncate(body))
+	}
+	created := e.do("GET", "/content/rows?order=created", nil, map[string]string{"HX-Request": "true"}).Body.String()
+	if strings.Contains(created, "2031 · janeiro") || !strings.Contains(created, "2026 · agosto") {
+		t.Fatalf("order=created must group by creation date: %s", truncate(created))
+	}
+	imp := e.do("GET", "/content/rows?origin=imported", nil, map[string]string{"HX-Request": "true"})
+	e.expect(imp, 200, "Nota antiga importada", "Item sem data", "1–2 de 2")
+	mine := e.do("GET", "/content/rows?origin=mine", nil, map[string]string{"HX-Request": "true"})
+	e.expect(mine, 200, "Nota minha", "1–1 de 1")
+	if u := mine.Header().Get("HX-Push-Url"); u != "/content?origin=mine" {
+		t.Errorf("push url = %q", u)
+	}
+	e.expect(e.do("GET", "/content/rows?origin=auto", nil, map[string]string{"HX-Request": "true"}), 200, "Viagem futura", "1–1 de 1")
+}
+
+func TestFinancePage(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	e.expect(e.do("GET", "/financas", nil, nil), 200, "Importe o extrato do banco", `href="/financas"`)
+
+	var txs []database.Transaction
+	for _, m := range []string{"2026-07", "2026-08", "2026-09"} {
+		txs = append(txs,
+			database.Transaction{Date: m + "-05", Amount: 8000, Description: "SALARIO", Merchant: "salario", Category: "Renda", Ref: m + "s"},
+			database.Transaction{Date: m + "-06", Amount: -39.90, Description: "NETFLIX.COM", Merchant: "netflix", Category: "Assinaturas", Ref: m + "n"},
+			database.Transaction{Date: m + "-08", Amount: -1234.5, Description: "ALUGUEL <b>", Merchant: "aluguel", Category: "Moradia", Ref: m + "a"})
+	}
+	if _, err := e.db.InsertTransactions(ctx, txs); err != nil {
+		t.Fatal(err)
+	}
+	page := e.do("GET", "/financas", nil, nil)
+	e.expect(page, 200, "setembro de 2026", "R$ 8.000,00", "R$ 1.274,40", "Moradia", "Assinaturas", "NETFLIX.COM", "fora do Perfil", "Cobranças que se repetem",
+		"← 2026-08", "ALUGUEL &lt;b&gt;")
+	if strings.Contains(page.Body.String(), "ALUGUEL <b>") {
+		t.Fatal("statement description not escaped")
+	}
+	e.expect(e.do("GET", "/financas?month=2026-07", nil, nil), 200, "julho de 2026", "2026-08 →")
+	e.expect(e.do("GET", "/financas?month=1999-01", nil, nil), 200, "setembro de 2026") // unknown month falls back to the latest
+
+	rec := e.form("/financas/rules", url.Values{"rules": {"netflix=Streaming"}})
+	if rec.Code != http.StatusSeeOther && rec.Code != http.StatusFound {
+		t.Fatalf("rules: %d", rec.Code)
+	}
+	if e.cfg.Get("FINANCE_RULES") != "netflix=Streaming" {
+		t.Fatalf("rules not saved: %q", e.cfg.Get("FINANCE_RULES"))
+	}
+	e.expect(e.do("GET", "/financas", nil, nil), 200, "Streaming", "netflix=Streaming")
+	rec = e.form("/financas/clear", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "9+lan") {
+		t.Fatalf("clear: %s", rec.Header().Get("Location"))
+	}
+	e.expect(e.do("GET", "/financas", nil, nil), 200, "Importe o extrato do banco")
+}
+
+func TestGardenTabAndDownload(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	e.expect(e.do("GET", "/content/garden", nil, nil), 200, "Jardim digital", "#publico", "Nenhuma nota com #publico ainda", `href="/content/garden"`)
+	if _, _, err := e.ag.Ingest(ctx, agent.IngestInput{Title: "Minha ideia", Content: "texto público", Tags: []string{"publico"}, Source: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	e.ag.Ingest(ctx, agent.IngestInput{Title: "Diário íntimo", Content: "segredo", Source: "web"})
+	page := e.do("GET", "/content/garden", nil, nil)
+	e.expect(page, 200, "Serão publicadas (1)", "Minha ideia", "Baixar o site")
+	if strings.Contains(page.Body.String(), "Diário íntimo") {
+		t.Fatal("untagged note listed")
+	}
+	zipRes := e.do("GET", "/export/garden", nil, nil)
+	if zipRes.Code != 200 || zipRes.Header().Get("Content-Type") != "application/zip" || !strings.Contains(zipRes.Header().Get("Content-Disposition"), "jardim-digital-") {
+		t.Fatalf("download: %d %v", zipRes.Code, zipRes.Header())
+	}
+	zr, err := zip.NewReader(bytes.NewReader(zipRes.Body.Bytes()), int64(zipRes.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	if !names["index.html"] || !names["notas/minha-ideia.html"] {
+		t.Fatalf("zip = %v", names)
+	}
+	// Publishing to a folder needs GARDEN_DIR.
+	rec := e.form("/content/garden/publish", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "GARDEN_DIR") {
+		t.Fatalf("publish without dir: %s", rec.Header().Get("Location"))
+	}
+	dir := filepath.Join(t.TempDir(), "site")
+	e.cfg.Update(map[string]string{"GARDEN_DIR": dir})
+	rec = e.form("/content/garden/publish", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "1+nota") {
+		t.Fatalf("publish: %s", rec.Header().Get("Location"))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notas", "minha-ideia.html")); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.do("GET", "/content/garden", nil, nil), 200, "Gerar agora em")
+	// Unauthenticated users get nothing.
+	anon := *e
+	anon.cookie = nil
+	if rec := anon.do("GET", "/export/garden", nil, nil); rec.Code == 200 {
+		t.Fatal("garden export must require login")
+	}
 }
