@@ -14,7 +14,8 @@ import (
 
 func TestReceiptToWarranty(t *testing.T) {
 	ctx := context.Background()
-	today := time.Now().Format("2006-01-02")
+	sp, _ := time.LoadLocation("America/Sao_Paulo") // the default TIMEZONE of the tests' config
+	today := time.Now().In(sp).Format("2006-01-02")
 	f := &fakeLLM{answer: func(system, user string) string {
 		if !strings.Contains(system, "nota fiscal, recibo ou cupom") {
 			return "{}"
@@ -52,7 +53,7 @@ func TestReceiptToWarranty(t *testing.T) {
 		byTitle[it.Title] = it
 	}
 	fr := byTitle["Brastemp Geladeira Frost Free 400L"]
-	wantUntil := time.Now().In(a.cfg.Location()).AddDate(2, 0, 0).Format("2006-01-02")
+	wantUntil := time.Now().In(sp).AddDate(2, 0, 0).Format("2006-01-02")
 	if fr.Kind != "warranty" || fr.Get("until") != wantUntil || fr.Get("store") != "Casas Bahia" ||
 		!strings.Contains(fr.Get("notes"), "Nota fiscal 12345") || !strings.Contains(fr.Get("notes"), "R$ 3299.90") {
 		t.Fatalf("item = %+v", fr)

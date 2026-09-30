@@ -668,6 +668,10 @@ func (s *Service) command(ctx context.Context, c *Client, m *Message) {
 			reply("Erro: " + err.Error())
 			return
 		}
+		if n == nil {
+			reply(fmt.Sprintf("🎆 *Retrospectiva %d* (não foi salva: você a apagou antes)\n\n%s", year, extract.Truncate(text, 3500)))
+			return
+		}
 		reply(fmt.Sprintf("🎆 *Retrospectiva %d* (nota #%d)\n\n%s", year, n.ID, extract.Truncate(text, 3500)))
 	case "/pessoa", "/person":
 		p, err := s.agent.FindPerson(ctx, arg)

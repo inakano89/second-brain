@@ -762,3 +762,55 @@ func TestFinancePage(t *testing.T) {
 	}
 	e.expect(e.do("GET", "/financas", nil, nil), 200, "Importe o extrato do banco")
 }
+
+func TestGardenTabAndDownload(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+	e.expect(e.do("GET", "/content/garden", nil, nil), 200, "Jardim digital", "#publico", "Nenhuma nota com #publico ainda", `href="/content/garden"`)
+	if _, _, err := e.ag.Ingest(ctx, agent.IngestInput{Title: "Minha ideia", Content: "texto público", Tags: []string{"publico"}, Source: "web"}); err != nil {
+		t.Fatal(err)
+	}
+	e.ag.Ingest(ctx, agent.IngestInput{Title: "Diário íntimo", Content: "segredo", Source: "web"})
+	page := e.do("GET", "/content/garden", nil, nil)
+	e.expect(page, 200, "Serão publicadas (1)", "Minha ideia", "Baixar o site")
+	if strings.Contains(page.Body.String(), "Diário íntimo") {
+		t.Fatal("untagged note listed")
+	}
+	zipRes := e.do("GET", "/export/garden", nil, nil)
+	if zipRes.Code != 200 || zipRes.Header().Get("Content-Type") != "application/zip" || !strings.Contains(zipRes.Header().Get("Content-Disposition"), "jardim-digital-") {
+		t.Fatalf("download: %d %v", zipRes.Code, zipRes.Header())
+	}
+	zr, err := zip.NewReader(bytes.NewReader(zipRes.Body.Bytes()), int64(zipRes.Body.Len()))
+	if err != nil {
+		t.Fatal(err)
+	}
+	names := map[string]bool{}
+	for _, f := range zr.File {
+		names[f.Name] = true
+	}
+	if !names["index.html"] || !names["notas/minha-ideia.html"] {
+		t.Fatalf("zip = %v", names)
+	}
+	// Publishing to a folder needs GARDEN_DIR.
+	rec := e.form("/content/garden/publish", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "GARDEN_DIR") {
+		t.Fatalf("publish without dir: %s", rec.Header().Get("Location"))
+	}
+	dir := filepath.Join(t.TempDir(), "site")
+	e.cfg.Update(map[string]string{"GARDEN_DIR": dir})
+	rec = e.form("/content/garden/publish", url.Values{})
+	if !strings.Contains(rec.Header().Get("Location"), "1+nota") {
+		t.Fatalf("publish: %s", rec.Header().Get("Location"))
+	}
+	if _, err := os.Stat(filepath.Join(dir, "notas", "minha-ideia.html")); err != nil {
+		t.Fatal(err)
+	}
+	e.expect(e.do("GET", "/content/garden", nil, nil), 200, "Gerar agora em")
+	// Unauthenticated users get nothing.
+	anon := *e
+	anon.cookie = nil
+	if rec := anon.do("GET", "/export/garden", nil, nil); rec.Code == 200 {
+		t.Fatal("garden export must require login")
+	}
+}

@@ -157,3 +157,38 @@ func TestCleanupKeepsNewestCopy(t *testing.T) {
 		t.Fatal("old copy should be in the trash")
 	}
 }
+
+func TestModelCannotPublishANote(t *testing.T) {
+	ctx := context.Background()
+	f := &fakeLLM{answer: func(system, user string) string {
+		if strings.Contains(system, "motor de indexação") {
+			return `{"title":"t","summary":"resumo","tags":["ia","publico","público","Compartilhar"],"entities":[],"tasks":[],"type_hint":"note"}`
+		}
+		return "{}"
+	}}
+	a, db := setupAgent(t, f)
+	a.cfg.Update(map[string]string{"GARDEN_TAG": "compartilhar"})
+	n, _, err := a.Ingest(ctx, IngestInput{Title: "Política pública", Content: "texto sobre políticas públicas", Source: "web", Tags: []string{"minha"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := a.Enrich(ctx, n.ID); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := db.GetNode(ctx, n.ID)
+	for _, tag := range got.Tags {
+		if tag == "publico" || tag == "público" || tag == "compartilhar" {
+			t.Fatalf("the model published the note: %v", got.Tags)
+		}
+	}
+	if !contains(got.Tags, "ia") || !contains(got.Tags, "minha") {
+		t.Fatalf("other tags lost: %v", got.Tags)
+	}
+	// A hashtag typed by the user in the text is a decision of the user.
+	m, _, _ := a.Ingest(ctx, IngestInput{Title: "Aberta", Content: "vou compartilhar isso #compartilhar", Source: "web", Meta: map[string]any{MetaNoLLM: true}})
+	a.Enrich(ctx, m.ID)
+	got, _ = db.GetNode(ctx, m.ID)
+	if !contains(got.Tags, "compartilhar") {
+		t.Fatalf("user hashtag dropped: %v", got.Tags)
+	}
+}

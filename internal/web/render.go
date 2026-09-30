@@ -3,16 +3,15 @@ package web
 import (
 	"encoding/json"
 	"fmt"
-	"html"
 	"html/template"
 	"net/url"
-	"regexp"
 	"strings"
 	"time"
 
 	"github.com/inakano89/second-brain/internal/database"
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/llm"
+	"github.com/inakano89/second-brain/internal/mdhtml"
 	"github.com/inakano89/second-brain/internal/profile"
 )
 
@@ -149,162 +148,10 @@ func humanInt(v int64) string {
 	return fmt.Sprint(v)
 }
 
-var (
-	mdBold   = regexp.MustCompile(`\*\*([^*\n]+)\*\*`)
-	mdItal   = regexp.MustCompile(`(^|[\s(])[*_]([^*_\n]+)[*_]`)
-	mdCode   = regexp.MustCompile("`([^`\n]+)`")
-	mdLink   = regexp.MustCompile(`\[([^\]\n]+)\]\((https?://[^\s)]+)\)`)
-	mdWiki   = regexp.MustCompile(`\[\[([^\]|\n]+)(?:\|([^\]\n]+))?\]\]`)
-	mdURL    = regexp.MustCompile(`(^|\s)(https?://[^\s<]+)`)
-	mdOrder  = regexp.MustCompile(`^\d+[.)]\s+`)
-	mdHeader = regexp.MustCompile(`^(#{1,6})\s+(.*)$`)
-)
-
-func inline(s string) string {
-	s = html.EscapeString(s)
-	var codes []string
-	s = mdCode.ReplaceAllStringFunc(s, func(m string) string {
-		codes = append(codes, "<code>"+m[1:len(m)-1]+"</code>")
-		return fmt.Sprintf("\x00%d\x00", len(codes)-1)
-	})
-	s = mdWiki.ReplaceAllStringFunc(s, func(m string) string {
-		p := mdWiki.FindStringSubmatch(m)
-		label := p[1]
-		if p[2] != "" {
-			label = p[2]
-		}
-		return `<a class="wikilink" href="/?q=` + url.QueryEscape(html.UnescapeString(p[1])) + `">` + label + `</a>`
-	})
-	s = mdLink.ReplaceAllString(s, `<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>`)
-	s = mdURL.ReplaceAllString(s, `$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>`)
-	s = mdBold.ReplaceAllString(s, "<strong>$1</strong>")
-	s = mdItal.ReplaceAllString(s, "$1<em>$2</em>")
-	for i, c := range codes {
-		s = strings.Replace(s, fmt.Sprintf("\x00%d\x00", i), c, 1)
-	}
-	return s
-}
-
-// Markdown renders a safe subset of Markdown to HTML (all input is escaped first).
+// Markdown renders a safe subset of Markdown to HTML (all input is escaped first). [[Links]] search
+// the graph.
 func Markdown(src string) template.HTML {
-	var b strings.Builder
-	lines := strings.Split(strings.ReplaceAll(src, "\r\n", "\n"), "\n")
-	inCode, inList, inTable := false, "", false
-	var para []string
-	flushPara := func() {
-		if len(para) > 0 {
-			b.WriteString("<p>" + strings.Join(para, "<br>") + "</p>")
-			para = nil
-		}
-	}
-	closeList := func() {
-		if inList != "" {
-			b.WriteString("</" + inList + ">")
-			inList = ""
-		}
-	}
-	closeTable := func() {
-		if inTable {
-			b.WriteString("</table>")
-			inTable = false
-		}
-	}
-	for _, ln := range lines {
-		t := strings.TrimSpace(ln)
-		if strings.HasPrefix(t, "```") {
-			flushPara()
-			closeList()
-			closeTable()
-			if inCode {
-				b.WriteString("</code></pre>")
-			} else {
-				b.WriteString("<pre><code>")
-			}
-			inCode = !inCode
-			continue
-		}
-		if inCode {
-			b.WriteString(html.EscapeString(ln) + "\n")
-			continue
-		}
-		switch {
-		case t == "":
-			flushPara()
-			closeList()
-			closeTable()
-		case mdHeader.MatchString(t):
-			flushPara()
-			closeList()
-			closeTable()
-			m := mdHeader.FindStringSubmatch(t)
-			lvl := len(m[1]) + 2
-			if lvl > 6 {
-				lvl = 6
-			}
-			fmt.Fprintf(&b, "<h%d>%s</h%d>", lvl, inline(m[2]), lvl)
-		case strings.HasPrefix(t, "|") && strings.HasSuffix(t, "|"):
-			flushPara()
-			closeList()
-			if strings.Trim(t, "|-: ") == "" {
-				continue
-			}
-			if !inTable {
-				b.WriteString(`<table class="md">`)
-				inTable = true
-			}
-			b.WriteString("<tr>")
-			for _, c := range strings.Split(strings.Trim(t, "|"), "|") {
-				b.WriteString("<td>" + inline(strings.TrimSpace(c)) + "</td>")
-			}
-			b.WriteString("</tr>")
-		case strings.HasPrefix(t, "- [ ] ") || strings.HasPrefix(t, "- [x] "):
-			flushPara()
-			if inList != "ul" {
-				closeList()
-				b.WriteString(`<ul class="checklist">`)
-				inList = "ul"
-			}
-			mark := "☐"
-			if strings.HasPrefix(t, "- [x]") {
-				mark = "☑"
-			}
-			b.WriteString("<li>" + mark + " " + inline(t[6:]) + "</li>")
-		case strings.HasPrefix(t, "- ") || strings.HasPrefix(t, "* ") || strings.HasPrefix(t, "• "):
-			flushPara()
-			if inList != "ul" {
-				closeList()
-				b.WriteString("<ul>")
-				inList = "ul"
-			}
-			_, rest, _ := strings.Cut(t, " ")
-			b.WriteString("<li>" + inline(rest) + "</li>")
-		case mdOrder.MatchString(t):
-			flushPara()
-			if inList != "ol" {
-				closeList()
-				b.WriteString("<ol>")
-				inList = "ol"
-			}
-			b.WriteString("<li>" + inline(mdOrder.ReplaceAllString(t, "")) + "</li>")
-		case strings.HasPrefix(t, ">"):
-			flushPara()
-			closeList()
-			b.WriteString("<blockquote>" + inline(strings.TrimSpace(strings.TrimPrefix(t, ">"))) + "</blockquote>")
-		case t == "---" || t == "***":
-			flushPara()
-			closeList()
-			b.WriteString("<hr>")
-		default:
-			closeList()
-			closeTable()
-			para = append(para, inline(t))
-		}
-	}
-	if inCode {
-		b.WriteString("</code></pre>")
-	}
-	flushPara()
-	closeList()
-	closeTable()
-	return template.HTML(b.String())
+	return template.HTML(mdhtml.Render(src, func(target, label string) string {
+		return `<a class="wikilink" href="/?q=` + url.QueryEscape(target) + `">` + label + `</a>`
+	}))
 }

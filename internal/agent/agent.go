@@ -284,6 +284,7 @@ func (a *Agent) analyze(ctx context.Context, n *database.Node) (enrichResult, er
 		a.log.Warn("enriquecimento LLM falhou, usando heurística", "id", n.ID, "err", err)
 		return heuristicAnalysis(n), nil
 	}
+	res.Tags = a.allowedModelTags(res.Tags) // hashtags typed in the text (heuristic path) are the user's own
 	return res, nil
 }
 
@@ -310,6 +311,23 @@ func (a *Agent) applyAnalysis(n *database.Node, res enrichResult) {
 		}
 		n.Meta["entities"] = names
 	}
+}
+
+// allowedModelTags drops the tags a model may not choose: the one that publishes a note in the
+// digital garden (GARDEN_TAG) is the user's decision alone.
+func (a *Agent) allowedModelTags(tags []string) []string {
+	reserved := strings.ToLower(strings.TrimPrefix(strings.TrimSpace(a.cfg.Get("GARDEN_TAG")), "#"))
+	if reserved == "" {
+		reserved = "publico"
+	}
+	out := make([]string, 0, len(tags))
+	for _, t := range tags {
+		if nt := database.NormalizeTags([]string{t}); len(nt) == 1 && (nt[0] == reserved || nt[0] == "publico" || nt[0] == "público") {
+			continue
+		}
+		out = append(out, t)
+	}
+	return out
 }
 
 func (a *Agent) linkEntities(ctx context.Context, n *database.Node, ents []entity) error {

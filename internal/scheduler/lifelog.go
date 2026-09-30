@@ -10,6 +10,7 @@ import (
 
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/export"
 	"github.com/inakano89/second-brain/internal/extract"
 	"github.com/inakano89/second-brain/internal/finance"
 )
@@ -64,6 +65,9 @@ func (d *Deps) YearReview(ctx context.Context, notify bool) (string, error) {
 			return "", nil
 		}
 		return "", err
+	}
+	if n == nil { // deleted on purpose in a previous year: do not bring it back or nag
+		return "", nil
 	}
 	msg := fmt.Sprintf("🎆 *Retrospectiva %d*\n\n%s\n\nCompleta em: %s", year, extract.Truncate(text, 3200), d.link(fmt.Sprintf("/?focus=%d", n.ID)))
 	if notify {
@@ -238,4 +242,18 @@ func (d *Deps) Finance(ctx context.Context, notify bool) (string, error) {
 		d.notify(ctx, text)
 	}
 	return text, nil
+}
+
+// Garden regenerates the digital garden (the notes tagged #publico) in GARDEN_DIR.
+func (d *Deps) Garden(ctx context.Context) error {
+	dir := d.Cfg.GetPath("GARDEN_DIR")
+	if strings.TrimSpace(d.Cfg.Get("GARDEN_DIR")) == "" {
+		return nil
+	}
+	rep, err := export.WriteGarden(ctx, d.DB, dir, export.GardenOptionsFrom(d.Cfg.Get, d.Cfg.Location()))
+	if err != nil {
+		return err
+	}
+	d.Log.Info("jardim digital atualizado", "dir", dir, "notas", len(rep.Pages), "assuntos", rep.Tags)
+	return nil
 }

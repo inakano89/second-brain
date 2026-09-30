@@ -13,6 +13,7 @@ import (
 	"github.com/inakano89/second-brain/internal/agent"
 	"github.com/inakano89/second-brain/internal/config"
 	"github.com/inakano89/second-brain/internal/database"
+	"github.com/inakano89/second-brain/internal/finance"
 	"github.com/inakano89/second-brain/internal/llm"
 	"github.com/inakano89/second-brain/internal/profile"
 )
@@ -123,6 +124,9 @@ func TestReviewDiaryAndYearJobs(t *testing.T) {
 func TestMorningBriefingHasOnThisDay(t *testing.T) {
 	d, _ := newDeps(t)
 	ctx := context.Background()
+	if n := time.Now().In(d.Cfg.Location()); n.Month() == time.February && n.Day() == 29 {
+		t.Skip("29 de fevereiro não tem “um ano atrás”")
+	}
 	old := time.Now().In(d.Cfg.Location()).AddDate(-1, 0, 0)
 	d.DB.CreateNode(ctx, &database.Node{Type: database.TypeNote, Title: "Uma lembrança", Content: "x", CreatedAt: old})
 	text, err := d.MorningBriefing(ctx, false)
@@ -134,8 +138,7 @@ func TestMorningBriefingHasOnThisDay(t *testing.T) {
 func TestFinanceJob(t *testing.T) {
 	d, n := newDeps(t)
 	ctx := context.Background()
-	prev := time.Now().In(d.Cfg.Location()).AddDate(0, -1, 0)
-	month := prev.Format("2006-01")
+	month := finance.ShiftMonth(time.Now().In(d.Cfg.Location()).Format("2006-01"), -1) // AddDate would overflow on the 31st
 	if text, err := d.Finance(ctx, true); err != nil || text != "" {
 		t.Fatalf("no data = %q, %v", text, err)
 	}

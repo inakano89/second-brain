@@ -649,3 +649,45 @@ func (s *Server) contentTrashAction(w http.ResponseWriter, r *http.Request) {
 	s.log.Info("lixeira", "action", r.FormValue("action"), "count", n)
 	redirectFlash(w, r, "/content/trash", text, false)
 }
+
+type gardenView struct {
+	Tab        string
+	Cleanup    int
+	Trash      int
+	Tag        string
+	Nodes      []database.Node
+	Dir        string
+	URL        string
+	Published  int
+	PublishErr string
+}
+
+// contentGarden shows what the digital garden would publish and lets you download or regenerate it.
+func (s *Server) contentGarden(w http.ResponseWriter, r *http.Request) {
+	ctx := r.Context()
+	opts := export.GardenOptionsFrom(s.Cfg.Get, s.Cfg.Location())
+	v := gardenView{Tab: "garden", Tag: opts.Tag, Dir: strings.TrimSpace(s.Cfg.Get("GARDEN_DIR")), URL: opts.BaseURL}
+	g, gctx := errgroup.WithContext(ctx)
+	g.Go(func() (err error) { v.Nodes, err = export.GardenCandidates(gctx, s.DB, opts); return })
+	g.Go(func() (err error) { v.Trash, err = s.DB.TrashCount(gctx); return })
+	g.Go(func() (err error) { v.Cleanup, err = s.DB.CleanupPendingCount(gctx); return })
+	if err := g.Wait(); err != nil {
+		http.Error(w, err.Error(), 500)
+		return
+	}
+	s.render(w, "content", s.page(r, "Conteúdo", "content", v))
+}
+
+func (s *Server) contentGardenPublish(w http.ResponseWriter, r *http.Request) {
+	if strings.TrimSpace(s.Cfg.Get("GARDEN_DIR")) == "" {
+		redirectFlash(w, r, "/content/garden", "Defina GARDEN_DIR em Configurações → Automação para gerar o site numa pasta.", true)
+		return
+	}
+	rep, err := export.WriteGarden(r.Context(), s.DB, s.Cfg.GetPath("GARDEN_DIR"), export.GardenOptionsFrom(s.Cfg.Get, s.Cfg.Location()))
+	if err != nil {
+		redirectFlash(w, r, "/content/garden", "Falha ao gerar o site: "+err.Error(), true)
+		return
+	}
+	s.log.Info("jardim digital publicado", "notas", len(rep.Pages))
+	redirectFlash(w, r, "/content/garden", fmt.Sprintf("Site gerado com %d nota(s).", len(rep.Pages)), false)
+}

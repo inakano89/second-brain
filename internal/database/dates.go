@@ -17,7 +17,7 @@ const (
 )
 
 // ManualSources are the channels where the user sends content by hand.
-var ManualSources = []string{"telegram", "voice", "web", "api", "clip", "watcher"}
+var ManualSources = []string{"telegram", "voice", "web", "api", "clip", "watcher", "diary", "shopping"}
 
 // Origins of a node for the Conteúdo filter.
 const (

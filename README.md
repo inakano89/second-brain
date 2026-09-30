@@ -25,10 +25,15 @@
 - [Canais de captura](#canais-de-captura)
 - [Importação de dados](#importação-de-dados)
 - [Gerenciar conteúdo](#gerenciar-conteúdo)
+- [Datas: o mais novo vale mais](#datas-o-mais-novo-vale-mais)
 - [Modelos de IA e Conselho](#modelos-de-ia-e-conselho)
 - [IA, grafo e agentes](#ia-grafo-e-agentes)
 - [Memória, tarefas de reuniões e faxina](#memória-tarefas-de-reuniões-e-faxina)
 - [Perfil pessoal](#perfil-pessoal)
+- [Lembranças, revisão, diário e pessoas](#lembranças-revisão-diário-e-pessoas)
+- [Viagens, garantias, saúde × rotina e casa](#viagens-garantias-saúde--rotina-e-casa)
+- [Finanças](#finanças)
+- [Jardim digital](#jardim-digital)
 - [Integrações](#integrações)
 - [Rotinas agendadas](#rotinas-agendadas)
 - [Backup e restauração](#backup-e-restauração)
@@ -58,6 +63,10 @@
 | **Gerenciar conteúdo** | Página **Conteúdo** com filtros (texto, tipo, origem, tag, data, envio), seleção em massa (inclusive todos os resultados do filtro), apagar/etiquetar/mudar tipo/concluir/reprocessar/exportar em lote, filtros de faxina (duplicados, sem conteúdo, sem conexões), aba **Faxina** com as sugestões semanais, apagar uma importação inteira e **lixeira de 30 dias** com desfazer. Itens apagados não voltam nas sincronizações. |
 | **Camada de ação e memória** | Tarefas extraídas de atas, transcrições e notas de reunião duas vezes por dia (com lista do que surgiu, inclusive dos e-mails); memória diária de **decisões, aprendizados e prioridades** que o chat e o briefing consultam; **faxina semanal** que sugere duplicados para juntar, itens vazios, tarefas paradas e pessoas soltas para você aprovar. |
 | **Perfil pessoal** | Identidade, endereços, alergias, **medicações contínuas** (horários, estoque, receita), suplementos, dieta, histórico de saúde, **matrículas** com horários, cursos, assinaturas, hábitos, **datas importantes**, documentos, veículos, casa, pets e metas. Visão geral com o dia e os próximos 30 dias (inclui aniversários dos Contatos e eventos da agenda classificados), lembretes no Telegram (`/tomei`), itens sensíveis **cifrados** e fora das IAs na nuvem. |
+| **Datas** | Cada item guarda a **data original** separada da **data de importação**; item sem data é marcado como “data desconhecida” e nunca conta como novo. Busca e chat dão mais peso ao conteúdo recente (meia-vida configurável), a faxina e as importações mantêm o mais novo, e o Conteúdo agrupa por mês. |
+| **Vida e lembranças** | “Neste dia” no briefing, retrospectiva do ano, revisão espaçada de destaques do Kindle e insights, diário guiado por voz no Telegram, progresso das metas no relatório semanal, CRM pessoal (quem você não fala há tempo, resumo antes das reuniões), dossiê de viagem, garantias a partir de notas fiscais, saúde × rotina e lista de compras. |
+| **Finanças** | Extratos OFX/CSV e faturas de cartão em uma tabela própria (nunca viram notas): gastos por categoria, comparação com o mês anterior e assinaturas esquecidas. |
+| **Jardim digital** | As notas com `#publico` viram um site estático (uma página por nota, links, assuntos e feed). |
 | **Rotinas** | Briefing matinal (sono + agenda + pendências), balanço noturno, weekly review, manutenção do SQLite e backup cifrado AES-256-GCM para local/S3/WebDAV/Telegram. |
 | **Resiliência offline** | Toda chamada externa passa por uma fila persistente no SQLite com *retry* e *backoff* exponencial. |
 | **Auto-update** | Instala novas releases do GitHub sozinho (SHA-256 + assinatura ed25519 opcional, snapshot do banco, rollback automático). Desativável em Configurações. |
@@ -297,7 +306,7 @@ Para refazer o onboarding: `second-brain -env .env -reset-setup`.
 | 🎙️ Voz / áudio | Download do `.ogg` → transcrição (Whisper ou Gemini Audio) → nota categorizada (pode virar tarefa/insight) → grafo. |
 | 🖼️ Foto | Visão multimodal (Gemini / Claude / GPT-4o): OCR, descrição e tabelas em Markdown. |
 | 📄 Documento | PDF (texto local ou OCR multimodal para digitalizados), Markdown, TXT, HTML. |
-| Comandos | `/note`, `/task`, `/event` (linguagem natural → Google Calendar), `/search`, `/tasks`, `/done <id>`, `/brief`, `/hoje` (rotina do dia e próximas datas do Perfil), `/tomei <id>` (marca dose/hábito e desconta o estoque), `/model` (lista; `/model council` ativa o Conselho), `/reset`. |
+| Comandos | `/note`, `/task`, `/event` (linguagem natural → Google Calendar), `/search`, `/tasks`, `/done <id>`, `/brief`, `/hoje` (rotina do dia e próximas datas do Perfil), `/tomei <id>` (marca dose/hábito e desconta o estoque), `/model` (lista; `/model council` ativa o Conselho), `/reset`, `/neste_dia`, `/revisao`, `/diario [pular]`, `/retro [ano]`, `/pessoa <nome>`, `/crm`, `/viagem [destino]`, `/compras [itens]` e `/financas [AAAA-MM]`. |
 
 Mídia é processada pela fila offline: sem conexão com o LLM, o bot avisa e reprocessa automaticamente.
 
@@ -333,11 +342,13 @@ Página **Importar** (`/import`), `POST /api/import` ou `second-brain -import ar
 | Agenda (Google Agenda, Outlook, Apple) | `.ics` | eventos (fuso, dia inteiro, recorrência, participantes como `[[links]]`) e tarefas `VTODO`; cancelados ignorados. |
 | OPML (Feedly, Inoreader, Workflowy) | `.opml` | assinaturas vão para `RSS_FEEDS`; tópicos viram notas. |
 | Páginas HTML | `.html` | notas com o texto principal (Readability). |
+| Extrato bancário e fatura de cartão | `.ofx`, `.qfx`, `.csv` | **não viram notas**: os lançamentos vão para a tabela `transactions` e para a página [Finanças](#finanças). CSV de banco é reconhecido pelas colunas (data, descrição/histórico, valor ou débito/crédito; `;` e números brasileiros). |
 | Google Takeout | `.zip` ou `Timeline.json` | histórico do YouTube, pesquisas, Chrome, Linha do tempo, lugares do Maps e Play Store em notas mensais/listas (veja [Google Takeout](#google-takeout)). |
 
 Como funciona:
 
 - **Sem duplicar**: cada item recebe uma chave estável (`source=import:<formato>`, `source_ref` = caminho no vault, UID, URL ou hash). Reimportar atualiza o que mudou e pula o resto — inclusive o que você [apagou](#gerenciar-conteúdo) com “Não trazer de volta” (contado como “apagados antes”).
+- **Datas**: a data do item é a data **original** (nota criada em 2015 continua de 2015); `meta.import_at` guarda quando entrou. O que veio sem data (OPML, HTML, Todoist, vCard sem `REV`, JSON/CSV sem coluna de data, datas de 1970 ou do futuro) recebe `meta.date_unknown=true`: fica no fim das listas por data, não aparece nos relatórios de “novos” (o balanço só diz “N itens importados”) e não perde peso na busca. Reimportar o arquivo com a data preenchida corrige o item. Repetidos no mesmo arquivo: vale o **mais novo**; pessoas repetidas (ou já existentes) são mescladas campo a campo, o registro mais novo vence e o valor antigo fica como “(antes: …)”, telefones e e-mails são unidos com os novos primeiro.
 - **Lotes**: cada importação grava `import_batch`, `import_name` e `import_at` no `meta` dos itens, o que permite listar, revisar e apagar um envio inteiro em **Conteúdo → Envios**.
 - **Conexões**: `[[links]]` são resolvidos pelo nome do arquivo, `aliases` ou título dentro da própria importação; o vault exportado pelo Second Brain volta com as conexões tipadas da seção “Conexões”.
 - **Custo controlado**: por padrão o enriquecimento usa a análise offline (tags, resumo heurístico, embeddings e auto-links). Marque **Analisar com IA** (ou `llm=true`, `-import-llm`) para resumo/entidades por LLM — ~1 chamada por item. O botão “Reprocessar” de um nó sempre usa a IA.
@@ -350,15 +361,27 @@ Como funciona:
 
 Página **Conteúdo** (`/content`), no menu. Serve para revisar, corrigir e limpar o que foi enviado — por exemplo, apagar centenas de favoritos importados de uma vez.
 
-- **Filtros**: busca no título e no texto (todas as palavras, prefixo, sem acentos, via FTS5), tipo, origem (canal/integração/formato de importação), tag, situação da tarefa, período de criação, ordem (recentes, antigos, editados, título). O endereço da página acompanha os filtros, então dá para salvar a busca nos favoritos.
+- **Filtros**: busca no título e no texto (todas as palavras, prefixo, sem acentos, via FTS5), tipo, origem (canal/integração/formato de importação), **quem criou** (importados, criados por mim, automáticos), tag, situação da tarefa, período de criação, ordem (por data — eventos pelo dia em que acontecem —, criação, antigos, editados, título). A lista é agrupada por **ano e mês** (“2026 · setembro”); itens sem data ficam em “Sem data”. A coluna de data mostra “importado em …” quando a importação foi em outro dia. O endereço da página acompanha os filtros, então dá para salvar a busca nos favoritos.
 - **Faxina**: atalhos para **Duplicados** (mesmo tipo e título, lado a lado), **Sem conteúdo** e **Sem conexões**, com a contagem de cada um.
 - **Seleção**: caixa por linha, clique na linha, <kbd>Shift</kbd>+clique para intervalos, “selecionar a página” e **“selecionar todos os N resultados do filtro”** (até 20 000 por ação). A seleção sobrevive à paginação e é zerada quando o filtro muda.
 - **Ações em massa** (barra fixa no topo): **Apagar** (com **Não trazer de volta** marcado por padrão), **+ Tag / − Tag** (várias separadas por vírgula), **Mudar tipo**, **Concluir / Reabrir** tarefas, **Reprocessar IA** (até 1 000 por vez; pede confirmação por causa do custo) e **Exportar** a seleção como vault Obsidian (`.zip`, só com as conexões internas). Cada ação roda numa transação por bloco de 400 itens.
 - **Painel lateral**: clique no título para ler, editar, apagar ou ver as conexões sem sair da lista; clicar numa tag do painel filtra a lista por ela.
+- **Jardim** (`/content/garden`): o que será publicado no [Jardim digital](#jardim-digital), download do site e geração na pasta `GARDEN_DIR`.
 - **Envios** (`/content/sends`): importações agrupadas por arquivo (com data e quantidade) e totais por origem, cada um com **Ver itens** e **Apagar envio/tudo**.
 - **Lixeira** (`/content/trash`): tudo o que foi apagado — pela página Conteúdo, pelo painel do mapa ou por envio — fica **30 dias** restaurável, por item ou por lote (a nota volta com as mesmas conexões; os embeddings são refeitos pela fila). **Desfazer** aparece logo após apagar. A rotina `maintenance` remove de vez os itens com mais de 30 dias e os arquivos de mídia deles; também dá para **apagar de vez** ou **esvaziar** manualmente.
 
 **Não trazer de volta**: ao apagar com a opção marcada, a chave de origem do item (`source` + `source_ref`, ou o nome para pessoas criadas automaticamente a partir de menções) vai para a tabela `deleted_refs`. A partir daí `agent.Ingest` recusa o item com `database.ErrDeleted` para integrações e importações (Gmail, Agenda, Drive, Contatos, Tasks, YouTube, RSS, Zepp, rotinas, tarefas extraídas pela IA, reimportações e Takeout do Drive), que o tratam como “pular”; a fila marca a tarefa como concluída. Canais em que você envia algo à mão (Telegram, voz, web, API, Web Clipper e pasta `inbox`) levantam o bloqueio e trazem o item de volta. O bloqueio continua depois que o item sai da lixeira; **Lixeira → Permitir que voltem** limpa todos. Restaurar um item também remove o bloqueio dele.
+
+---
+
+## Datas: o mais novo vale mais
+
+- **Duas datas**: `created_at` é a data do conteúdo (original); `meta.import_at` é quando entrou por uma importação. Sem data original → `meta.date_unknown=true` (a migração 6 marcou assim os itens já importados sem data). Eventos valem pelo dia em que acontecem (`due_at`).
+- **Busca e chat** (`SEARCH_RECENCY_HALFLIFE`, padrão 365 dias): depois da fusão BM25 + vetores, a pontuação de cada item é multiplicada por `0,5 + 0,5·2^(−idade/meia-vida)`: relevância continua mandando; o conteúdo antigo nunca perde mais que 50%. Não perdem peso: tarefas abertas, eventos futuros, pessoas e itens sem data. Uma pergunta sobre o passado (“o que eu pensava em 2018?”, “antigo”, “anos atrás”) ou o filtro `from`/`to` de `search_brain` desligam o peso. `0` desliga tudo.
+- **Chat**: o contexto traz `criado=`, `idade=`, `importado=` ou `data=desconhecida` de cada item, e o prompt manda valer a informação mais recente quando duas conflitam e citar a data das antigas.
+- **Arquivo** (`CHAT_ARCHIVE_YEARS`, padrão `0` = desligado): itens **importados** com mais de N anos deixam de entrar sozinhos no contexto do chat; continuam na busca e o chat os consulta quando a pergunta é sobre o passado.
+- **Grafo, Visão geral e relatórios** ordenam pela data do conteúdo, não pela última edição (a análise da IA mexe em `updated_at` de tudo depois de uma importação). Importações também ficam fora da memória e das tarefas de reuniões, e itens sem data não entram nos relatórios de “novos”.
+- **Faxina e importação**: veja [Gerenciar conteúdo](#gerenciar-conteúdo) e [Importação de dados](#importação-de-dados).
 
 ---
 
@@ -405,9 +428,15 @@ Tudo é gerenciado na página **Modelos** (`/models`) e gravado no `.env`:
 | `search_email`, `read_email`, `create_email_draft` | Gmail: busca, leitura e **rascunhos** (nunca envia) |
 | `search_drive`, `read_drive_file` | Google Drive: busca e leitura de Docs, Planilhas, Apresentações, PDF, DOCX e texto |
 | `search_contacts` | Contatos do Google (inclui “outros contatos” do Gmail) |
-| `run_action` | Ações de automação da whitelist (quando `ACTIONS_ENABLED=true`) |
+| `run_action` | Ações de automação da whitelist (quando `ACTIONS_ENABLED=true`): luz, portão, ar-condicionado, webhooks (veja `actions.example.json`) |
+| `on_this_day`, `year_review` | Lembranças do mesmo dia em anos anteriores; gera e salva a retrospectiva de um ano (`year_review` pede permissão) |
+| `person_brief`, `stale_contacts` | CRM: resumo de uma pessoa e quem está há muito sem contato |
+| `travel_dossier` | Dossiê de viagem (agenda, reservas do Gmail, arquivos, pendências e, do Perfil, o que a política `PROFILE_AI_ACCESS` liberar) |
+| `health_routine` | Saúde × rotina: dias cheios de reuniões × sono e recuperação seguintes |
+| `shopping_list`, `shopping_edit` | Lista de compras (`shopping_edit` pede permissão) |
+| `finance_summary` | Resumo mensal do extrato (só totais, nunca os lançamentos), com a mesma política de dados sensíveis do Perfil |
 
-**Permissão para alterar:** toda ferramenta que grava ou age (`create_*`, `complete_task`, `link_nodes`, `unlink_nodes`, `update_node`, `delete_node`, `save_profile_item`, `create_email_draft`, `run_action`) exige o argumento `user_requested=true`, que a IA só envia quando a mensagem do usuário pediu aquela alteração explicitamente (ou depois de ele responder “sim” a uma pergunta). Sem isso nada é alterado: a ferramenta devolve `needs_confirmation` e a IA pergunta antes. O portão depende do julgamento do modelo; o padrão é negar. Ferramentas novas que alteram dados entram em `mutatingTools` (`internal/agent/tools.go`).
+**Permissão para alterar:** toda ferramenta que grava ou age (`create_*`, `complete_task`, `link_nodes`, `unlink_nodes`, `update_node`, `delete_node`, `save_profile_item`, `create_email_draft`, `run_action`, `year_review`, `shopping_edit`) exige o argumento `user_requested=true`, que a IA só envia quando a mensagem do usuário pediu aquela alteração explicitamente (ou depois de ele responder “sim” a uma pergunta). Sem isso nada é alterado: a ferramenta devolve `needs_confirmation` e a IA pergunta antes. O portão depende do julgamento do modelo; o padrão é negar. Ferramentas novas que alteram dados entram em `mutatingTools` (`internal/agent/tools.go`).
 
 O prompt do chat (web e Telegram) inclui a **memória**: prioridades atuais e as decisões e aprendizados mais recentes (veja abaixo).
 
@@ -433,13 +462,13 @@ Três rotinas transformam o que entra em ação e contexto (inspiradas nas camad
 
 | Sugestão | Critério | Ação sugerida |
 |---|---|---|
-| Duplicados | mesmo tipo e título + mesmo texto, ou mesmo `meta.url` | Juntar (mantém o mais antigo) |
-| Quase iguais | itens dos últimos 14 dias com embedding ≥ 0,95 de similaridade (≥ 0,93 no embedder local) a outro do mesmo tipo; relatórios de rotinas e memória ficam de fora | Juntar |
+| Duplicados | mesmo tipo e título + mesmo texto, ou mesmo `meta.url` | Juntar (mantém o **mais novo**) |
+| Quase iguais | itens dos últimos 14 dias com embedding ≥ 0,95 de similaridade (≥ 0,93 no embedder local) a outro do mesmo tipo; relatórios de rotinas e memória ficam de fora | Juntar (mantém o mais novo) |
 | Tarefas paradas | abertas sem mudança há 30 dias, ou vencidas há mais de 30 dias | Concluir (ou apagar) |
 | Vazios | notas, artigos e insights sem texto e sem conexões há 7 dias | Apagar |
 | Pessoas soltas | pessoas criadas pela IA a partir de uma menção, sem dados e com no máximo 1 conexão, há 14 dias | Apagar |
 
-As detecções rodam em paralelo (goroutines, incluindo a comparação de vetores) e ficam em `cleanup_suggestions` até você decidir em **Conteúdo → Faxina** (`/content/cleanup`): **Juntar** acrescenta ao item mantido o texto que só existe nas cópias, une tags e metadados, copia as conexões e manda as cópias para a lixeira; **Apagar** e **Concluir** agem direto; **Manter** descarta a sugestão para sempre. Há “Aplicar todas” por categoria e “Procurar agora”. Tudo o que é apagado usa “Não trazer de volta” e fica 30 dias na lixeira. O Telegram recebe o resumo com o link.
+As detecções rodam em paralelo (goroutines, incluindo a comparação de vetores) e ficam em `cleanup_suggestions` até você decidir em **Conteúdo → Faxina** (`/content/cleanup`): **Juntar** mantém o item **mais novo** (data original; sem data conta como o mais antigo), leva o texto que só existe nas cópias para a seção “Versões anteriores” com a data de cada uma, une tags e metadados, copia as conexões e manda as cópias para a lixeira; **Apagar** e **Concluir** agem direto; **Manter** descarta a sugestão para sempre. Há “Aplicar todas” por categoria e “Procurar agora”. Tudo o que é apagado usa “Não trazer de volta” e fica 30 dias na lixeira. O Telegram recebe o resumo com o link.
 
 ### Agent actions (webhooks, MQTT, comandos)
 
@@ -487,6 +516,41 @@ Registro estruturado da vida do usuário em `/profile` (pacote `internal/profile
 - Turnos do chat/Telegram em que a ferramenta `personal_profile` (ou `save_profile_item`) foi chamada são gravados cifrados em `chat_messages` com `private=1`: não entram na rotina de Memória (`ChatSince`) e só voltam como histórico quando o modelo da conversa é local ou `PROFILE_AI_ACCESS=full`.
 - A IA lê o perfil pela ferramenta `personal_profile` do chat/Telegram conforme `PROFILE_AI_ACCESS`: `basic` (padrão) libera itens comuns e só entrega os sensíveis quando todas as rotas possíveis do chat e do Telegram são locais (Ollama); `full` libera tudo; `none` remove a ferramenta. Cada consulta é registrada no audit log.
 - `PROFILE_AI_WRITE=true` (padrão `false`) libera a ferramenta `save_profile_item`: o chat/Telegram cria ou atualiza itens do Perfil (mesmo tipo e título = atualização; campos omitidos são mantidos, valor vazio limpa). Nunca apaga, nunca altera a marca “sensível” (itens novos seguem o padrão do tipo), valida datas, horários, números, dias da semana e opções, e a resposta ao modelo repete só o que ele enviou, sem devolver dados guardados. Exige `PROFILE_AI_ACCESS` diferente de `none`; turnos com a ferramenta também são privados (cifrados).
+
+## Lembranças, revisão, diário e pessoas
+
+Rotinas do agendador (todas desligáveis com `off`; as mensagens vão para o Telegram e o código fica em `internal/agent/lifelog.go`, `diary.go`, `crm.go` e `internal/scheduler/lifelog.go`):
+
+- **Neste dia** (no briefing das 7h, `/neste_dia`, ferramenta `on_this_day`): notas, insights, artigos e eventos do mesmo dia e mês de 1, 3 e 5 anos atrás (`ON_THIS_DAY_YEARS`). Só conteúdo com data original; relatórios das rotinas ficam de fora.
+- **Retrospectiva do ano** (`year-review`, `CRON_YEAR_REVIEW`, padrão `0 9 2 1 *`, `/retro [ano]`): junta números, itens por mês, tags, pessoas mais citadas, decisões, aprendizados, textos mais longos e tarefas que ficaram abertas e pede à IA (rota de revisões) um texto com temas, pessoas, decisões, pendências e intenções para o próximo ano; salva como insight “Retrospectiva AAAA”. Sem IA, salva os dados agregados. Nunca usa o Perfil.
+- **Revisão espaçada** (`review`, `CRON_REVIEW`, padrão `30 8 * * *`, `REVIEW_PER_DAY`, `/revisao`): destaques do Kindle (um por vez, em rodízio), insights e aprendizados da memória voltam depois de 1, 3, 7, 14, 30, 60, 120 e 240 dias (tabela `reviews`). Itens novos entram sozinhos quando há espaço no dia.
+- **Diário guiado** (`diary`, `CRON_DIARY`, padrão `30 21 * * *`, `/diario`): o bot faz 2 ou 3 perguntas (personalizadas pela IA a partir da agenda, tarefas e notas do dia, ou um conjunto fixo sem IA). As próximas mensagens — texto ou **áudio** (só transcrito, sem criar nota de voz) — respondem uma pergunta cada e vão para a nota “Diário DD/MM/AAAA” (tag `diario`). `/diario pular` cancela; a sessão vale 4 h (depois disso as mensagens voltam a ser conversa normal).
+- **Metas** no relatório semanal: progresso e prazo das metas do Perfil (com alerta de prazo curto/vencido e ritmo baixo) e as tarefas que compartilham as palavras da meta (abertas, concluídas, na semana). Bloco pessoal: vai só para o Telegram, nunca para a IA nem para a nota do relatório.
+- **CRM pessoal** (`crm`, `CRON_CRM`, padrão segunda 9h, `CRM_STALE_DAYS`, `/crm`, `/pessoa <nome>`): interações são notas, e-mails e eventos datados ligados à pessoa (importações e relatórios não contam). Avisa quem tem 3+ interações (ou a tag `crm`, ou `meta.contact_every_days`) e está além do prazo; a tag `sem-crm` silencia; quem tem evento marcado é dispensado; cada silêncio é avisado uma vez. `meeting-prep` (`CRON_MEETING_PREP`, `MEETING_PREP_MINUTES`) manda, antes de cada reunião com convidados que estão no cérebro (por e-mail), o resumo de cada um: última conversa, pendências e próximos eventos.
+
+## Viagens, garantias, saúde × rotina e casa
+
+- **Dossiê de viagem** (`travel`, `CRON_TRAVEL`, `/viagem [destino]`, ferramenta `travel_dossier`): agenda no período (avisa o que conflita), reservas achadas no Gmail e nas notas, arquivos do Drive, pendências (“passagem”, “visto”…) e, do Perfil, **documentos que vencem antes da volta ou com menos de 6 meses de validade**, vacinas, estoque de medicação para a duração da viagem e o checklist do item de viagem. Manda sozinho 7 dias antes de cada viagem do Perfil (só para o Telegram). No chat, a parte pessoal segue `PROFILE_AI_ACCESS` (itens sensíveis só com modelo local ou `full`) e o turno é gravado cifrado.
+- **Notas fiscais → garantias**: foto ou PDF cuja legenda/nome diga garantia, nota fiscal, recibo, cupom, DANFE (ou que a visão marque como recibo) é lido por IA; cada bem durável vira um item **Garantia** no Perfil com data de vencimento (prazo da nota ou `WARRANTY_DEFAULT_MONTHS`, avisando que é presumido) e alerta nos próximos vencimentos. Compras de consumo (mercado, restaurante) são ignoradas. Só grava com `PROFILE_AI_WRITE=true`; sem isso o bot mostra o que achou.
+- **Saúde × rotina** (ferramenta `health_routine`, semanal): soma as horas de reunião por dia (eventos com hora, sem os de dia inteiro), separa dias **cheios** (≥ 4 h) de **leves** (≤ 1,5 h) e compara sono, pontuação de sono, recuperação e FC em repouso da manhã seguinte, com a correlação de Pearson quando há 8+ dias de dados. Precisa do relógio (Zepp) e da agenda.
+- **Casa**: lista de compras (nota “Lista de compras”; `/compras leite, pão`, `/compras ok leite`, `/compras limpar`; pelo chat: “adicione ovos na lista”) e comandos da casa pelo chat via `run_action` (luz, portão, ar-condicionado: exemplos em `actions.example.json`).
+
+## Finanças
+
+Página **Finanças** (`/financas`, pacote `internal/finance`). Importe o extrato ou a fatura (OFX, QFX ou CSV) em **Importar**: as linhas vão para a tabela `transactions` (nunca para `nodes`, nunca para o LLM cru), sem duplicar (chave: conta + FITID ou hash da linha).
+
+- **Categorias** por palavras-chave em pt-BR (mercado, alimentação fora, transporte, assinaturas, saúde, moradia, contas, educação, viagens, lazer, compras, impostos, transferências, pagamento de fatura, investimentos). Suas regras (`palavra=Categoria`, uma por linha, em `FINANCE_RULES`, editadas na página) vêm antes das embutidas. Transferências, pagamentos de fatura e investimentos ficam fora dos totais.
+- **Resumo do mês**: entradas, gastos, saldo, gastos por categoria com a variação sobre o mês anterior.
+- **Cobranças que se repetem**: mesmo estabelecimento e valor (±15%) em 3+ meses, com custo anual, reajuste e marca **fora do Perfil** quando não há assinatura ou conta fixa com esse nome (assinaturas esquecidas).
+- **Resumo mensal** (`finance`, `CRON_FINANCE`, dia 5, `/financas`): no Telegram, sem passar por IA. A ferramenta `finance_summary` devolve só totais e obedece à mesma política do Perfil (`PROFILE_AI_ACCESS=full` ou modelo local).
+- Os lançamentos ficam no banco em texto claro (o backup é cifrado). **Apagar lançamentos** na página zera a tabela.
+
+## Jardim digital
+
+Notas, insights e artigos com a tag `#publico` (`GARDEN_TAG`) viram um site estático (`internal/export/garden.go`): `index.html`, uma página por nota em `notas/`, páginas de assuntos em `tags/`, `style.css` (claro/escuro) e, com `GARDEN_URL`, um `feed.xml` Atom. Links `[[assim]]` só viram links quando o destino também é público; qualquer outro vira texto. Pessoas, tarefas, eventos e saúde nunca são publicados, e a IA nunca coloca a tag sozinha (o enriquecimento a descarta; `#publico` digitado por você no texto vale).
+
+- **Download**: **Conteúdo → Jardim → Baixar o site** (`/export/garden`, `.zip`).
+- **Pasta**: com `GARDEN_DIR` definido, a rotina `garden` (`CRON_GARDEN`, padrão `15 4 * * *`) e o botão **Gerar agora** escrevem o site na pasta — a raiz do Nginx/Caddy ou um clone para o GitHub Pages. Só reescreve o que mudou, remove as páginas que deixaram de ser públicas (lista em `.garden-manifest`) e não mexe em outros arquivos da pasta (`CNAME`…).
 
 ## Integrações
 
@@ -554,6 +618,14 @@ Cron de 5 campos no timezone configurado (aceita `*/n`, intervalos, listas, nome
 | `actions` | `CRON_ACTIONS` | `0 12,18 * * *` | Cria tarefas a partir de reuniões novas e envia a lista de tarefas novas da IA (reuniões, notas, e-mails) |
 | `memory` | `CRON_MEMORY` | `30 22 * * *` | Decisões, aprendizados, prioridades atuais e retrato do dia |
 | `cleanup` | `CRON_CLEANUP` | `30 17 * * 0` | Faxina semanal: sugestões para aprovar em Conteúdo → Faxina (recuperada até 3 dias depois) |
+| `review` | `CRON_REVIEW` | `30 8 * * *` | Revisão espaçada de destaques do Kindle, insights e aprendizados (`REVIEW_PER_DAY`) |
+| `diary` | `CRON_DIARY` | `30 21 * * *` | Diário guiado: perguntas no Telegram, respostas por texto ou voz |
+| `year-review` | `CRON_YEAR_REVIEW` | `0 9 2 1 *` | Retrospectiva do ano anterior (recuperada até 45 dias depois) |
+| `crm` | `CRON_CRM` | `0 9 * * 1` | Quem você não fala há mais de `CRM_STALE_DAYS` dias |
+| `meeting-prep` | `CRON_MEETING_PREP` | `*/10 * * * *` | Resumo das pessoas antes de cada reunião (`MEETING_PREP_MINUTES`) |
+| `travel` | `CRON_TRAVEL` | `0 8 * * *` | Dossiê 7 dias antes de cada viagem do Perfil |
+| `finance` | `CRON_FINANCE` | `0 9 5 * *` | Resumo do mês anterior a partir dos extratos importados |
+| `garden` | `CRON_GARDEN` | `15 4 * * *` | Regera o site do jardim digital em `GARDEN_DIR` |
 | `reminders` | `CRON_REMINDERS` | `*/5 * * * *` | Lembretes do Perfil no Telegram: doses, hábitos com horário e aulas |
 | `maintenance` | `CRON_MAINTENANCE` | `30 3 * * *` | Purga de temporários de voz/imagem, tarefas e logs antigos e itens com mais de 30 dias na lixeira; `incremental_vacuum`, `optimize`, FTS optimize, checkpoint WAL (VACUUM completo aos domingos) |
 | `backup` | `CRON_BACKUP` | `0 4 * * *` | Snapshot cifrado para os destinos configurados |
@@ -631,6 +703,7 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 
 | Grupo | Principais variáveis |
 |---|---|
+| Datas e busca | `SEARCH_RECENCY_HALFLIFE`, `CHAT_ARCHIVE_YEARS` (grupo LLM); `ON_THIS_DAY_YEARS`, `REVIEW_PER_DAY`, `CRM_STALE_DAYS`, `MEETING_PREP_MINUTES`, `FINANCE_RULES` (Geral); `WARRANTY_DEFAULT_MONTHS` (Perfil); `GARDEN_TAG`, `GARDEN_DIR`, `GARDEN_URL` (Automação) |
 | Geral | `BRAIN_NAME`, `HTTP_HOST`, `HTTP_PORT`, `PUBLIC_URL`, `TIMEZONE`, `DATA_DIR`, `INBOX_DIR`, `WATCHER_ENABLED`, `WATCHER_ACTION`, `QUEUE_WORKERS`, `LOG_RETENTION_DAYS`, `IMPORT_MAX_MB` |
 | LLM | `OPENAI_API_KEY`, `OPENAI_BASE_URL`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, `OLLAMA_BASE_URL`, `EMBEDDING_PROVIDER`, `LLM_PRICING`, `AUTOLINK_THRESHOLD` |
 | Modelos (página `/models`) | `LLM_MODELS`, `DEFAULT_LLM_PROVIDER`, `ANTHROPIC_MODEL`, `OPENAI_MODEL`, `GEMINI_MODEL`, `OLLAMA_MODEL`, `LLM_ROUTE_*`, `LLM_COUNCIL_MEMBERS`, `LLM_COUNCIL_JUDGE`, `LLM_COUNCIL_ROUNDS` |
@@ -641,7 +714,7 @@ O `.env` é lido e gravado com lock (`RWMutex` + arquivo `.env.lock` exclusivo) 
 | Backup | `BACKUP_ENCRYPTION_KEY`, `BACKUP_TARGETS`, `BACKUP_KEEP`, `S3_*`, `WEBDAV_*`, `BACKUP_TELEGRAM_CHAT_ID` |
 | Automação | `ACTIONS_ENABLED`, `ACTIONS_FILE`, `MQTT_BROKER`, `MQTT_USERNAME`, `MQTT_PASSWORD`, `MQTT_CLIENT_ID` |
 | Atualizações | `AUTO_UPDATE_ENABLED`, `UPDATE_CHANNEL`, `UPDATE_REPO`, `LLM_MODELS_AUTO_SYNC` |
-| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_DRIVE`, `CRON_CONTACTS`, `CRON_GOOGLE_TASKS`, `CRON_YOUTUBE`, `CRON_TAKEOUT`, `CRON_ZEPP`, `CRON_UPDATE`, `CRON_MODELS` |
+| Agendamentos | `CRON_MORNING`, `CRON_EVENING`, `CRON_WEEKLY`, `CRON_REVIEW`, `CRON_DIARY`, `CRON_YEAR_REVIEW`, `CRON_CRM`, `CRON_MEETING_PREP`, `CRON_TRAVEL`, `CRON_FINANCE`, `CRON_GARDEN`, `CRON_MAINTENANCE`, `CRON_BACKUP`, `CRON_RSS`, `CRON_GMAIL`, `CRON_CALENDAR`, `CRON_DRIVE`, `CRON_CONTACTS`, `CRON_GOOGLE_TASKS`, `CRON_YOUTUBE`, `CRON_TAKEOUT`, `CRON_ZEPP`, `CRON_UPDATE`, `CRON_MODELS` |
 
 **Modelos**: os padrões vêm da [lista recomendada](internal/llm/models.json) (hoje `claude-opus-5-5`, `gpt-6-astra`, `gemini-3.1-pro-preview`, e `llama3.1` no local) e se atualizam sozinhos. Gerencie-os em [Modelos de IA e Conselho](#modelos-de-ia-e-conselho). As chaves `LLM_MODELS`, `*_MODEL`, `LLM_ROUTE_*` e `LLM_COUNCIL_*` são editadas pela página `/models`.
 

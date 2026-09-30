@@ -126,6 +126,9 @@ func (a *Agent) execExtraTool(ctx context.Context, name string, args toolArgs) (
 		if err != nil {
 			return nil, true, err
 		}
+		if n == nil {
+			return map[string]any{"review": text, "note": "não foi salva: você apagou esta retrospectiva antes com “não trazer de volta”"}, true, nil
+		}
 		return map[string]any{"saved": brief(n, loc), "review": text}, true, nil
 	}
 	return nil, false, nil

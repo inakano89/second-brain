@@ -68,6 +68,7 @@ func Register(s *Scheduler, d *Deps) error {
 		{"meeting-prep", "CRON_MEETING_PREP", d.MeetingPrep, nil},
 		{"travel", "CRON_TRAVEL", func(ctx context.Context) error { _, err := d.Travel(ctx, true); return err }, []JobOption{CatchUpWithin(5 * time.Hour)}},
 		{"finance", "CRON_FINANCE", func(ctx context.Context) error { _, err := d.Finance(ctx, true); return err }, []JobOption{CatchUpWithin(5 * 24 * time.Hour)}},
+		{"garden", "CRON_GARDEN", d.Garden, nil},
 		{"reminders", "CRON_REMINDERS", d.Reminders, nil},
 		{"maintenance", "CRON_MAINTENANCE", d.Maintenance, nil},
 		{"backup", "CRON_BACKUP", func(ctx context.Context) error { _, err := d.Backup(ctx); return err }, nil},

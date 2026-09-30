@@ -20,8 +20,9 @@ import (
 const (
 	diaryKey    = "diary.pending"
 	diarySource = "diary"
-	// diaryWindow is how long after the questions an answer still counts.
-	diaryWindow = 10 * time.Hour
+	// diaryWindow is how long after the questions a message still counts as an answer: short, so
+	// that a normal conversation the next morning is not swallowed by an old diary.
+	diaryWindow = 4 * time.Hour
 )
 
 // DiaryState is a diary session waiting for answers.

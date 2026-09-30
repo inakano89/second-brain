@@ -2,6 +2,7 @@ package agent
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 	"sort"
@@ -220,6 +221,9 @@ func (a *Agent) YearReview(ctx context.Context, year int) (*database.Node, strin
 		Source: "routine", SourceRef: fmt.Sprintf("year:%d", year), Tags: []string{"retrospectiva", "review"},
 		Meta: map[string]any{"enriched": true, "year": year}, Enrich: true,
 	})
+	if errors.Is(err, database.ErrDeleted) { // the user deleted this retrospective for good: keep the text only
+		return nil, text, nil
+	}
 	if err != nil {
 		return nil, text, err
 	}
