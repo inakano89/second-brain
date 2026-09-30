@@ -814,3 +814,102 @@ func TestGardenTabAndDownload(t *testing.T) {
 		t.Fatal("garden export must require login")
 	}
 }
+
+func TestChatTabsAndPersonas(t *testing.T) {
+	e := setup(t)
+	e.completeSetup()
+	ctx := context.Background()
+
+	// First visit opens a general chat; the picker offers the presets and a custom persona.
+	page := e.do("GET", "/chat", nil, nil)
+	e.expect(page, 200, `data-chat="1"`, "Nova conversa", `id="new-chat"`, `name="persona" value="medico"`, `value="advogado"`, `value="custom"`, "Saúde", "Jurídico", `data-pane="1"`)
+	if strings.Contains(page.Body.String(), "ZgotmplZ") {
+		t.Fatal("template sanitized a value (ZgotmplZ)")
+	}
+
+	create := func(v url.Values) (chatTab, *httptest.ResponseRecorder) {
+		t.Helper()
+		rec := e.form("/api/chats", v)
+		var tab chatTab
+		json.Unmarshal(rec.Body.Bytes(), &tab)
+		return tab, rec
+	}
+	med, rec := create(url.Values{"persona": {"medico"}})
+	e.expect(rec, 200)
+	if med.ID != 2 || med.Title != "Médico" || med.Icon != "🩺" || med.Persona != "medico" {
+		t.Fatalf("doctor chat: %+v", med)
+	}
+	named, _ := create(url.Values{"persona": {"advogado"}, "title": {"Aluguel"}, "instructions": {"foque em locação"}})
+	if named.Title != "Aluguel" || named.Custom != "foque em locação" || named.Name != "Advogado" {
+		t.Fatalf("named chat: %+v", named)
+	}
+	e.expect(e.form("/api/chats", url.Values{"persona": {"mago"}}), 400, "persona desconhecida")
+	e.expect(e.form("/api/chats", url.Values{"persona": {"custom"}}), 400, "descreva")
+	coach, _ := create(url.Values{"persona": {"custom"}, "instructions": {"Você é meu coach de corrida"}})
+	if coach.Name != "Personalizado" || coach.Icon != "✨" {
+		t.Fatalf("custom chat: %+v", coach)
+	}
+
+	// Every tab is on the page and ?c= picks the active one; an unknown id falls back.
+	page = e.do("GET", fmt.Sprintf("/chat?c=%d", med.ID), nil, nil)
+	e.expect(page, 200, `data-chat="1"`, fmt.Sprintf(`data-chat="%d"`, med.ID), fmt.Sprintf(`data-pane="%d"`, med.ID), "Sou seu médico de confiança", "Clínico geral")
+	if strings.Contains(page.Body.String(), `data-pane="1"`) {
+		t.Fatal("only the active chat is rendered; the others load on demand")
+	}
+	e.expect(e.do("GET", "/chat?c=999", nil, nil), 200, `data-chat="1"`)
+
+	// History fragment: greeting while empty, then only that chat's messages.
+	e.expect(e.do("GET", fmt.Sprintf("/api/chats/%d/history", med.ID), nil, nil), 200, "Sou seu médico de confiança")
+	e.db.AppendChat(ctx, database.ChatChannel(med.ID), "user", "meu joelho dói")
+	e.db.AppendChat(ctx, database.ChatChannel(med.ID), "assistant", "**Vamos** avaliar")
+	h := e.do("GET", fmt.Sprintf("/api/chats/%d/history", med.ID), nil, nil)
+	e.expect(h, 200, "meu joelho dói", "<strong>Vamos</strong>")
+	if strings.Contains(h.Body.String(), "Sou seu médico") {
+		t.Fatal("greeting shown on a chat with messages")
+	}
+	if o := e.do("GET", fmt.Sprintf("/api/chats/%d/history", named.ID), nil, nil); strings.Contains(o.Body.String(), "joelho") {
+		t.Fatal("history leaked between chats")
+	}
+	e.expect(e.do("GET", "/api/chats/999/history", nil, nil), 404)
+
+	// Rename, back to automatic, clear (keeps the tab) and delete (takes the history along).
+	rec = e.form(fmt.Sprintf("/api/chats/%d", med.ID), url.Values{"title": {"Joelho direito"}})
+	e.expect(rec, 200, "Joelho direito")
+	rec = e.form(fmt.Sprintf("/api/chats/%d", med.ID), url.Values{"title": {""}})
+	e.expect(rec, 200, `"title":"Médico"`)
+	e.expect(e.form(fmt.Sprintf("/api/chats/%d/clear", med.ID), nil), 204)
+	if c, err := e.db.GetChat(ctx, med.ID); err != nil || c.Persona != "medico" {
+		t.Fatalf("clear must keep the chat: %+v %v", c, err)
+	}
+	e.expect(e.do("GET", fmt.Sprintf("/api/chats/%d/history", med.ID), nil, nil), 200, "Sou seu médico de confiança")
+	e.db.AppendChat(ctx, database.ChatChannel(named.ID), "user", "sobre o contrato")
+	e.expect(e.form(fmt.Sprintf("/api/chats/%d/delete", named.ID), nil), 204)
+	e.expect(e.do("GET", fmt.Sprintf("/api/chats/%d/history", named.ID), nil, nil), 404)
+	if hist, _ := e.db.ChatHistory(ctx, database.ChatChannel(named.ID), 10); len(hist) != 0 {
+		t.Fatalf("deleted chat kept messages: %+v", hist)
+	}
+	e.expect(e.form("/api/chats/999/delete", nil), 404)
+
+	// Sending needs an existing chat.
+	e.expect(e.form("/api/chat", url.Values{"message": {"oi"}}), 404, "chat não encontrado")
+	e.expect(e.form("/api/chat", url.Values{"message": {"oi"}, "chat": {"999"}}), 404)
+
+	// Cross-origin writes are still refused.
+	if r := e.do("POST", "/api/chats", strings.NewReader("persona=medico"), map[string]string{"Origin": "https://evil.example", "Content-Type": "application/x-www-form-urlencoded"}); r.Code != 403 {
+		t.Fatalf("csrf not blocked: %d", r.Code)
+	}
+}
+
+func TestAutoTitle(t *testing.T) {
+	cases := map[string]string{
+		"  Dor no joelho\nsegunda linha":                         "Dor no joelho",
+		"muitos    espaços   aqui":                               "muitos espaços aqui",
+		"uma pergunta muito longa que passa do limite do título": "uma pergunta muito longa que pas…",
+		"": "",
+	}
+	for in, want := range cases {
+		if got := autoTitle(in); got != want {
+			t.Errorf("autoTitle(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

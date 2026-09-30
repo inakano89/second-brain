@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/inakano89/second-brain/internal/agent"
@@ -68,6 +69,7 @@ type Server struct {
 	frags   *template.Template
 	limiter *loginLimiter
 	static  http.Handler
+	chatMu  sync.Mutex // serializes opening the first chat
 }
 
 var pageNames = []string{"setup", "login", "graph", "chat", "dashboard", "logs", "settings", "clip", "models", "help", "import", "content", "profile", "financas"}
@@ -133,7 +135,11 @@ func (s *Server) Handler() http.Handler {
 
 	mux.HandleFunc("GET /chat", s.auth(s.chatPage))
 	mux.HandleFunc("POST /api/chat", s.auth(s.apiChat))
-	mux.HandleFunc("POST /chat/reset", s.auth(s.chatReset))
+	mux.HandleFunc("POST /api/chats", s.auth(s.chatCreate))
+	mux.HandleFunc("GET /api/chats/{id}/history", s.auth(s.chatHistory))
+	mux.HandleFunc("POST /api/chats/{id}", s.auth(s.chatRename))
+	mux.HandleFunc("POST /api/chats/{id}/clear", s.auth(s.chatClear))
+	mux.HandleFunc("POST /api/chats/{id}/delete", s.auth(s.chatDelete))
 
 	mux.HandleFunc("GET /models", s.auth(s.modelsPage))
 	mux.HandleFunc("POST /models/add", s.auth(s.modelAdd))

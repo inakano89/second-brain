@@ -331,3 +331,7 @@
   </ul>
 </div>
 {{end}}
+
+{{define "chat_messages"}}{{range .History}}<div class="msg {{.Role}}"><div class="bubble">{{if eq .Role "assistant"}}{{markdown .Content}}{{else}}{{.Content}}{{end}}</div></div>
+{{else}}<div class="msg assistant intro"><div class="bubble"><p>{{.Greet}}</p></div></div>
+{{end}}{{end}}

@@ -239,4 +239,20 @@ CREATE TABLE transactions (
 CREATE INDEX idx_tx_date ON transactions(date);
 CREATE INDEX idx_tx_merchant ON transactions(merchant, date);
 `,
+	// 9 — chat tabs: each web conversation is a row in chats and its turns live in channel
+	// "web:<id>"; persona is a preset key ("" = general assistant, "custom" = instructions only).
+	// The single history the web chat had until now becomes chat 1.
+	`
+CREATE TABLE chats (
+	id           INTEGER PRIMARY KEY AUTOINCREMENT,
+	title        TEXT NOT NULL DEFAULT '',
+	persona      TEXT NOT NULL DEFAULT '',
+	instructions TEXT NOT NULL DEFAULT '',
+	created_at   TEXT NOT NULL,
+	updated_at   TEXT NOT NULL
+);
+INSERT INTO chats (id, title, created_at, updated_at)
+SELECT 1, 'Conversa anterior', MIN(ts), MAX(ts) FROM chat_messages WHERE channel = 'web' HAVING COUNT(*) > 0;
+UPDATE chat_messages SET channel = 'web:1' WHERE channel = 'web';
+`,
 }
